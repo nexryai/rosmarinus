@@ -16,6 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 
+	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -29,6 +30,7 @@ type App struct {
 	mongoClient *mongo.Client
 	mongoDB     *mongo.Database
 	redisClient *redis.Client
+	apLocker    *cache.Locker
 	queueClient *queue.AsynqClient
 	queueServer *queue.AsynqServer
 	httpServer  *http.Server
@@ -100,11 +102,12 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		mongoClient: mongoClient,
 		mongoDB:     mongoDB,
 		redisClient: redisClient,
+		apLocker:    cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
 		queueClient: queue.NewAsynqClient(redisCfg),
 		queueServer: queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger),
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandler(logger),
+			Handler:           httpserver.NewHandler(cfg, logger, mongostore.NewActorRepository(mongoDB)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

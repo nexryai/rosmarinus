@@ -23,12 +23,12 @@ queue processors, note/follow services, and instance metadata services.
 
 ### Public Discovery Endpoints
 
-- [ ] `GET /.well-known/host-meta`
-- [ ] `GET /.well-known/host-meta.json`
-- [ ] `GET /.well-known/webfinger?resource=...`
-- [ ] `GET /.well-known/nodeinfo`
-- [ ] `GET /nodeinfo/2.0`
-- [ ] `GET /nodeinfo/2.1` if we decide to expose it
+- [x] `GET /.well-known/host-meta`
+- [x] `GET /.well-known/host-meta.json`
+- [x] `GET /.well-known/webfinger?resource=...`
+- [x] `GET /.well-known/nodeinfo`
+- [x] `GET /nodeinfo/2.0`
+- [x] `GET /nodeinfo/2.1` if we decide to expose it
 
 Concorde uses WebFinger to map `acct:user@example.com` and local actor URLs to
 ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
@@ -260,8 +260,8 @@ flags, but that is an operational option, not the default architecture.
 
 ### Required Indexes
 
-- [ ] `actors`: unique `uri`
-- [ ] `actors`: unique sparse `{ usernameLower, host }`
+- [x] `actors`: unique `uri`
+- [x] `actors`: unique sparse `{ usernameLower, host }`
 - [ ] `actor_public_keys`: unique `keyId`
 - [ ] `notes`: unique sparse `uri`
 - [ ] `notes`: `userId`, `userHost`, `replyId`, `renoteId`, `createdAt`
@@ -311,15 +311,15 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement AP type helpers equivalent to Concorde `getApId`, `getApType`,
       actor/post/activity predicates, and array normalization.
 - [x] Implement digest verification tests.
-- [ ] Implement HTTP Signature parse/verify tests with fixture requests.
+- [x] Implement HTTP Signature parse/verify tests with fixture requests.
 - [x] Implement signed GET/POST tests with stable signing strings.
 - [x] Implement Redis queues, workers, retry/backoff, and timeout handling.
-- [ ] Implement Redis AP locks and tests for duplicate lock behavior.
+- [x] Implement Redis AP locks and tests for duplicate lock behavior.
 
 ### Phase 2: Discovery And Actor Resolution
 
-- [ ] Implement WebFinger local responses.
-- [ ] Implement NodeInfo responses.
+- [x] Implement WebFinger local responses.
+- [x] Implement NodeInfo responses.
 - [ ] Implement remote WebFinger client.
 - [ ] Implement actor renderer and `/users/{id}`.
 - [ ] Implement `/users/{id}/publickey`.

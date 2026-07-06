@@ -22,7 +22,11 @@ func SigningString(req Request, includeHeaders []string) (string, error) {
 	for _, header := range includeHeaders {
 		key := strings.ToLower(header)
 		if key == "(request-target)" {
-			lines = append(lines, fmt.Sprintf("(request-target): %s %s", strings.ToLower(req.Method), u.Path))
+			path := u.Path
+			if path == "" {
+				path = "/"
+			}
+			lines = append(lines, fmt.Sprintf("(request-target): %s %s", strings.ToLower(req.Method), path))
 			continue
 		}
 		value, ok := headers[key]

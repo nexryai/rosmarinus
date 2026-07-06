@@ -1,6 +1,17 @@
 package signature
 
-import "testing"
+import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestDigestHeaderAndVerify(t *testing.T) {
 	body := []byte(`{"type":"Create"}`)
@@ -60,4 +71,73 @@ func TestGetSigningStringMatchesConcordeShape(t *testing.T) {
 	if got != want {
 		t.Fatalf("SigningString = %q, want %q", got, want)
 	}
+}
+
+func TestParseHeader(t *testing.T) {
+	raw := `keyId="https://example.test/users/alice#main-key",algorithm="rsa-sha256",headers="(request-target) date host digest",signature="YWJj"`
+	sig, err := ParseHeader(raw)
+	if err != nil {
+		t.Fatalf("ParseHeader returned error: %v", err)
+	}
+	if sig.KeyID != "https://example.test/users/alice#main-key" {
+		t.Fatalf("KeyID = %q", sig.KeyID)
+	}
+	if sig.Algorithm != "rsa-sha256" {
+		t.Fatalf("Algorithm = %q", sig.Algorithm)
+	}
+	if len(sig.Headers) != 4 || sig.Headers[0] != "(request-target)" || sig.Headers[3] != "digest" {
+		t.Fatalf("Headers = %#v", sig.Headers)
+	}
+	if string(sig.Signature) != "abc" {
+		t.Fatalf("Signature = %q", string(sig.Signature))
+	}
+}
+
+func TestParseRequestAndVerifyRSA(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "https://remote.example/inbox", nil)
+	req.Host = "remote.example"
+	req.Header.Set("Date", "Mon, 06 Jul 2026 00:00:00 GMT")
+	req.Header.Set("Digest", "SHA-256=abc")
+
+	signingString, err := SigningString(Request{
+		URL:    "https://remote.example/inbox",
+		Method: http.MethodPost,
+		Headers: map[string]string{
+			"Date":   req.Header.Get("Date"),
+			"Host":   req.Host,
+			"Digest": req.Header.Get("Digest"),
+		},
+	}, []string{"(request-target)", "date", "host", "digest"})
+	if err != nil {
+		t.Fatalf("SigningString returned error: %v", err)
+	}
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	req.Header.Set("Signature", `keyId="https://example.test/users/alice#main-key",algorithm="rsa-sha256",headers="(request-target) date host digest",signature="`+base64.StdEncoding.EncodeToString(rawSig)+`"`)
+
+	parsed, err := ParseRequest(req, []string{"(request-target)", "date", "host", "digest"})
+	if err != nil {
+		t.Fatalf("ParseRequest returned error: %v", err)
+	}
+	if parsed.SigningString != signingString {
+		t.Fatalf("SigningString = %q, want %q", parsed.SigningString, signingString)
+	}
+	if err := VerifyRSA(parsed, publicKeyPEM(&privateKey.PublicKey)); err != nil {
+		t.Fatalf("VerifyRSA returned error: %v", err)
+	}
+}
+
+func publicKeyPEM(key *rsa.PublicKey) string {
+	der, err := x509.MarshalPKIXPublicKey(key)
+	if err != nil {
+		panic(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
 }
