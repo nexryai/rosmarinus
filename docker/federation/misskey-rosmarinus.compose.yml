@@ -1,0 +1,79 @@
+services:
+  rosmarinus:
+    image: ${ROSMARINUS_IMAGE:-rosmarinus:test}
+    depends_on:
+      rosmarinus.mongo:
+        condition: service_healthy
+      rosmarinus.redis:
+        condition: service_healthy
+    environment:
+      HOST: rosmarinus.test
+      PUBLIC_URL: https://rosmarinus.test
+      HTTP_ADDR: :8080
+      MONGO_URI: mongodb://rosmarinus.mongo:27017
+      MONGO_DATABASE: rosmarinus_federation
+      REDIS_ADDR: rosmarinus.redis:6379
+      RUN_HTTP: "true"
+      RUN_WORKERS: "true"
+      LOCAL_ACTOR_USERNAME: relay
+      LOCAL_ACTOR_TYPE: Service
+      USER_AGENT: rosmarinus-federation-test/0.0.1
+    volumes:
+      - type: bind
+        source: ./certificates/rootCA.crt
+        target: /etc/ssl/certs/rosmarinus-test-root-ca.crt
+        read_only: true
+    networks:
+      - internal_network
+
+  rosmarinus.test:
+    image: nginx:1.30
+    depends_on:
+      - rosmarinus
+    volumes:
+      - type: bind
+        source: ../../../../docker/federation/nginx/rosmarinus.test.conf
+        target: /etc/nginx/conf.d/rosmarinus.test.conf
+        read_only: true
+      - type: bind
+        source: ./certificates/rootCA.crt
+        target: /etc/nginx/certificates/rootCA.crt
+        read_only: true
+      - type: bind
+        source: ./certificates/rosmarinus.test.crt
+        target: /etc/nginx/certificates/rosmarinus.test.crt
+        read_only: true
+      - type: bind
+        source: ./certificates/rosmarinus.test.key
+        target: /etc/nginx/certificates/rosmarinus.test.key
+        read_only: true
+    healthcheck:
+      test: service nginx status
+      interval: 5s
+      retries: 20
+    networks:
+      - internal_network
+
+  rosmarinus.mongo:
+    image: mongo:8
+    command: ["mongod", "--quiet", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal_network
+
+  rosmarinus.redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal_network
+
+networks:
+  internal_network:

@@ -327,6 +327,11 @@ flags, but that is an operational option, not the default architecture.
 - [x] Add Redis connection and health check.
 - [x] Add logger injection.
 - [x] Add basic tests for config validation.
+- [x] Add a distroless Dockerfile that runs Rosmarinus as `nonroot`.
+- [x] Add Docker compose fixtures for Rosmarinus smoke testing and for attaching
+      Rosmarinus to Misskey's local federation topology.
+- [x] Add GitHub Actions workflow showing the Docker smoke test and the
+      workflow-dispatch Misskey federation fixture shape.
 
 ### Phase 1: ActivityPub Types, Signatures, And Queues
 
@@ -468,6 +473,26 @@ Implementation compatibility should be checked against `./concorde`. The
 latest Misskey checkout in `./misskey` is used only to run a real Docker-based
 federation peer and to inspect its official local federation test topology.
 
+### CI Shape
+
+- [x] Build Rosmarinus with a distroless runtime image:
+      `gcr.io/distroless/static-debian12:nonroot`.
+- [x] Set the image `USER` to `nonroot:nonroot`.
+- [x] Exclude `./concorde` and `./misskey` from the Docker build context.
+- [x] In GitHub Actions, run `go test ./...`.
+- [x] In GitHub Actions, build `rosmarinus:test` and assert the image user is
+      `nonroot:nonroot`.
+- [x] In GitHub Actions, start Rosmarinus with MongoDB and Redis through
+      `docker/federation/rosmarinus.compose.yml` and check `/healthz`.
+- [x] Add a workflow-dispatch-only Misskey fixture job that expects `./misskey`
+      to be present, builds Misskey, starts its official federation harness, and
+      adds Rosmarinus as `https://rosmarinus.test` through an overlay compose.
+- [ ] Add Rosmarinus-specific Misskey federation tests that drive follow,
+      Accept(Follow), signed GET, and Create(Note) once the missing behavior is
+      implemented.
+- [ ] Run `docker compose config` and the workflow on a Docker-enabled machine;
+      this local workspace currently lacks the `docker` CLI.
+
 ### Local Test Topology
 
 - [ ] Run MongoDB and Redis for Rosmarinus.
@@ -494,6 +519,11 @@ federation peer and to inspect its official local federation test topology.
 
 - [ ] Inspect `./misskey/packages/backend/test-federation` only for Docker
       topology, service names, local DNS, and test command conventions.
+- [x] Add `docker/federation/misskey-rosmarinus.compose.yml` to attach
+      Rosmarinus, MongoDB, Redis, and `nginx` TLS endpoint `rosmarinus.test` to
+      Misskey's federation network.
+- [x] Add `docker/federation/nginx/rosmarinus.test.conf` to proxy
+      `https://rosmarinus.test` to the Rosmarinus HTTP server.
 - [ ] Prepare a disposable Misskey/Concorde config with:
       `url: http(s)://misskey.example.test`,
       Postgres pointing to the test DB,

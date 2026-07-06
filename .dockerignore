@@ -1,0 +1,10 @@
+.git
+.github
+.gocache
+concorde
+misskey
+node_modules
+tmp
+volumes
+certificates
+*.log
