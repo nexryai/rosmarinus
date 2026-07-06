@@ -13,9 +13,11 @@ import (
 	"net/url"
 	"strings"
 
+	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -30,12 +32,20 @@ type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
 }
 
+type NoteLookup interface {
+	FindByID(context.Context, string) (*domainnotes.Note, error)
+}
+
 func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
+	return NewHandlerWithStores(cfg, logger, actorLookup, nil, queueClient)
+}
+
+func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, queueClient QueueClient) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, queueClient, logger))
-	mux.HandleFunc("/notes/", notImplemented(logger, http.MethodGet))
+	mux.HandleFunc("/notes/", noteByID(noteLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/follows/", notImplemented(logger, http.MethodGet))
@@ -109,6 +119,35 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, queueClient QueueClie
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func noteByID(noteLookup NoteLookup) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if noteLookup == nil {
+			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "note lookup is not configured"})
+			return
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/notes/")
+		id = strings.Trim(id, "/")
+		if id == "" || strings.Contains(id, "/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		note, err := noteLookup.FindByID(r.Context(), id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if note == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeActivityJSON(w, apnotes.Render(note))
 	}
 }
 

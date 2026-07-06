@@ -8,14 +8,17 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/hibiken/asynq"
 
+	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -32,17 +35,19 @@ type Handler struct {
 	cfg        config.Config
 	logger     *log.Logger
 	repo       actors.Repository
+	notes      domainnotes.Repository
 	queue      QueueClient
 	client     APClient
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
 
-func New(cfg config.Config, logger *log.Logger, repo actors.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
 		repo:       repo,
+		notes:      noteRepo,
 		queue:      queueClient,
 		client:     apClient,
 		resolver:   apresolver.New(repo, apClient, localActor),
@@ -155,13 +160,92 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return "skip: refusing to ingest collection as activity", nil
 	}
 	switch {
+	case aptypes.IsCreate(activity):
+		return h.performCreate(ctx, actor, activity)
 	case aptypes.IsFollow(activity):
 		return h.performFollow(ctx, actor, activity)
-	case aptypes.IsCreate(activity), aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsUndo(activity), aptypes.IsDelete(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsUndo(activity), aptypes.IsDelete(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
 	}
+}
+
+func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	object, err := h.createObject(ctx, activity)
+	if err != nil {
+		return "", err
+	}
+	if !aptypes.IsPost(object) {
+		return fmt.Sprintf("skip: unknown create object type %v", object["type"]), nil
+	}
+	attributedTo, err := aptypes.GetOneAPID(object["attributedTo"])
+	if err != nil {
+		return "skip: note attributedTo is invalid", nil
+	}
+	if actor.URI != attributedTo {
+		return "skip: actor.uri !== note.attributedTo", nil
+	}
+	uri, err := aptypes.GetAPID(object)
+	if err != nil {
+		return "skip: note.id is not a string", nil
+	}
+	actorHost, err := hostOf(actor.URI)
+	if err != nil {
+		return "skip: actor uri host is invalid", nil
+	}
+	noteHost, err := hostOf(uri)
+	if err != nil || actorHost != noteHost {
+		return "skip: host in actor.uri !== note.id", nil
+	}
+	existing, err := h.notes.FindByURI(ctx, uri)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return "skip: note exists", nil
+	}
+	parsed, err := apnotes.ParseRemoteNote(object, uri)
+	if err != nil {
+		return fmt.Sprintf("skip: invalid note: %v", err), nil
+	}
+	note := domainnotes.Note{
+		URI:          parsed.URI,
+		AttributedTo: parsed.AttributedTo,
+		AuthorID:     actor.ID,
+		Text:         parsed.Text,
+		Visibility:   domainnotes.Visibility(parsed.Visibility),
+		Raw:          object,
+		CreatedAt:    time.Now().UTC(),
+		PublishedAt:  publishedAt(object),
+	}
+	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
+		return "", err
+	}
+	return "ok: note created", nil
+}
+
+func (h *Handler) createObject(ctx context.Context, activity map[string]any) (map[string]any, error) {
+	object := activity["object"]
+	if obj, ok := object.(map[string]any); ok {
+		copyCreateAudience(activity, obj)
+		if obj["attributedTo"] == nil {
+			obj["attributedTo"] = activity["actor"]
+		}
+		return obj, nil
+	}
+	uri, err := aptypes.GetAPID(object)
+	if err != nil {
+		return nil, fmt.Errorf("create object is invalid: %w", err)
+	}
+	obj, err := h.client.FetchObject(ctx, uri, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve create object: %w", err)
+	}
+	return obj, nil
 }
 
 func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, activity map[string]any) (string, error) {
@@ -192,6 +276,45 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		return "", err
 	}
 	return "ok: follow accepted delivery enqueued", nil
+}
+
+func copyCreateAudience(activity map[string]any, object map[string]any) {
+	to := uniqueValues(append(aptypes.ToArray(activity["to"]), aptypes.ToArray(object["to"])...))
+	cc := uniqueValues(append(aptypes.ToArray(activity["cc"]), aptypes.ToArray(object["cc"])...))
+	if len(to) > 0 {
+		activity["to"] = to
+		object["to"] = to
+	}
+	if len(cc) > 0 {
+		activity["cc"] = cc
+		object["cc"] = cc
+	}
+}
+
+func uniqueValues(items []any) []any {
+	seen := map[string]struct{}{}
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		key := fmt.Sprintf("%v", item)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func publishedAt(object map[string]any) *time.Time {
+	raw, ok := object["published"].(string)
+	if !ok || raw == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil
+	}
+	return &t
 }
 
 func renderAccept(localActor *actors.Actor, follow map[string]any) map[string]any {

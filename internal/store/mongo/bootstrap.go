@@ -25,5 +25,22 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetSparse(true),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("notes").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "uri", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_notes_uri").
+				SetUnique(true).
+				SetSparse(true),
+		},
+		{
+			Keys: bson.D{{Key: "authorId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_notes_author_created_at"),
+		},
+	})
 	return err
 }

@@ -18,6 +18,7 @@ import (
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -27,6 +28,10 @@ type fakeActorLookup struct {
 
 type fakeQueueClient struct {
 	task queue.Task
+}
+
+type fakeNoteLookup struct {
+	note *domainnotes.Note
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -47,6 +52,14 @@ func (f fakeActorLookup) FindLocalByUsername(ctx context.Context, username strin
 	_ = ctx
 	if f.actor != nil && strings.EqualFold(f.actor.Username, username) {
 		return f.actor, nil
+	}
+	return nil, nil
+}
+
+func (f fakeNoteLookup) FindByID(ctx context.Context, id string) (*domainnotes.Note, error) {
+	_ = ctx
+	if f.note != nil && f.note.ID == id {
+		return f.note, nil
 	}
 	return nil, nil
 }
@@ -186,6 +199,33 @@ func TestPublicKeyByID(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `"type":"Key"`) {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestNoteByID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/notes/note-id", nil)
+	req.Header.Set("Accept", "application/activity+json")
+	rec := httptest.NewRecorder()
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID:           "note-id",
+		URI:          "https://remote.example/notes/1",
+		AttributedTo: "https://remote.example/users/alice",
+		Text:         "hello",
+		Visibility:   domainnotes.VisibilityPublic,
+		CreatedAt:    time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
+	}}
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/activity+json") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"https://remote.example/notes/1"`) {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"_misskey_content":"hello"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 }

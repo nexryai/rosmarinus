@@ -36,6 +36,7 @@ type App struct {
 	redisClient *redis.Client
 	apLocker    *cache.Locker
 	actors      *mongostore.ActorRepository
+	notes       *mongostore.NoteRepository
 	localActor  *actors.Actor
 	apClient    *apclient.Client
 	apWorker    *apworker.Handler
@@ -87,6 +88,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		return nil, fmt.Errorf("bootstrap mongodb indexes: %w", err)
 	}
 	actorRepo := mongostore.NewActorRepository(mongoDB)
+	noteRepo := mongostore.NewNoteRepository(mongoDB)
 	var localActor *actors.Actor
 	if cfg.LocalActorUsername != "" {
 		localActor, err = actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg))
@@ -116,7 +118,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	queueClient := queue.NewAsynqClient(redisCfg)
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
-	apWorker := apworker.New(cfg, logger, actorRepo, queueClient, apClient, localActor)
+	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, queueClient, apClient, localActor)
 
 	return &App{
 		cfg:         cfg,
@@ -126,6 +128,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		redisClient: redisClient,
 		apLocker:    cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
 		actors:      actorRepo,
+		notes:       noteRepo,
 		localActor:  localActor,
 		apClient:    apClient,
 		apWorker:    apWorker,
@@ -133,7 +136,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer: queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandler(cfg, logger, actorRepo, queueClient),
+			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, queueClient),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

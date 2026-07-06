@@ -44,7 +44,7 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [ ] `GET /users/{user}/followers`
 - [ ] `GET /users/{user}/following`
 - [ ] `GET /users/{user}/collections/featured`
-- [ ] `GET /notes/{note}`
+- [x] `GET /notes/{note}`
 - [ ] `GET /notes/{note}/activity`
 - [ ] `GET /emojis/{emoji}`
 - [ ] `GET /likes/{like}`
@@ -74,8 +74,9 @@ same style as Concorde.
 
 ### Activity Processing
 
-- [ ] `Create`: merge activity/object audiences, fill missing `attributedTo`,
-      resolve object, and create notes/questions.
+- [x] `Create`: merge activity/object audiences, fill missing `attributedTo`,
+      resolve object, and create basic notes.
+- [ ] `Create`: create questions/polls and full note side effects.
 - [ ] `Announce`: resolve target note, check visibility, create renote.
 - [ ] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note, extract emoji
       tags, create reaction.
@@ -113,7 +114,8 @@ same style as Concorde.
 
 ### Note Resolution And Creation
 
-- [ ] Resolve by AP URI, with local URI parsing and remote signed GET.
+- [x] Resolve by AP URI with remote signed GET for Create object references.
+- [ ] Resolve by AP URI with local URI parsing and full note resolver cache.
 - [ ] Use Redis AP locks to deduplicate concurrent resolution by URI.
 - [x] Validate post types: `Note`, `Question`, `Article`, `Audio`, `Document`,
       `Image`, `Page`, `Video`, `Event`.
@@ -124,11 +126,15 @@ same style as Concorde.
 - [ ] Extract AP mentions and hashtags.
 - [ ] Resolve attachments as media records.
 - [ ] Resolve replies and quotes.
-- [ ] Preserve Misskey compatibility fields: `_misskey_content`,
+- [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
+      `source.mediaType = text/x.misskeymarkdown`.
+- [ ] Preserve full Misskey compatibility fields:
       `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`,
       `quoteUrl`, and `_misskey_talk`.
 - [ ] Convert remote HTML to MFM-compatible text.
-- [ ] Store content warning, sensitive flag, files, polls, emoji tags, URI, URL,
+- [x] Store basic URI, attributedTo, author, text, visibility, raw AP object,
+      createdAt, and publishedAt for remote notes.
+- [ ] Store content warning, sensitive flag, files, polls, emoji tags, URL,
       visibility, visible users, reply, renote, and denormalized author fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
       where Rosmarinus owns those writes.
@@ -251,7 +257,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `actors`
 - [ ] `actor_profiles`
 - [ ] `actor_public_keys`
-- [ ] `notes`
+- [x] `notes`
 - [ ] `polls`
 - [ ] `reactions`
 - [ ] `follows`
@@ -267,7 +273,8 @@ flags, but that is an operational option, not the default architecture.
 - [x] `actors`: unique `uri`
 - [x] `actors`: unique sparse `{ usernameLower, host }`
 - [ ] `actor_public_keys`: unique `keyId`
-- [ ] `notes`: unique sparse `uri`
+- [x] `notes`: unique sparse `uri`
+- [x] `notes`: basic `{ authorId, createdAt }`
 - [ ] `notes`: `userId`, `userHost`, `replyId`, `renoteId`, `createdAt`
 - [ ] `notes`: tag and mention indexes suitable for MongoDB
 - [ ] `follows`: unique `{ followerId, followeeId }`
@@ -288,7 +295,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] `internal/activitypub/client`: signed AP GET/POST HTTP client.
 - [x] `internal/activitypub/resolver`: AP resolver and local URI resolver.
 - [x] `internal/activitypub/notes`: minimum AP note validation, text extraction,
-      and audience compatibility helpers.
+      rendering, and audience compatibility helpers.
 - [ ] `internal/activitypub/renderer`: actor, note, collection, emoji, follow,
       like, delete, update, accept, reject, undo renderers.
 - [ ] `internal/activitypub/performer`: activity dispatch and handlers.
@@ -339,16 +346,17 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement `/inbox` and `/users/{id}/inbox`.
 - [x] Validate digest, signature, host, signer, and activity host.
 - [x] Enqueue `inbox` jobs.
-- [ ] Implement `Create Note` handler.
+- [x] Implement basic `Create Note` handler.
 - [x] Implement minimum note object parser compatible with Concorde tests.
-- [ ] Implement note resolver and note storage.
+- [x] Implement basic note storage.
+- [ ] Implement full note resolver.
 - [x] Implement initial audience parser.
 - [ ] Implement HTML to MFM conversion.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 
 ### Phase 4: Outbound Delivery MVP
 
-- [ ] Implement note renderer.
+- [x] Implement basic note renderer.
 - [ ] Implement create/announce/like/follow renderers.
 - [x] Implement basic `Accept(Follow)` delivery to remote `sharedInbox` or
       `inbox`.
@@ -404,12 +412,14 @@ must write to MongoDB.
   - [x] `createSignedGet with verify`
 - [x] `activitypub.ts`
   - [x] `Parse minimum object / Minimum Actor`
-  - [x] `Parse minimum object / Minimum Note` as AP note parser behavior,
-        not full DB-backed note creation yet.
+  - [x] `Parse minimum object / Minimum Note` as AP note parser and basic
+        DB-backed note creation behavior.
   - [x] `Truncate long name / Actor`
 - [x] `fetch-resource.ts`
   - [x] AP `GET /@:username` and `GET /users/:id` return
         `application/activity+json` when AP is requested.
+  - [x] AP `GET /notes/:id` returns `application/activity+json` for stored
+        notes.
   - [x] inbox `Accepted`.
   - [x] inbox `Invalid Host`.
   - [x] inbox `Payload Too Large`.
@@ -421,10 +431,10 @@ must write to MongoDB.
 
 ### Not Ported Yet
 
-- [ ] `activitypub.ts / Minimum Note` full equivalent with remote actor
-      resolution, note storage, and MongoDB writes.
-- [ ] `fetch-resource.ts / /notes/:id` AP resource negotiation once note
-      rendering exists.
+- [ ] `activitypub.ts / Minimum Note` full equivalent with all Concorde note
+      side effects.
+- [ ] `fetch-resource.ts / /notes/:id` exact Concorde local-vs-remote redirect
+      semantics once local note ownership exists.
 - [ ] `fetch-resource.ts / HTML`, root/docs/assets, RSS/ATOM/JSON feeds:
       out of scope for Rosmarinus unless a future federation requirement needs
       them.
