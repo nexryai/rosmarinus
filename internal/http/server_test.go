@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -226,4 +228,153 @@ func TestInboxEnqueuesAcceptedActivity(t *testing.T) {
 	if q.task.Type != queue.TaskInbox {
 		t.Fatalf("task type = %q", q.task.Type)
 	}
+}
+
+func TestConcordeInboxValidationCases(t *testing.T) {
+	cfg := testConfig()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	key := apsig.PrivateKey{
+		KeyID:         "https://remote.example/users/a#main-key",
+		PrivateKeyPEM: privateKeyPEM(privateKey),
+	}
+	cases := []struct {
+		name       string
+		body       string
+		host       string
+		mutate     func(map[string]string)
+		wantStatus int
+	}{
+		{
+			name:       "Accepted",
+			body:       `{"a":1,"b":2}`,
+			host:       cfg.Host,
+			wantStatus: http.StatusAccepted,
+		},
+		{
+			name:       "Invalid Host",
+			body:       `{"a":1,"b":2}`,
+			host:       "xxx.local",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Payload Too Large",
+			body:       `{"a":1,"b":"` + strings.Repeat("x", 70000) + `"}`,
+			host:       cfg.Host,
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name: "Signature Header Required",
+			body: `{"a":1,"b":2}`,
+			host: cfg.Host,
+			mutate: func(headers map[string]string) {
+				delete(headers, "signature")
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "Digest Header Required",
+			body: `{"a":1,"b":2}`,
+			host: cfg.Host,
+			mutate: func(headers map[string]string) {
+				delete(headers, "digest")
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "Invalid Digest Header",
+			body: `{"a":1,"b":2}`,
+			host: cfg.Host,
+			mutate: func(headers map[string]string) {
+				headers["digest"] = "puee"
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "Unsupported Digest Algorithm",
+			body: `{"a":1,"b":2}`,
+			host: cfg.Host,
+			mutate: func(headers map[string]string) {
+				headers["digest"] = "SHA-5000=abc"
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "Digest Mismatch",
+			body: `{"a":1,"b":2}`,
+			host: cfg.Host,
+			mutate: func(headers map[string]string) {
+				headers["digest"] = apsig.DigestHeader([]byte("puppukupu-"))
+			},
+			wantStatus: http.StatusUnauthorized,
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			signed, err := apsig.CreateSignedPost(key, "https://example.test/inbox", []byte(tt.body), map[string]string{"Host": tt.host}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatalf("CreateSignedPost returned error: %v", err)
+			}
+			headers := make(map[string]string, len(signed.Headers))
+			for k, v := range signed.Headers {
+				headers[k] = v
+			}
+			if tt.mutate != nil {
+				tt.mutate(headers)
+			}
+			req := httptest.NewRequest(http.MethodPost, "https://example.test/inbox", strings.NewReader(tt.body))
+			req.Host = tt.host
+			for k, v := range headers {
+				if strings.EqualFold(k, "host") {
+					req.Host = v
+					continue
+				}
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			q := &fakeQueueClient{}
+			NewHandler(cfg, nil, nil, q).ServeHTTP(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestConcordeActivityPubResourceAcceptCases(t *testing.T) {
+	cfg := testConfig()
+	lookup := fakeActorLookup{actor: &actors.Actor{
+		ID:           "alice-id",
+		Username:     "alice",
+		Name:         "Alice",
+		Type:         "Person",
+		URI:          "https://example.test/users/alice-id",
+		Inbox:        "https://example.test/users/alice-id/inbox",
+		SharedInbox:  "https://example.test/inbox",
+		PublicKeyID:  "https://example.test/users/alice-id#main-key",
+		PublicKeyPEM: "pem",
+	}}
+	for _, path := range []string{"/@alice", "/users/alice-id"} {
+		for _, accept := range []string{"application/activity+json", "application/activity+json, */*"} {
+			t.Run(path+" "+accept, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("Accept", accept)
+				rec := httptest.NewRecorder()
+				NewHandler(cfg, nil, lookup, nil).ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+				}
+				if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/activity+json") {
+					t.Fatalf("Content-Type = %q", got)
+				}
+			})
+		}
+	}
+}
+
+func privateKeyPEM(key *rsa.PrivateKey) string {
+	der := x509.MarshalPKCS1PrivateKey(key)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}))
 }

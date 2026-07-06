@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -34,13 +35,13 @@ func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, 
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, queueClient, logger))
-	mux.HandleFunc("/@", actorByUsername(cfg, actorLookup, logger))
 	mux.HandleFunc("/notes/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/follows/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
+	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
 	return mux
 }
 
@@ -123,6 +124,11 @@ func inbox(cfg config.Config, queueClient QueueClient) http.HandlerFunc {
 		}
 		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, inboxBodyLimit))
 		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body is too large"})
+				return
+			}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
@@ -186,6 +192,17 @@ func actorByUsername(cfg config.Config, actorLookup ActorLookup, logger *log.Log
 			return
 		}
 		writeActivityJSON(w, renderActor(cfg, actor))
+	}
+}
+
+func fallback(cfg config.Config, actorLookup ActorLookup, logger *log.Logger) http.HandlerFunc {
+	actorHandler := actorByUsername(cfg, actorLookup, logger)
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/@") {
+			actorHandler(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
 	}
 }
 

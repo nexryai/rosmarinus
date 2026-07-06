@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestDigestHeaderAndVerify(t *testing.T) {
@@ -134,10 +135,64 @@ func TestParseRequestAndVerifyRSA(t *testing.T) {
 	}
 }
 
+func TestConcordeCreateSignedPostWithVerify(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	body := []byte(`{"a":1}`)
+	req, err := CreateSignedPost(PrivateKey{
+		KeyID:         "x",
+		PrivateKeyPEM: privateKeyPEM(privateKey),
+	}, "https://example.com/inbox", body, map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("CreateSignedPost returned error: %v", err)
+	}
+	if err := VerifyRSA(HTTPSignature{
+		Algorithm:     "rsa-sha256",
+		Signature:     req.Signature,
+		SigningString: req.SigningString,
+	}, publicKeyPEM(&privateKey.PublicKey)); err != nil {
+		t.Fatalf("VerifyRSA returned error: %v", err)
+	}
+	if got := req.Headers["digest"]; got != DigestHeader(body) {
+		t.Fatalf("Digest = %q", got)
+	}
+}
+
+func TestConcordeCreateSignedGetWithVerify(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	req, err := CreateSignedGet(PrivateKey{
+		KeyID:         "x",
+		PrivateKeyPEM: privateKeyPEM(privateKey),
+	}, "https://example.com/outbox", map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("CreateSignedGet returned error: %v", err)
+	}
+	if err := VerifyRSA(HTTPSignature{
+		Algorithm:     "rsa-sha256",
+		Signature:     req.Signature,
+		SigningString: req.SigningString,
+	}, publicKeyPEM(&privateKey.PublicKey)); err != nil {
+		t.Fatalf("VerifyRSA returned error: %v", err)
+	}
+	if got := req.Headers["accept"]; got != ActivityAccept {
+		t.Fatalf("Accept = %q", got)
+	}
+}
+
 func publicKeyPEM(key *rsa.PublicKey) string {
 	der, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {
 		panic(err)
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+func privateKeyPEM(key *rsa.PrivateKey) string {
+	der := x509.MarshalPKCS1PrivateKey(key)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der}))
 }

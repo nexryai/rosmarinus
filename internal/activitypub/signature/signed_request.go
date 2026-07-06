@@ -1,6 +1,7 @@
 package signature
 
 import (
+	"net/http"
 	"net/url"
 	"time"
 )
@@ -27,7 +28,7 @@ func CreateSignedPost(key PrivateKey, targetURL string, body []byte, additionalH
 		return SignedRequest{}, err
 	}
 	headers := mergeHeaders(map[string]string{
-		"Date":         now.UTC().Format(time.RFC1123),
+		"Date":         now.UTC().Format(http.TimeFormat),
 		"Host":         u.Hostname(),
 		"Content-Type": "application/activity+json",
 		"Digest":       DigestHeader(body),
@@ -43,7 +44,7 @@ func CreateSignedGet(key PrivateKey, targetURL string, additionalHeaders map[str
 	}
 	headers := mergeHeaders(map[string]string{
 		"Accept": ActivityAccept,
-		"Date":   now.UTC().Format(time.RFC1123),
+		"Date":   now.UTC().Format(http.TimeFormat),
 		"Host":   u.Hostname(),
 	}, additionalHeaders)
 	include := []string{"(request-target)", "date", "host", "accept"}

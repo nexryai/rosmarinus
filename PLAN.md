@@ -115,11 +115,11 @@ same style as Concorde.
 
 - [ ] Resolve by AP URI, with local URI parsing and remote signed GET.
 - [ ] Use Redis AP locks to deduplicate concurrent resolution by URI.
-- [ ] Validate post types: `Note`, `Question`, `Article`, `Audio`, `Document`,
+- [x] Validate post types: `Note`, `Question`, `Article`, `Audio`, `Document`,
       `Image`, `Page`, `Video`, `Event`.
-- [ ] Require `note.id` and `attributedTo` hosts to match actor host.
-- [ ] Reject unexpected non-HTTPS note IDs.
-- [ ] Parse audience from `to` and `cc` into `public`, `home`, `followers`,
+- [x] Require `note.id` and `attributedTo` hosts to match actor host.
+- [x] Reject unexpected non-HTTPS note IDs.
+- [x] Parse audience from `to` and `cc` into `public`, `home`, `followers`,
       or `specified`.
 - [ ] Extract AP mentions and hashtags.
 - [ ] Resolve attachments as media records.
@@ -287,6 +287,8 @@ flags, but that is an operational option, not the default architecture.
 - [x] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
 - [x] `internal/activitypub/client`: signed AP GET/POST HTTP client.
 - [x] `internal/activitypub/resolver`: AP resolver and local URI resolver.
+- [x] `internal/activitypub/notes`: minimum AP note validation, text extraction,
+      and audience compatibility helpers.
 - [ ] `internal/activitypub/renderer`: actor, note, collection, emoji, follow,
       like, delete, update, accept, reject, undo renderers.
 - [ ] `internal/activitypub/performer`: activity dispatch and handlers.
@@ -338,8 +340,9 @@ flags, but that is an operational option, not the default architecture.
 - [x] Validate digest, signature, host, signer, and activity host.
 - [x] Enqueue `inbox` jobs.
 - [ ] Implement `Create Note` handler.
+- [x] Implement minimum note object parser compatible with Concorde tests.
 - [ ] Implement note resolver and note storage.
-- [ ] Implement audience parser.
+- [x] Implement initial audience parser.
 - [ ] Implement HTML to MFM conversion.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 
@@ -385,6 +388,49 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Add load/race tests for duplicate inbox delivery.
 - [ ] Add compatibility fixtures from Concorde for ActivityPub render/parse.
 - [ ] Document operational Redis and MongoDB settings.
+
+## Concorde Backend Test Port Status
+
+The following tests from `./concorde/packages/backend/test` have been reviewed.
+Only ActivityPub/federation behavior that belongs to Rosmarinus is ported.
+Frontend, Misskey API, streaming, drive, and timeline tests are intentionally
+out of scope unless they expose ActivityPub persistence semantics Rosmarinus
+must write to MongoDB.
+
+### Ported
+
+- [x] `ap-request.ts`
+  - [x] `createSignedPost with verify`
+  - [x] `createSignedGet with verify`
+- [x] `activitypub.ts`
+  - [x] `Parse minimum object / Minimum Actor`
+  - [x] `Parse minimum object / Minimum Note` as AP note parser behavior,
+        not full DB-backed note creation yet.
+  - [x] `Truncate long name / Actor`
+- [x] `fetch-resource.ts`
+  - [x] AP `GET /@:username` and `GET /users/:id` return
+        `application/activity+json` when AP is requested.
+  - [x] inbox `Accepted`.
+  - [x] inbox `Invalid Host`.
+  - [x] inbox `Payload Too Large`.
+  - [x] inbox `Signature Header Required`.
+  - [x] inbox `Digest Header Required`.
+  - [x] inbox `Invalid Digest Header`.
+  - [x] inbox `Unsupported Digest Algorithm`.
+  - [x] inbox `Digest Mismatch`.
+
+### Not Ported Yet
+
+- [ ] `activitypub.ts / Minimum Note` full equivalent with remote actor
+      resolution, note storage, and MongoDB writes.
+- [ ] `fetch-resource.ts / /notes/:id` AP resource negotiation once note
+      rendering exists.
+- [ ] `fetch-resource.ts / HTML`, root/docs/assets, RSS/ATOM/JSON feeds:
+      out of scope for Rosmarinus unless a future federation requirement needs
+      them.
+- [ ] API visibility, note API, block/mute/thread-mute/streaming tests:
+      out of scope for Rosmarinus API/frontend, but should be mined later for
+      MongoDB state side effects that ActivityPub handlers must preserve.
 
 ## Real Federation Test Plan
 
