@@ -213,6 +213,8 @@ func TestNoteByID(t *testing.T) {
 		AttributedTo: "https://remote.example/users/alice",
 		Text:         "hello",
 		Visibility:   domainnotes.VisibilityPublic,
+		Hashtags:     []string{"hello"},
+		MentionURIs:  []string{"https://remote.example/users/bob"},
 		CreatedAt:    time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}}
 	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil).ServeHTTP(rec, req)
@@ -227,6 +229,12 @@ func TestNoteByID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"_misskey_content":"hello"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"type":"Hashtag"`) || !strings.Contains(rec.Body.String(), `"name":"#hello"`) {
+		t.Fatalf("unexpected tag body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"type":"Mention"`) || !strings.Contains(rec.Body.String(), `"href":"https://remote.example/users/bob"`) {
+		t.Fatalf("unexpected mention body: %s", rec.Body.String())
 	}
 }
 

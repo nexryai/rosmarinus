@@ -21,9 +21,20 @@ type Note struct {
 	AuthorID     string
 	Text         string
 	Visibility   Visibility
+	MentionURIs  []string
+	Hashtags     []string
+	Emojis       []Emoji
 	Raw          map[string]any
 	CreatedAt    time.Time
 	PublishedAt  *time.Time
+}
+
+type Emoji struct {
+	Name      string
+	URI       string
+	UpdatedAt *time.Time
+	IconURL   string
+	MediaType string
 }
 
 type Repository interface {

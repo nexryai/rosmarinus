@@ -48,6 +48,56 @@ func TestConcordeNoteTextPrefersMisskeyMarkdownSource(t *testing.T) {
 	}
 }
 
+func TestConcordeNoteExtractsTags(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           PublicAudience,
+		"content":      "hello @bob #tag :blob:",
+		"tag": []any{
+			map[string]any{
+				"type": "Mention",
+				"href": "https://host2.test/users/bob",
+			},
+			map[string]any{
+				"type": "Mention",
+				"href": "https://host2.test/users/bob",
+			},
+			map[string]any{
+				"type": "Hashtag",
+				"name": "#tag",
+			},
+			map[string]any{
+				"id":      "https://host1.test/emojis/blob",
+				"type":    "Emoji",
+				"name":    ":blob:",
+				"updated": "2026-07-06T00:00:00Z",
+				"icon": map[string]any{
+					"type":      "Image",
+					"mediaType": "image/webp",
+					"url":       "https://host1.test/files/blob.webp",
+				},
+			},
+		},
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if len(note.MentionURIs) != 1 || note.MentionURIs[0] != "https://host2.test/users/bob" {
+		t.Fatalf("MentionURIs = %#v", note.MentionURIs)
+	}
+	if len(note.Hashtags) != 1 || note.Hashtags[0] != "tag" {
+		t.Fatalf("Hashtags = %#v", note.Hashtags)
+	}
+	if len(note.Emojis) != 1 {
+		t.Fatalf("Emojis = %#v", note.Emojis)
+	}
+	if note.Emojis[0].Name != "blob" || note.Emojis[0].IconURL != "https://host1.test/files/blob.webp" || note.Emojis[0].MediaType != "image/webp" {
+		t.Fatalf("Emoji = %+v", note.Emojis[0])
+	}
+}
+
 func TestConcordeNoteVisibility(t *testing.T) {
 	actorID := "https://host1.test/users/alice"
 	cases := []struct {

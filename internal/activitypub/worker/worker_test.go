@@ -215,6 +215,9 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 				"id":      "https://remote.example/notes/1",
 				"type":    "Note",
 				"content": "hello",
+				"tag": []any{
+					map[string]any{"type": "Hashtag", "name": "#hello"},
+				},
 			},
 		},
 		Signature: map[string]any{
@@ -237,6 +240,9 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 	}
 	if note.AttributedTo != remote.URI || note.Text != "hello" || note.Visibility != domainnotes.VisibilityPublic {
 		t.Fatalf("unexpected note: %+v", note)
+	}
+	if len(note.Hashtags) != 1 || note.Hashtags[0] != "hello" {
+		t.Fatalf("hashtags = %#v", note.Hashtags)
 	}
 }
 

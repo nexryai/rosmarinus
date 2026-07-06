@@ -26,9 +26,20 @@ type noteDocument struct {
 	AuthorID     string                 `bson:"authorId"`
 	Text         string                 `bson:"text"`
 	Visibility   string                 `bson:"visibility"`
+	MentionURIs  []string               `bson:"mentionUris,omitempty"`
+	Hashtags     []string               `bson:"hashtags,omitempty"`
+	Emojis       []emojiDocument        `bson:"emojis,omitempty"`
 	Raw          map[string]interface{} `bson:"raw"`
 	CreatedAt    time.Time              `bson:"createdAt"`
 	PublishedAt  *time.Time             `bson:"publishedAt,omitempty"`
+}
+
+type emojiDocument struct {
+	Name      string     `bson:"name"`
+	URI       string     `bson:"uri,omitempty"`
+	UpdatedAt *time.Time `bson:"updatedAt,omitempty"`
+	IconURL   string     `bson:"iconUrl,omitempty"`
+	MediaType string     `bson:"mediaType,omitempty"`
 }
 
 func NewNoteRepository(db *mongo.Database) *NoteRepository {
@@ -78,6 +89,9 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		AuthorID:     doc.AuthorID,
 		Text:         doc.Text,
 		Visibility:   domainnotes.Visibility(doc.Visibility),
+		MentionURIs:  doc.MentionURIs,
+		Hashtags:     doc.Hashtags,
+		Emojis:       toDomainEmojis(doc.Emojis),
 		Raw:          mapAny(doc.Raw),
 		CreatedAt:    doc.CreatedAt,
 		PublishedAt:  doc.PublishedAt,
@@ -92,10 +106,47 @@ func fromNote(note domainnotes.Note) noteDocument {
 		AuthorID:     note.AuthorID,
 		Text:         note.Text,
 		Visibility:   string(note.Visibility),
+		MentionURIs:  note.MentionURIs,
+		Hashtags:     note.Hashtags,
+		Emojis:       fromDomainEmojis(note.Emojis),
 		Raw:          mapInterface(note.Raw),
 		CreatedAt:    note.CreatedAt,
 		PublishedAt:  note.PublishedAt,
 	}
+}
+
+func toDomainEmojis(src []emojiDocument) []domainnotes.Emoji {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]domainnotes.Emoji, 0, len(src))
+	for _, emoji := range src {
+		out = append(out, domainnotes.Emoji{
+			Name:      emoji.Name,
+			URI:       emoji.URI,
+			UpdatedAt: emoji.UpdatedAt,
+			IconURL:   emoji.IconURL,
+			MediaType: emoji.MediaType,
+		})
+	}
+	return out
+}
+
+func fromDomainEmojis(src []domainnotes.Emoji) []emojiDocument {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]emojiDocument, 0, len(src))
+	for _, emoji := range src {
+		out = append(out, emojiDocument{
+			Name:      emoji.Name,
+			URI:       emoji.URI,
+			UpdatedAt: emoji.UpdatedAt,
+			IconURL:   emoji.IconURL,
+			MediaType: emoji.MediaType,
+		})
+	}
+	return out
 }
 
 func remoteNoteID(uri string) string {

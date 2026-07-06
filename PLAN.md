@@ -123,7 +123,7 @@ same style as Concorde.
 - [x] Reject unexpected non-HTTPS note IDs.
 - [x] Parse audience from `to` and `cc` into `public`, `home`, `followers`,
       or `specified`.
-- [ ] Extract AP mentions and hashtags.
+- [x] Extract AP mentions and hashtags.
 - [ ] Resolve attachments as media records.
 - [ ] Resolve replies and quotes.
 - [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
@@ -132,8 +132,9 @@ same style as Concorde.
       `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`,
       `quoteUrl`, and `_misskey_talk`.
 - [ ] Convert remote HTML to MFM-compatible text.
-- [x] Store basic URI, attributedTo, author, text, visibility, raw AP object,
-      createdAt, and publishedAt for remote notes.
+- [x] Store basic URI, attributedTo, author, text, visibility, mentions,
+      hashtags, emojis, raw AP object, createdAt, and publishedAt for remote
+      notes.
 - [ ] Store content warning, sensitive flag, files, polls, emoji tags, URL,
       visibility, visible users, reply, renote, and denormalized author fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
@@ -142,8 +143,9 @@ same style as Concorde.
 ### Custom Emoji
 
 - [ ] Render local custom emojis as ActivityPub `Emoji` tags.
-- [ ] Extract remote `Emoji` tags from actors and notes.
-- [ ] Normalize `:name:` to `name`.
+- [x] Extract remote `Emoji` tags from notes.
+- [ ] Extract remote `Emoji` tags from actors.
+- [x] Normalize `:name:` to `name`.
 - [ ] Upsert by `(host, name)`.
 - [ ] Update existing emoji if AP URI, updated timestamp, or original URL changes.
 
@@ -294,8 +296,8 @@ flags, but that is an operational option, not the default architecture.
 - [x] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
 - [x] `internal/activitypub/client`: signed AP GET/POST HTTP client.
 - [x] `internal/activitypub/resolver`: AP resolver and local URI resolver.
-- [x] `internal/activitypub/notes`: minimum AP note validation, text extraction,
-      rendering, and audience compatibility helpers.
+- [x] `internal/activitypub/notes`: minimum AP note validation, text/tag
+      extraction, rendering, and audience compatibility helpers.
 - [ ] `internal/activitypub/renderer`: actor, note, collection, emoji, follow,
       like, delete, update, accept, reject, undo renderers.
 - [ ] `internal/activitypub/performer`: activity dispatch and handlers.
@@ -351,6 +353,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement basic note storage.
 - [ ] Implement full note resolver.
 - [x] Implement initial audience parser.
+- [x] Extract AP note mentions, hashtags, and emoji tags.
 - [ ] Implement HTML to MFM conversion.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 
