@@ -20,18 +20,22 @@ type NoteRepository struct {
 }
 
 type noteDocument struct {
-	ID           string                 `bson:"_id,omitempty"`
-	URI          string                 `bson:"uri"`
-	AttributedTo string                 `bson:"attributedTo"`
-	AuthorID     string                 `bson:"authorId"`
-	Text         string                 `bson:"text"`
-	Visibility   string                 `bson:"visibility"`
-	MentionURIs  []string               `bson:"mentionUris,omitempty"`
-	Hashtags     []string               `bson:"hashtags,omitempty"`
-	Emojis       []emojiDocument        `bson:"emojis,omitempty"`
-	Raw          map[string]interface{} `bson:"raw"`
-	CreatedAt    time.Time              `bson:"createdAt"`
-	PublishedAt  *time.Time             `bson:"publishedAt,omitempty"`
+	ID             string                 `bson:"_id,omitempty"`
+	URI            string                 `bson:"uri"`
+	AttributedTo   string                 `bson:"attributedTo"`
+	AuthorID       string                 `bson:"authorId"`
+	Text           string                 `bson:"text"`
+	ContentWarning *string                `bson:"contentWarning,omitempty"`
+	Sensitive      bool                   `bson:"sensitive"`
+	InReplyToURI   string                 `bson:"inReplyToUri,omitempty"`
+	QuoteURI       string                 `bson:"quoteUri,omitempty"`
+	Visibility     string                 `bson:"visibility"`
+	MentionURIs    []string               `bson:"mentionUris,omitempty"`
+	Hashtags       []string               `bson:"hashtags,omitempty"`
+	Emojis         []emojiDocument        `bson:"emojis,omitempty"`
+	Raw            map[string]interface{} `bson:"raw"`
+	CreatedAt      time.Time              `bson:"createdAt"`
+	PublishedAt    *time.Time             `bson:"publishedAt,omitempty"`
 }
 
 type emojiDocument struct {
@@ -83,35 +87,43 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		return nil, err
 	}
 	return &domainnotes.Note{
-		ID:           doc.ID,
-		URI:          doc.URI,
-		AttributedTo: doc.AttributedTo,
-		AuthorID:     doc.AuthorID,
-		Text:         doc.Text,
-		Visibility:   domainnotes.Visibility(doc.Visibility),
-		MentionURIs:  doc.MentionURIs,
-		Hashtags:     doc.Hashtags,
-		Emojis:       toDomainEmojis(doc.Emojis),
-		Raw:          mapAny(doc.Raw),
-		CreatedAt:    doc.CreatedAt,
-		PublishedAt:  doc.PublishedAt,
+		ID:             doc.ID,
+		URI:            doc.URI,
+		AttributedTo:   doc.AttributedTo,
+		AuthorID:       doc.AuthorID,
+		Text:           doc.Text,
+		ContentWarning: doc.ContentWarning,
+		Sensitive:      doc.Sensitive,
+		InReplyToURI:   doc.InReplyToURI,
+		QuoteURI:       doc.QuoteURI,
+		Visibility:     domainnotes.Visibility(doc.Visibility),
+		MentionURIs:    doc.MentionURIs,
+		Hashtags:       doc.Hashtags,
+		Emojis:         toDomainEmojis(doc.Emojis),
+		Raw:            mapAny(doc.Raw),
+		CreatedAt:      doc.CreatedAt,
+		PublishedAt:    doc.PublishedAt,
 	}, nil
 }
 
 func fromNote(note domainnotes.Note) noteDocument {
 	return noteDocument{
-		ID:           note.ID,
-		URI:          note.URI,
-		AttributedTo: note.AttributedTo,
-		AuthorID:     note.AuthorID,
-		Text:         note.Text,
-		Visibility:   string(note.Visibility),
-		MentionURIs:  note.MentionURIs,
-		Hashtags:     note.Hashtags,
-		Emojis:       fromDomainEmojis(note.Emojis),
-		Raw:          mapInterface(note.Raw),
-		CreatedAt:    note.CreatedAt,
-		PublishedAt:  note.PublishedAt,
+		ID:             note.ID,
+		URI:            note.URI,
+		AttributedTo:   note.AttributedTo,
+		AuthorID:       note.AuthorID,
+		Text:           note.Text,
+		ContentWarning: note.ContentWarning,
+		Sensitive:      note.Sensitive,
+		InReplyToURI:   note.InReplyToURI,
+		QuoteURI:       note.QuoteURI,
+		Visibility:     string(note.Visibility),
+		MentionURIs:    note.MentionURIs,
+		Hashtags:       note.Hashtags,
+		Emojis:         fromDomainEmojis(note.Emojis),
+		Raw:            mapInterface(note.Raw),
+		CreatedAt:      note.CreatedAt,
+		PublishedAt:    note.PublishedAt,
 	}
 }
 

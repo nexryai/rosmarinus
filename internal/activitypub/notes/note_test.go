@@ -48,6 +48,53 @@ func TestConcordeNoteTextPrefersMisskeyMarkdownSource(t *testing.T) {
 	}
 }
 
+func TestConcordeNoteExtractsCWSensitiveReplyAndQuote(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":             "https://host1.test/notes/1",
+		"type":           "Note",
+		"attributedTo":   "https://host1.test/users/alice",
+		"to":             PublicAudience,
+		"summary":        "cw",
+		"sensitive":      true,
+		"inReplyTo":      "https://host1.test/notes/root",
+		"_misskey_quote": "https://host1.test/notes/quote",
+		"quoteUrl":       "https://host1.test/notes/other",
+		"content":        "hidden",
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.ContentWarning == nil || *note.ContentWarning != "cw" {
+		t.Fatalf("ContentWarning = %#v", note.ContentWarning)
+	}
+	if !note.Sensitive {
+		t.Fatalf("Sensitive = false")
+	}
+	if note.InReplyToURI != "https://host1.test/notes/root" {
+		t.Fatalf("InReplyToURI = %q", note.InReplyToURI)
+	}
+	if note.QuoteURI != "https://host1.test/notes/quote" {
+		t.Fatalf("QuoteURI = %q", note.QuoteURI)
+	}
+}
+
+func TestConcordeNoteEmptySummaryIsNotCW(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           PublicAudience,
+		"summary":      "",
+		"content":      "plain",
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.ContentWarning != nil {
+		t.Fatalf("ContentWarning = %#v", note.ContentWarning)
+	}
+}
+
 func TestConcordeNoteExtractsTags(t *testing.T) {
 	note, err := ParseRemoteNote(map[string]any{
 		"id":           "https://host1.test/notes/1",

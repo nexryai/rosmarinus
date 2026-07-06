@@ -213,17 +213,21 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		return fmt.Sprintf("skip: invalid note: %v", err), nil
 	}
 	note := domainnotes.Note{
-		URI:          parsed.URI,
-		AttributedTo: parsed.AttributedTo,
-		AuthorID:     actor.ID,
-		Text:         parsed.Text,
-		Visibility:   domainnotes.Visibility(parsed.Visibility),
-		MentionURIs:  parsed.MentionURIs,
-		Hashtags:     parsed.Hashtags,
-		Emojis:       parsed.Emojis,
-		Raw:          object,
-		CreatedAt:    time.Now().UTC(),
-		PublishedAt:  publishedAt(object),
+		URI:            parsed.URI,
+		AttributedTo:   parsed.AttributedTo,
+		AuthorID:       actor.ID,
+		Text:           parsed.Text,
+		ContentWarning: parsed.ContentWarning,
+		Sensitive:      parsed.Sensitive,
+		InReplyToURI:   parsed.InReplyToURI,
+		QuoteURI:       parsed.QuoteURI,
+		Visibility:     domainnotes.Visibility(parsed.Visibility),
+		MentionURIs:    parsed.MentionURIs,
+		Hashtags:       parsed.Hashtags,
+		Emojis:         parsed.Emojis,
+		Raw:            object,
+		CreatedAt:      time.Now().UTC(),
+		PublishedAt:    publishedAt(object),
 	}
 	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
 		return "", err

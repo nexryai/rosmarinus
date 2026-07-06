@@ -212,9 +212,13 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 			"actor": "https://remote.example/users/alice",
 			"to":    "https://www.w3.org/ns/activitystreams#Public",
 			"object": map[string]any{
-				"id":      "https://remote.example/notes/1",
-				"type":    "Note",
-				"content": "hello",
+				"id":             "https://remote.example/notes/1",
+				"type":           "Note",
+				"content":        "hello",
+				"summary":        "cw",
+				"sensitive":      true,
+				"inReplyTo":      "https://remote.example/notes/root",
+				"_misskey_quote": "https://remote.example/notes/quote",
 				"tag": []any{
 					map[string]any{"type": "Hashtag", "name": "#hello"},
 				},
@@ -240,6 +244,12 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 	}
 	if note.AttributedTo != remote.URI || note.Text != "hello" || note.Visibility != domainnotes.VisibilityPublic {
 		t.Fatalf("unexpected note: %+v", note)
+	}
+	if note.ContentWarning == nil || *note.ContentWarning != "cw" || !note.Sensitive {
+		t.Fatalf("unexpected cw/sensitive: %+v", note)
+	}
+	if note.InReplyToURI != "https://remote.example/notes/root" || note.QuoteURI != "https://remote.example/notes/quote" {
+		t.Fatalf("unexpected reply/quote: %+v", note)
 	}
 	if len(note.Hashtags) != 1 || note.Hashtags[0] != "hello" {
 		t.Fatalf("hashtags = %#v", note.Hashtags)

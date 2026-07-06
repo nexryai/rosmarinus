@@ -22,13 +22,17 @@ const (
 )
 
 type Note struct {
-	URI          string
-	AttributedTo string
-	Text         string
-	Visibility   Visibility
-	MentionURIs  []string
-	Hashtags     []string
-	Emojis       []domainnotes.Emoji
+	URI            string
+	AttributedTo   string
+	Text           string
+	ContentWarning *string
+	Sensitive      bool
+	InReplyToURI   string
+	QuoteURI       string
+	Visibility     Visibility
+	MentionURIs    []string
+	Hashtags       []string
+	Emojis         []domainnotes.Emoji
 }
 
 func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
@@ -51,13 +55,17 @@ func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
 		return nil, fmt.Errorf("note id host doesn't match actor host")
 	}
 	return &Note{
-		URI:          id,
-		AttributedTo: actorID,
-		Text:         noteText(object),
-		Visibility:   ParseVisibility(actorID, object["to"], object["cc"]),
-		MentionURIs:  ExtractMentionURIs(object["tag"]),
-		Hashtags:     ExtractHashtags(object["tag"]),
-		Emojis:       ExtractEmojis(object["tag"]),
+		URI:            id,
+		AttributedTo:   actorID,
+		Text:           noteText(object),
+		ContentWarning: contentWarning(object),
+		Sensitive:      boolField(object, "sensitive"),
+		InReplyToURI:   optionalAPID(object["inReplyTo"]),
+		QuoteURI:       quoteURI(object),
+		Visibility:     ParseVisibility(actorID, object["to"], object["cc"]),
+		MentionURIs:    ExtractMentionURIs(object["tag"]),
+		Hashtags:       ExtractHashtags(object["tag"]),
+		Emojis:         ExtractEmojis(object["tag"]),
 	}, nil
 }
 
@@ -108,6 +116,39 @@ func noteText(object map[string]any) string {
 	}
 	if content, ok := object["content"].(string); ok {
 		return content
+	}
+	return ""
+}
+
+func contentWarning(object map[string]any) *string {
+	summary, ok := object["summary"].(string)
+	if !ok || summary == "" {
+		return nil
+	}
+	return &summary
+}
+
+func boolField(object map[string]any, field string) bool {
+	v, ok := object[field].(bool)
+	return ok && v
+}
+
+func optionalAPID(value any) string {
+	if value == nil {
+		return ""
+	}
+	id, err := aptypes.GetOneAPID(value)
+	if err != nil {
+		return ""
+	}
+	return id
+}
+
+func quoteURI(object map[string]any) string {
+	for _, key := range []string{"_misskey_quote", "quoteUrl"} {
+		if uri, ok := object[key].(string); ok && uri != "" {
+			return uri
+		}
 	}
 	return ""
 }

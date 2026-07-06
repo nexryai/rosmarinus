@@ -13,24 +13,38 @@ func Render(note *domainnotes.Note) map[string]any {
 	if note.PublishedAt != nil {
 		published = *note.PublishedAt
 	}
+	summary := any(nil)
+	if note.ContentWarning != nil {
+		summary = *note.ContentWarning
+	}
+	inReplyTo := any(nil)
+	if note.InReplyToURI != "" {
+		inReplyTo = note.InReplyToURI
+	}
+	quote := any(nil)
+	if note.QuoteURI != "" {
+		quote = note.QuoteURI
+	}
 	return withContext(map[string]any{
 		"id":               note.URI,
 		"type":             "Note",
 		"attributedTo":     note.AttributedTo,
-		"summary":          nil,
+		"summary":          summary,
 		"content":          note.Text,
 		"_misskey_content": note.Text,
 		"source": map[string]any{
 			"content":   note.Text,
 			"mediaType": "text/x.misskeymarkdown",
 		},
-		"published":  published.UTC().Format(time.RFC3339),
-		"to":         to,
-		"cc":         cc,
-		"inReplyTo":  nil,
-		"attachment": []any{},
-		"sensitive":  false,
-		"tag":        renderTags(note),
+		"_misskey_quote": quote,
+		"quoteUrl":       quote,
+		"published":      published.UTC().Format(time.RFC3339),
+		"to":             to,
+		"cc":             cc,
+		"inReplyTo":      inReplyTo,
+		"attachment":     []any{},
+		"sensitive":      note.Sensitive || note.ContentWarning != nil,
+		"tag":            renderTags(note),
 	})
 }
 

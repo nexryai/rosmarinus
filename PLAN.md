@@ -125,6 +125,7 @@ same style as Concorde.
       or `specified`.
 - [x] Extract AP mentions and hashtags.
 - [ ] Resolve attachments as media records.
+- [x] Store and render basic reply and quote URIs.
 - [ ] Resolve replies and quotes.
 - [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
       `source.mediaType = text/x.misskeymarkdown`.
@@ -132,11 +133,11 @@ same style as Concorde.
       `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`,
       `quoteUrl`, and `_misskey_talk`.
 - [ ] Convert remote HTML to MFM-compatible text.
-- [x] Store basic URI, attributedTo, author, text, visibility, mentions,
-      hashtags, emojis, raw AP object, createdAt, and publishedAt for remote
-      notes.
-- [ ] Store content warning, sensitive flag, files, polls, emoji tags, URL,
-      visibility, visible users, reply, renote, and denormalized author fields.
+- [x] Store basic URI, attributedTo, author, text, content warning, sensitive,
+      reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP
+      object, createdAt, and publishedAt for remote notes.
+- [ ] Store files, polls, URL, visible users, resolved reply/renote, and
+      denormalized author fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
       where Rosmarinus owns those writes.
 
@@ -354,6 +355,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Implement full note resolver.
 - [x] Implement initial audience parser.
 - [x] Extract AP note mentions, hashtags, and emoji tags.
+- [x] Store and render note CW, sensitive, inReplyTo, and quote URLs.
 - [ ] Implement HTML to MFM conversion.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 

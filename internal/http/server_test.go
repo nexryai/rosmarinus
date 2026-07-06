@@ -204,18 +204,22 @@ func TestPublicKeyByID(t *testing.T) {
 }
 
 func TestNoteByID(t *testing.T) {
+	cw := "cw"
 	req := httptest.NewRequest(http.MethodGet, "/notes/note-id", nil)
 	req.Header.Set("Accept", "application/activity+json")
 	rec := httptest.NewRecorder()
 	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
-		ID:           "note-id",
-		URI:          "https://remote.example/notes/1",
-		AttributedTo: "https://remote.example/users/alice",
-		Text:         "hello",
-		Visibility:   domainnotes.VisibilityPublic,
-		Hashtags:     []string{"hello"},
-		MentionURIs:  []string{"https://remote.example/users/bob"},
-		CreatedAt:    time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
+		ID:             "note-id",
+		URI:            "https://remote.example/notes/1",
+		AttributedTo:   "https://remote.example/users/alice",
+		Text:           "hello",
+		ContentWarning: &cw,
+		InReplyToURI:   "https://remote.example/notes/root",
+		QuoteURI:       "https://remote.example/notes/quote",
+		Visibility:     domainnotes.VisibilityPublic,
+		Hashtags:       []string{"hello"},
+		MentionURIs:    []string{"https://remote.example/users/bob"},
+		CreatedAt:      time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}}
 	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -229,6 +233,15 @@ func TestNoteByID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"_misskey_content":"hello"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"summary":"cw"`) || !strings.Contains(rec.Body.String(), `"sensitive":true`) {
+		t.Fatalf("unexpected cw body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"inReplyTo":"https://remote.example/notes/root"`) {
+		t.Fatalf("unexpected reply body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"_misskey_quote":"https://remote.example/notes/quote"`) || !strings.Contains(rec.Body.String(), `"quoteUrl":"https://remote.example/notes/quote"`) {
+		t.Fatalf("unexpected quote body: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `"type":"Hashtag"`) || !strings.Contains(rec.Body.String(), `"name":"#hello"`) {
 		t.Fatalf("unexpected tag body: %s", rec.Body.String())
