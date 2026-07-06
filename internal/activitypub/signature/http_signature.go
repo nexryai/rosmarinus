@@ -2,6 +2,7 @@ package signature
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -112,6 +113,23 @@ func VerifyRSA(sig HTTPSignature, publicKeyPEM string) error {
 	return nil
 }
 
+func SignRSA(signingString string, privateKeyPEM string) ([]byte, error) {
+	key, err := parseRSAPrivateKey(privateKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256([]byte(signingString))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	if err != nil {
+		return nil, fmt.Errorf("sign rsa signature: %w", err)
+	}
+	return sig, nil
+}
+
+func SignatureHeader(keyID string, headers []string, signature []byte) string {
+	return fmt.Sprintf(`keyId="%s",algorithm="rsa-sha256",headers="%s",signature="%s"`, keyID, strings.Join(headers, " "), base64.StdEncoding.EncodeToString(signature))
+}
+
 func parseSignatureParams(header string) (map[string]string, error) {
 	params := map[string]string{}
 	for _, part := range splitComma(header) {
@@ -191,6 +209,25 @@ func parseRSAPublicKey(publicKeyPEM string) (*rsa.PublicKey, error) {
 	rsaKey, err := x509.ParsePKCS1PublicKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("parse rsa public key: %w", err)
+	}
+	return rsaKey, nil
+}
+
+func parseRSAPrivateKey(privateKeyPEM string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(privateKeyPEM))
+	if block == nil {
+		return nil, fmt.Errorf("decode private key pem")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse rsa private key: %w", err)
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("private key is not rsa")
 	}
 	return rsaKey, nil
 }

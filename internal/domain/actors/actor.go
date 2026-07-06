@@ -22,3 +22,10 @@ type Lookup interface {
 	FindLocalByID(context.Context, string) (*Actor, error)
 	FindLocalByUsername(context.Context, string) (*Actor, error)
 }
+
+type Repository interface {
+	Lookup
+	FindByURI(context.Context, string) (*Actor, error)
+	FindByPublicKeyID(context.Context, string) (*Actor, error)
+	UpsertRemoteActor(context.Context, Actor) (*Actor, error)
+}

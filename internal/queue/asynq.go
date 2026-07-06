@@ -98,6 +98,18 @@ func (s *AsynqServer) RegisterNoopHandlers() {
 	}
 }
 
+func (s *AsynqServer) RegisterSystemNoopHandlers() {
+	for _, typ := range []string{TaskMetadata, TaskMedia, TaskPollEnded, TaskAccountDelete} {
+		taskType := typ
+		s.HandleFunc(taskType, func(ctx context.Context, task *asynq.Task) error {
+			if s.logger != nil {
+				s.logger.Printf("queue: no-op handler processed task type=%s", taskType)
+			}
+			return nil
+		})
+	}
+}
+
 func (s *AsynqServer) Start() error {
 	if s.logger != nil {
 		s.logger.Printf("queue: starting asynq worker")

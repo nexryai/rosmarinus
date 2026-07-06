@@ -64,11 +64,11 @@ same style as Concorde.
       hs2019 forms.
 - [x] Require signed `(request-target)`, `digest`, `host`, and `date` for POST.
 - [x] Verify `Host` against the configured local host.
-- [ ] Resolve signer by `keyId`; fall back to resolving `activity.actor`.
-- [ ] Reject old `acct:` key IDs.
-- [ ] Verify signature using the actor public key.
-- [ ] Require signer actor URI to match `activity.actor`.
-- [ ] Require `activity.id` host to match signer host.
+- [x] Resolve signer by `keyId`; fall back to resolving `activity.actor`.
+- [x] Reject old `acct:` key IDs.
+- [x] Verify signature using the actor public key.
+- [x] Require signer actor URI to match `activity.actor`.
+- [x] Require `activity.id` host to match signer host.
 - [ ] Update instance communication stats after accepted requests.
 - [x] Enqueue the activity and return `202 Accepted`.
 
@@ -79,7 +79,9 @@ same style as Concorde.
 - [ ] `Announce`: resolve target note, check visibility, create renote.
 - [ ] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note, extract emoji
       tags, create reaction.
-- [ ] `Follow`: remote actor follows local actor, with block/lock/request logic.
+- [x] `Follow`: basic remote actor follows local actor path, enqueueing
+      `Accept(Follow)` for unlocked local actors.
+- [ ] `Follow`: block/lock/request persistence logic.
 - [ ] `Accept`: accept local outgoing follow requests.
 - [ ] `Reject`: reject local outgoing follow requests.
 - [ ] `Undo`: support undo follow, block, like, announce, and accept.
@@ -88,19 +90,21 @@ same style as Concorde.
 - [ ] `Block`: create local block state for remote actor against local actor.
 - [ ] `Flag`: store abuse reports for local users mentioned in the object list.
 - [ ] `Add` and `Remove`: inspect Concorde handling before deciding exact scope.
-- [ ] Refuse to ingest `Collection` / `OrderedCollection` as a single activity.
+- [x] Refuse to ingest `Collection` / `OrderedCollection` as a single activity.
 
 ### Actor Resolution
 
 - [x] Resolve local actors from MongoDB.
-- [ ] Resolve remote actors using signed GET when possible.
-- [ ] Validate actor type: `Person`, `Service`, `Group`, `Organization`,
+- [x] Resolve remote actors using signed GET when possible.
+- [x] Validate actor type: `Person`, `Service`, `Group`, `Organization`,
       `Application`.
-- [ ] Require actor `id`, `inbox`, and `outbox` to belong to the expected host.
-- [ ] Validate `sharedInbox`, `followers`, `following`, and public key host.
-- [ ] Validate `preferredUsername` against Concorde-compatible rules.
-- [ ] Truncate display name and summary to Concorde-compatible limits.
-- [ ] Store remote public keys by `keyId`.
+- [x] Require actor `id`, `inbox`, and `outbox` to belong to the expected host.
+- [x] Validate `sharedInbox` and public key host.
+- [ ] Validate `followers` and `following` host.
+- [x] Validate `preferredUsername` against Concorde-compatible rules.
+- [x] Truncate display name to Concorde-compatible limits.
+- [ ] Truncate and store summary to Concorde-compatible limits.
+- [x] Store remote public keys by `keyId`.
 - [ ] Store `inbox`, `sharedInbox`, `followersUri`, `featured`, bot/cat flags,
       discoverability, profile fields, birthday, location, avatar, banner, and
       custom emoji names where available.
@@ -147,12 +151,12 @@ same style as Concorde.
 
 ### Delivery
 
-- [ ] Sign POST requests with `rsa-sha256`.
-- [ ] Include `Date`, `Host`, `Content-Type`, `Digest`, `Signature`, and
+- [x] Sign POST requests with `rsa-sha256`.
+- [x] Include `Date`, `Host`, `Content-Type`, `Digest`, `Signature`, and
       `User-Agent`.
-- [ ] Sign GET requests with `Accept`, `Date`, `Host`, and `Signature`.
-- [ ] Use `(request-target) date host digest` for POST signing strings.
-- [ ] Use `(request-target) date host accept` for GET signing strings.
+- [x] Sign GET requests with `Accept`, `Date`, `Host`, and `Signature`.
+- [x] Use `(request-target) date host digest` for POST signing strings.
+- [x] Use `(request-target) date host accept` for GET signing strings.
 - [ ] Build delivery inbox lists from followers and direct recipients.
 - [ ] Prefer `sharedInbox` and deduplicate inboxes.
 - [ ] Skip blocked and suspended hosts.
@@ -203,7 +207,7 @@ flags, but that is an operational option, not the default architecture.
       services.
 - [x] Create one Asynq server in the same process for `inbox`, `deliver`,
       `system`, `poll-ended`, `media`, `metadata`, and `account-delete` jobs.
-- [ ] Register handlers through DI so job handlers use the same repositories,
+- [x] Register handlers through DI so job handlers use the same repositories,
       resolver, signer, renderer, and logger wiring as HTTP handlers.
 - [x] Support graceful shutdown that stops accepting HTTP requests, stops
       enqueueing new jobs, drains or stops Asynq workers, then closes Redis and
@@ -229,7 +233,7 @@ flags, but that is an operational option, not the default architecture.
       `deliver` defaults to 1 minute, `inbox` defaults to 5 minutes.
 - [ ] Dead-letter or failed-job inspection.
 - [ ] Ability to promote delayed `deliver` and `inbox` jobs for operations.
-- [ ] Structured payload versioning for safe migrations.
+- [x] Structured payload versioning for safe migrations.
 
 ### Redis Locks And Cache
 
@@ -280,8 +284,9 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `internal/app`: dependency wiring.
 - [ ] `internal/http`: server setup, middleware, route registration.
 - [ ] `internal/activitypub/types`: AP object structs and helpers.
-- [ ] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
-- [ ] `internal/activitypub/resolver`: AP resolver and local URI resolver.
+- [x] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
+- [x] `internal/activitypub/client`: signed AP GET/POST HTTP client.
+- [x] `internal/activitypub/resolver`: AP resolver and local URI resolver.
 - [ ] `internal/activitypub/renderer`: actor, note, collection, emoji, follow,
       like, delete, update, accept, reject, undo renderers.
 - [ ] `internal/activitypub/performer`: activity dispatch and handlers.
@@ -289,7 +294,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `internal/domain`: actor, note, follow, reaction, emoji, media, instance
       domain services.
 - [ ] `internal/store/mongo`: MongoDB repositories and index setup.
-- [ ] `internal/queue`: Redis queue interfaces and implementation.
+- [x] `internal/queue`: Redis queue interfaces and implementation.
 - [ ] `internal/cache`: Redis-backed caches and locks.
 - [ ] `internal/mfm`: MFM/HTML conversion compatibility layer.
 
@@ -323,14 +328,14 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Implement remote WebFinger client.
 - [x] Implement actor renderer and `/users/{id}`.
 - [x] Implement `/users/{id}/publickey`.
-- [ ] Implement remote actor create/update.
-- [ ] Implement signed remote AP GET.
-- [ ] Add actor validation tests based on Concorde edge cases.
+- [x] Implement remote actor create/update baseline.
+- [x] Implement signed remote AP GET.
+- [x] Add actor validation tests based on Concorde edge cases.
 
 ### Phase 3: Inbox MVP
 
 - [x] Implement `/inbox` and `/users/{id}/inbox`.
-- [ ] Validate digest, signature, host, signer, and activity host.
+- [x] Validate digest, signature, host, signer, and activity host.
 - [x] Enqueue `inbox` jobs.
 - [ ] Implement `Create Note` handler.
 - [ ] Implement note resolver and note storage.
@@ -342,14 +347,18 @@ flags, but that is an operational option, not the default architecture.
 
 - [ ] Implement note renderer.
 - [ ] Implement create/announce/like/follow renderers.
-- [ ] Implement delivery manager with sharedInbox dedupe.
-- [ ] Implement `deliver` worker.
+- [x] Implement basic `Accept(Follow)` delivery to remote `sharedInbox` or
+      `inbox`.
+- [x] Implement `deliver` worker.
+- [ ] Implement delivery manager with sharedInbox dedupe for followers and
+      direct recipients.
 - [ ] Update instance send stats.
 - [ ] Add delivery signing and retry tests.
 
 ### Phase 5: Social Graph And Reactions
 
-- [ ] Implement `Follow`, `Accept`, `Reject`, and `Undo Follow`.
+- [x] Implement basic inbound `Follow` -> outbound `Accept`.
+- [ ] Implement full `Follow`, `Accept`, `Reject`, and `Undo Follow`.
 - [ ] Implement follow request storage and locked-account behavior.
 - [ ] Implement `Like`, `EmojiReaction`, and undo reaction.
 - [ ] Implement `Announce` and undo announce.
@@ -390,12 +399,39 @@ workers are implemented enough to exchange basic activities.
       `PUBLIC_URL=https://rosmarinus.example.test`,
       `LOCAL_ACTOR_USERNAME=relay`,
       `LOCAL_ACTOR_TYPE=Service`.
-- [ ] Run a separate Misskey test instance with its own PostgreSQL and Redis.
-- [ ] Put both services behind HTTPS-capable local reverse proxy names. Use
-      real DNS or local host mapping, but make sure each service can reach the
-      other's public HTTPS URL.
+- [ ] Run a separate Misskey/Concorde test instance with its own PostgreSQL and
+      Redis. The archived `./concorde/docker-compose.yml` and
+      `./concorde/packages/backend/test/docker-compose.yml` are useful
+      references, but should not be edited.
+- [ ] Put both services behind local DNS names and a reverse proxy. A practical
+      local-only topology is:
+      `rosmarinus.example.test -> 127.0.0.1:<rosmarinus-proxy-port>` and
+      `misskey.example.test -> 127.0.0.1:<misskey-proxy-port>`.
+- [ ] Prefer HTTPS even for local tests. If HTTPS is too costly for the first
+      smoke test, run an HTTP-only test with explicit notes that it may miss
+      implementations that require HTTPS in actor/object IDs.
 - [ ] Do not use `localhost` in ActivityPub object IDs during federation tests;
       many implementations reject or mishandle it.
+
+### Local Misskey Test Execution Draft
+
+- [ ] Prepare a disposable Misskey/Concorde config with:
+      `url: http(s)://misskey.example.test`,
+      Postgres pointing to the test DB,
+      Redis pointing to the test Redis,
+      and federation enabled.
+- [ ] Use the available JS package manager (`yarn`, `pnpm`, or `npm`) only in
+      the Misskey/Concorde checkout or a disposable test checkout. Do not modify
+      `./concorde` source files.
+- [ ] Start Misskey web and queue worker locally, then create a local Misskey
+      test account through its setup flow or seed script.
+- [ ] Start Rosmarinus with `RUN_HTTP=true` and `RUN_WORKERS=true` so inbox and
+      deliver queues run inside the same binary.
+- [ ] Use Misskey search/follow UI or API to follow
+      `@relay@rosmarinus.example.test`.
+- [ ] Confirm Rosmarinus enqueues and processes:
+      `inbox Follow -> signature verify -> deliver Accept`.
+- [ ] Confirm Misskey marks the follow as accepted.
 
 ### Rosmarinus Visibility Checks From Misskey
 

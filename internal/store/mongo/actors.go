@@ -84,6 +84,53 @@ func (r *ActorRepository) FindLocalByUsername(ctx context.Context, username stri
 	})
 }
 
+func (r *ActorRepository) FindByURI(ctx context.Context, uri string) (*actors.Actor, error) {
+	return r.findOne(ctx, bson.M{
+		"uri":         uri,
+		"isSuspended": false,
+	})
+}
+
+func (r *ActorRepository) FindByPublicKeyID(ctx context.Context, keyID string) (*actors.Actor, error) {
+	return r.findOne(ctx, bson.M{
+		"publicKeyId": keyID,
+		"isSuspended": false,
+	})
+}
+
+func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
+	if actor.URI == "" {
+		return nil, fmt.Errorf("remote actor uri is required")
+	}
+	if actor.Host == nil || *actor.Host == "" {
+		return nil, fmt.Errorf("remote actor host is required")
+	}
+	actor.UsernameLower = strings.ToLower(actor.Username)
+	doc := fromActor(actor)
+	_, err := r.collection.UpdateOne(ctx, bson.M{"uri": actor.URI}, bson.M{
+		"$set": bson.M{
+			"username":      doc.Username,
+			"usernameLower": doc.UsernameLower,
+			"name":          doc.Name,
+			"type":          doc.Type,
+			"host":          doc.Host,
+			"inbox":         doc.Inbox,
+			"sharedInbox":   doc.SharedInbox,
+			"publicKeyId":   doc.PublicKeyID,
+			"publicKeyPem":  doc.PublicKeyPEM,
+			"isSuspended":   doc.IsSuspended,
+		},
+		"$setOnInsert": bson.M{
+			"_id": doc.ID,
+			"uri": doc.URI,
+		},
+	}, options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		return nil, err
+	}
+	return r.FindByURI(ctx, actor.URI)
+}
+
 func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.Actor, error) {
 	var doc actorDocument
 	if err := r.collection.FindOne(ctx, filter).Decode(&doc); err != nil {

@@ -17,6 +17,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 
+	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
+	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
 	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -34,6 +36,9 @@ type App struct {
 	redisClient *redis.Client
 	apLocker    *cache.Locker
 	actors      *mongostore.ActorRepository
+	localActor  *actors.Actor
+	apClient    *apclient.Client
+	apWorker    *apworker.Handler
 	queueClient *queue.AsynqClient
 	queueServer *queue.AsynqServer
 	httpServer  *http.Server
@@ -82,8 +87,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		return nil, fmt.Errorf("bootstrap mongodb indexes: %w", err)
 	}
 	actorRepo := mongostore.NewActorRepository(mongoDB)
+	var localActor *actors.Actor
 	if cfg.LocalActorUsername != "" {
-		if _, err := actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg)); err != nil {
+		localActor, err = actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg))
+		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			return nil, fmt.Errorf("bootstrap local actor: %w", err)
 		}
@@ -107,6 +114,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		DB:       cfg.RedisDB,
 	}
 	queueClient := queue.NewAsynqClient(redisCfg)
+	apClient := apclient.New(cfg, nil)
+	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
+	apWorker := apworker.New(cfg, logger, actorRepo, queueClient, apClient, localActor)
 
 	return &App{
 		cfg:         cfg,
@@ -116,8 +126,11 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		redisClient: redisClient,
 		apLocker:    cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
 		actors:      actorRepo,
+		localActor:  localActor,
+		apClient:    apClient,
+		apWorker:    apWorker,
 		queueClient: queueClient,
-		queueServer: queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger),
+		queueServer: queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           httpserver.NewHandler(cfg, logger, actorRepo, queueClient),
@@ -129,7 +142,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 func (a *App) Start(ctx context.Context) error {
 	_ = ctx
 	if a.cfg.RunWorkers {
-		a.queueServer.RegisterNoopHandlers()
+		a.apWorker.Register(a.queueServer)
+		a.queueServer.RegisterSystemNoopHandlers()
 		go func() {
 			if err := a.queueServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Printf("queue worker stopped: %v", err)
