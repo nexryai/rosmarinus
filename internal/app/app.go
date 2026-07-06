@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
+	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
@@ -31,6 +33,7 @@ type App struct {
 	mongoDB     *mongo.Database
 	redisClient *redis.Client
 	apLocker    *cache.Locker
+	actors      *mongostore.ActorRepository
 	queueClient *queue.AsynqClient
 	queueServer *queue.AsynqServer
 	httpServer  *http.Server
@@ -78,6 +81,14 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		_ = mongoClient.Disconnect(context.Background())
 		return nil, fmt.Errorf("bootstrap mongodb indexes: %w", err)
 	}
+	actorRepo := mongostore.NewActorRepository(mongoDB)
+	if cfg.LocalActorUsername != "" {
+		if _, err := actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg)); err != nil {
+			_ = mongoClient.Disconnect(context.Background())
+			return nil, fmt.Errorf("bootstrap local actor: %w", err)
+		}
+		logger.Printf("activitypub: local actor ready username=%s", cfg.LocalActorUsername)
+	}
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -95,6 +106,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	}
+	queueClient := queue.NewAsynqClient(redisCfg)
 
 	return &App{
 		cfg:         cfg,
@@ -103,11 +115,12 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		mongoDB:     mongoDB,
 		redisClient: redisClient,
 		apLocker:    cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
-		queueClient: queue.NewAsynqClient(redisCfg),
+		actors:      actorRepo,
+		queueClient: queueClient,
 		queueServer: queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger),
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandler(cfg, logger, mongostore.NewActorRepository(mongoDB)),
+			Handler:           httpserver.NewHandler(cfg, logger, actorRepo, queueClient),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil
@@ -160,4 +173,29 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func localActorFromConfig(cfg config.Config) actors.Actor {
+	base := strings.TrimRight(cfg.PublicURL, "/")
+	id := cfg.LocalActorID
+	if id == "" {
+		id = cfg.LocalActorUsername
+	}
+	actorURI := base + "/users/" + id
+	name := cfg.LocalActorDisplayName
+	if name == "" {
+		name = cfg.LocalActorUsername
+	}
+	return actors.Actor{
+		ID:            id,
+		Username:      cfg.LocalActorUsername,
+		UsernameLower: strings.ToLower(cfg.LocalActorUsername),
+		Name:          name,
+		Type:          cfg.LocalActorType,
+		URI:           actorURI,
+		Inbox:         actorURI + "/inbox",
+		SharedInbox:   base + "/inbox",
+		PublicKeyID:   actorURI + "#main-key",
+		IsSuspended:   false,
+	}
 }

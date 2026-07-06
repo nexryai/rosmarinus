@@ -6,8 +6,15 @@ type Actor struct {
 	ID            string
 	Username      string
 	UsernameLower string
+	Name          string
+	Type          string
 	Host          *string
 	URI           string
+	Inbox         string
+	SharedInbox   string
+	PublicKeyID   string
+	PublicKeyPEM  string
+	PrivateKeyPEM string
 	IsSuspended   bool
 }
 

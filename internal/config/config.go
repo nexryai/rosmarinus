@@ -19,6 +19,11 @@ type Config struct {
 	HTTPAddr  string
 	UserAgent string
 
+	LocalActorUsername    string
+	LocalActorID          string
+	LocalActorDisplayName string
+	LocalActorType        string
+
 	MongoURI      string
 	MongoDatabase string
 
@@ -49,15 +54,19 @@ func LoadFromEnv() (Config, error) {
 
 func Load(lookup LookupFunc) (Config, error) {
 	cfg := Config{
-		Host:          get(lookup, "HOST", "localhost:3000"),
-		PublicURL:     get(lookup, "PUBLIC_URL", "http://localhost:3000"),
-		HTTPAddr:      get(lookup, "HTTP_ADDR", ":3000"),
-		MongoURI:      get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
-		MongoDatabase: get(lookup, "MONGO_DATABASE", "rosmarinus"),
-		RedisAddr:     get(lookup, "REDIS_ADDR", "localhost:6379"),
-		RedisPassword: get(lookup, "REDIS_PASSWORD", ""),
-		UserAgent:     get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
-		WorkerQueues:  splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
+		Host:                  get(lookup, "HOST", "localhost:3000"),
+		PublicURL:             get(lookup, "PUBLIC_URL", "http://localhost:3000"),
+		HTTPAddr:              get(lookup, "HTTP_ADDR", ":3000"),
+		LocalActorUsername:    get(lookup, "LOCAL_ACTOR_USERNAME", ""),
+		LocalActorID:          get(lookup, "LOCAL_ACTOR_ID", ""),
+		LocalActorDisplayName: get(lookup, "LOCAL_ACTOR_DISPLAY_NAME", ""),
+		LocalActorType:        get(lookup, "LOCAL_ACTOR_TYPE", "Service"),
+		MongoURI:              get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
+		MongoDatabase:         get(lookup, "MONGO_DATABASE", "rosmarinus"),
+		RedisAddr:             get(lookup, "REDIS_ADDR", "localhost:6379"),
+		RedisPassword:         get(lookup, "REDIS_PASSWORD", ""),
+		UserAgent:             get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
+		WorkerQueues:          splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
 			MaxRetry:      getInt(lookup, "INBOX_MAX_RETRY", 10),
@@ -121,6 +130,16 @@ func (c Config) Validate() error {
 	if c.InboxQueue.Timeout <= 0 || c.DeliverQueue.Timeout <= 0 {
 		return fmt.Errorf("queue timeouts must be positive")
 	}
+	if c.LocalActorUsername != "" {
+		if !validLocalUsername(c.LocalActorUsername) {
+			return fmt.Errorf("LOCAL_ACTOR_USERNAME must match ActivityPub username rules")
+		}
+		switch c.LocalActorType {
+		case "Person", "Service", "Application", "Group", "Organization":
+		default:
+			return fmt.Errorf("LOCAL_ACTOR_TYPE must be Person, Service, Application, Group, or Organization")
+		}
+	}
 	return nil
 }
 
@@ -181,4 +200,20 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func validLocalUsername(username string) bool {
+	if username == "" || len(username) > 128 {
+		return false
+	}
+	for i, r := range username {
+		ok := r == '_' || r == '-' || r == '.' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
+		if !ok {
+			return false
+		}
+		if (i == 0 || i == len(username)-1) && (r == '-' || r == '.') {
+			return false
+		}
+	}
+	return true
 }

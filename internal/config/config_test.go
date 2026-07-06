@@ -50,3 +50,34 @@ func TestLoadRejectsEmptyRequiredValues(t *testing.T) {
 		t.Fatalf("expected empty HOST to fail")
 	}
 }
+
+func TestLoadLocalActorConfig(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		switch key {
+		case "LOCAL_ACTOR_USERNAME":
+			return "relay_bot", true
+		case "LOCAL_ACTOR_TYPE":
+			return "Service", true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.LocalActorUsername != "relay_bot" || cfg.LocalActorType != "Service" {
+		t.Fatalf("unexpected local actor config: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidLocalActorUsername(t *testing.T) {
+	_, err := Load(func(key string) (string, bool) {
+		if key == "LOCAL_ACTOR_USERNAME" {
+			return ".bad", true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatalf("expected invalid LOCAL_ACTOR_USERNAME to fail")
+	}
+}

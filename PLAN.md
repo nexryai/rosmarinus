@@ -35,11 +35,11 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 
 ### ActivityPub Public Endpoints
 
-- [ ] `POST /inbox`
-- [ ] `POST /users/{user}/inbox`
-- [ ] `GET /users/{user}`
-- [ ] `GET /@{user}`
-- [ ] `GET /users/{user}/publickey`
+- [x] `POST /inbox`
+- [x] `POST /users/{user}/inbox`
+- [x] `GET /users/{user}`
+- [x] `GET /@{user}`
+- [x] `GET /users/{user}/publickey`
 - [ ] `GET /users/{user}/outbox`
 - [ ] `GET /users/{user}/followers`
 - [ ] `GET /users/{user}/following`
@@ -56,21 +56,21 @@ same style as Concorde.
 
 ### Inbox Validation
 
-- [ ] Read raw request body and limit it, initially to Concorde's 64 KiB.
-- [ ] Parse JSON after preserving the raw body.
-- [ ] Require and verify `Digest: SHA-256=...`.
-- [ ] Parse HTTP Signature.
-- [ ] Accept only supported algorithms such as `rsa-sha256` and compatible
+- [x] Read raw request body and limit it, initially to Concorde's 64 KiB.
+- [x] Parse JSON after preserving the raw body.
+- [x] Require and verify `Digest: SHA-256=...`.
+- [x] Parse HTTP Signature.
+- [x] Accept only supported algorithms such as `rsa-sha256` and compatible
       hs2019 forms.
-- [ ] Require signed `(request-target)`, `digest`, `host`, and `date` for POST.
-- [ ] Verify `Host` against the configured local host.
+- [x] Require signed `(request-target)`, `digest`, `host`, and `date` for POST.
+- [x] Verify `Host` against the configured local host.
 - [ ] Resolve signer by `keyId`; fall back to resolving `activity.actor`.
 - [ ] Reject old `acct:` key IDs.
 - [ ] Verify signature using the actor public key.
 - [ ] Require signer actor URI to match `activity.actor`.
 - [ ] Require `activity.id` host to match signer host.
 - [ ] Update instance communication stats after accepted requests.
-- [ ] Enqueue the activity and return `202 Accepted`.
+- [x] Enqueue the activity and return `202 Accepted`.
 
 ### Activity Processing
 
@@ -92,7 +92,7 @@ same style as Concorde.
 
 ### Actor Resolution
 
-- [ ] Resolve local actors from MongoDB.
+- [x] Resolve local actors from MongoDB.
 - [ ] Resolve remote actors using signed GET when possible.
 - [ ] Validate actor type: `Person`, `Service`, `Group`, `Organization`,
       `Application`.
@@ -321,17 +321,17 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement WebFinger local responses.
 - [x] Implement NodeInfo responses.
 - [ ] Implement remote WebFinger client.
-- [ ] Implement actor renderer and `/users/{id}`.
-- [ ] Implement `/users/{id}/publickey`.
+- [x] Implement actor renderer and `/users/{id}`.
+- [x] Implement `/users/{id}/publickey`.
 - [ ] Implement remote actor create/update.
 - [ ] Implement signed remote AP GET.
 - [ ] Add actor validation tests based on Concorde edge cases.
 
 ### Phase 3: Inbox MVP
 
-- [ ] Implement `/inbox` and `/users/{id}/inbox`.
+- [x] Implement `/inbox` and `/users/{id}/inbox`.
 - [ ] Validate digest, signature, host, signer, and activity host.
-- [ ] Enqueue `inbox` jobs.
+- [x] Enqueue `inbox` jobs.
 - [ ] Implement `Create Note` handler.
 - [ ] Implement note resolver and note storage.
 - [ ] Implement audience parser.
@@ -377,6 +377,67 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Add compatibility fixtures from Concorde for ActivityPub render/parse.
 - [ ] Document operational Redis and MongoDB settings.
 
+## Real Federation Test Plan
+
+Use this once actor resolution, signed GET, Create Note ingestion, and delivery
+workers are implemented enough to exchange basic activities.
+
+### Local Test Topology
+
+- [ ] Run MongoDB and Redis for Rosmarinus.
+- [ ] Run Rosmarinus as a single binary with:
+      `HOST=rosmarinus.example.test`,
+      `PUBLIC_URL=https://rosmarinus.example.test`,
+      `LOCAL_ACTOR_USERNAME=relay`,
+      `LOCAL_ACTOR_TYPE=Service`.
+- [ ] Run a separate Misskey test instance with its own PostgreSQL and Redis.
+- [ ] Put both services behind HTTPS-capable local reverse proxy names. Use
+      real DNS or local host mapping, but make sure each service can reach the
+      other's public HTTPS URL.
+- [ ] Do not use `localhost` in ActivityPub object IDs during federation tests;
+      many implementations reject or mishandle it.
+
+### Rosmarinus Visibility Checks From Misskey
+
+- [ ] From Misskey, search `@relay@rosmarinus.example.test`.
+- [ ] Confirm Misskey performs WebFinger and receives a `self` link.
+- [ ] Confirm Misskey fetches `GET /users/{id}` and accepts the actor object.
+- [ ] Confirm Misskey fetches `GET /users/{id}/publickey` or reads `publicKey`
+      from the actor object.
+- [ ] Confirm Rosmarinus access logs show the expected WebFinger and actor fetch
+      sequence.
+
+### Inbound Federation Checks
+
+- [ ] From Misskey, follow the Rosmarinus actor.
+- [ ] Confirm Rosmarinus receives `Follow` at `/inbox` or `/users/{id}/inbox`.
+- [ ] Confirm digest, HTTP Signature parsing, host validation, and queue enqueue
+      succeed.
+- [ ] After signer resolution is implemented, confirm signature verification
+      succeeds against the Misskey actor public key.
+- [ ] Post a public Misskey note mentioning the Rosmarinus actor.
+- [ ] Confirm Rosmarinus receives `Create` and stores the remote actor/note.
+
+### Outbound Federation Checks
+
+- [ ] Have Rosmarinus send an `Accept(Follow)` back to Misskey.
+- [ ] Confirm Misskey marks the follow request accepted.
+- [ ] Have Rosmarinus send a public `Create(Note)` to Misskey followers.
+- [ ] Confirm Misskey displays or at least stores the note.
+- [ ] Have Rosmarinus send `Like` or `Announce` for a Misskey note.
+- [ ] Confirm Misskey accepts the activity and no retry loop remains in Asynq.
+
+### Operational Checks
+
+- [ ] Stop Rosmarinus during queued delivery, restart it, and confirm Asynq
+      resumes pending jobs from Redis.
+- [ ] Force a temporary Misskey outage and confirm AP backoff behavior resembles
+      Concorde's delayed retry profile.
+- [ ] Inspect failed jobs and logs for enough information to identify target
+      inbox, actor, activity ID, and failure reason.
+- [ ] Keep packet captures or structured logs for WebFinger, signed GET, inbox,
+      and delivery requests as compatibility fixtures.
+
 ## Open Decisions
 
 - [x] Choose the Redis queue implementation: use Asynq by default, hidden behind
@@ -387,6 +448,8 @@ flags, but that is an operational option, not the default architecture.
       media storage to another service.
 - [ ] Decide how much of Concorde's antenna/word-mute/timeline side effects
       belong in this microservice.
-- [ ] Decide local actor provisioning flow, since Rosmarinus has no frontend API.
+- [x] Decide local actor provisioning flow: bootstrap a local actor from
+      environment variables such as `LOCAL_ACTOR_USERNAME`, store it in MongoDB,
+      and keep it stable across restarts.
 - [ ] Decide whether object IDs keep Concorde-compatible generated IDs or use
       MongoDB ObjectIDs/ULIDs.

@@ -2,28 +2,39 @@ package httpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"strings"
 
+	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/queue"
 )
+
+const inboxBodyLimit = 64 * 1024
 
 type ActorLookup interface {
 	FindLocalByID(context.Context, string) (*actors.Actor, error)
 	FindLocalByUsername(context.Context, string) (*actors.Actor, error)
 }
 
-func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup) http.Handler {
+type QueueClient interface {
+	Enqueue(context.Context, queue.Task) error
+}
+
+func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
-	mux.HandleFunc("/inbox", notImplemented(logger, http.MethodPost))
-	mux.HandleFunc("/users/", notImplemented(logger, http.MethodGet, http.MethodPost))
+	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
+	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, queueClient, logger))
+	mux.HandleFunc("/@", actorByUsername(cfg, actorLookup, logger))
 	mux.HandleFunc("/notes/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", notImplemented(logger, http.MethodGet))
@@ -59,6 +70,122 @@ func notImplemented(logger *log.Logger, methods ...string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusNotImplemented)
 		_, _ = w.Write([]byte(`{"error":"not implemented"}` + "\n"))
+	}
+}
+
+func actorByID(cfg config.Config, actorLookup ActorLookup, queueClient QueueClient, logger *log.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/inbox") {
+			inbox(cfg, queueClient)(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/users/")
+		path = strings.Trim(path, "/")
+		if path == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		parts := strings.Split(path, "/")
+		actor, err := actorLookup.FindLocalByID(r.Context(), parts[0])
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if actor == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "publickey" {
+			writeActivityJSON(w, renderPublicKey(actor))
+			return
+		}
+		if len(parts) == 1 {
+			writeActivityJSON(w, renderActor(cfg, actor))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func inbox(cfg config.Config, queueClient QueueClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if queueClient == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "queue is not configured"})
+			return
+		}
+		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, inboxBodyLimit))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if len(raw) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "empty request body"})
+			return
+		}
+		if err := apsig.VerifyDigest(r.Header.Get("Digest"), raw); err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return
+		}
+		parsedSignature, err := apsig.ParseRequest(r, []string{"(request-target)", "digest", "host", "date"})
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return
+		}
+		if r.Host != cfg.Host {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid host header"})
+			return
+		}
+		var activity map[string]any
+		if err := json.Unmarshal(raw, &activity); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+			return
+		}
+		task := queue.NewInboxTask(activity, map[string]any{
+			"keyId":         parsedSignature.KeyID,
+			"algorithm":     parsedSignature.Algorithm,
+			"headers":       parsedSignature.Headers,
+			"signature":     base64.StdEncoding.EncodeToString(parsedSignature.Signature),
+			"signingString": parsedSignature.SigningString,
+		}, cfg.InboxQueue.MaxRetry, cfg.InboxQueue.Timeout)
+		if err := queueClient.Enqueue(r.Context(), task); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}
+}
+
+func actorByUsername(cfg config.Config, actorLookup ActorLookup, logger *log.Logger) http.HandlerFunc {
+	_ = logger
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		username := strings.TrimPrefix(r.URL.Path, "/@")
+		username = strings.Trim(username, "/")
+		if username == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		actor, err := actorLookup.FindLocalByUsername(r.Context(), username)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if actor == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeActivityJSON(w, renderActor(cfg, actor))
 	}
 }
 
@@ -193,6 +320,91 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeActivityJSON(w http.ResponseWriter, body any) {
+	w.Header().Set("Content-Type", `application/activity+json; charset=utf-8`)
+	w.Header().Set("Cache-Control", "public, max-age=180")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func renderActor(cfg config.Config, actor *actors.Actor) map[string]any {
+	actorType := actor.Type
+	if actorType == "" {
+		actorType = "Service"
+	}
+	actorURI := actor.URI
+	if actorURI == "" {
+		actorURI = strings.TrimRight(cfg.PublicURL, "/") + "/users/" + url.PathEscape(actor.ID)
+	}
+	inbox := actor.Inbox
+	if inbox == "" {
+		inbox = actorURI + "/inbox"
+	}
+	sharedInbox := actor.SharedInbox
+	if sharedInbox == "" {
+		sharedInbox = strings.TrimRight(cfg.PublicURL, "/") + "/inbox"
+	}
+	return withActivityContext(map[string]any{
+		"type":                      actorType,
+		"id":                        actorURI,
+		"inbox":                     inbox,
+		"outbox":                    actorURI + "/outbox",
+		"followers":                 actorURI + "/followers",
+		"following":                 actorURI + "/following",
+		"featured":                  actorURI + "/collections/featured",
+		"sharedInbox":               sharedInbox,
+		"endpoints":                 map[string]any{"sharedInbox": sharedInbox},
+		"url":                       strings.TrimRight(cfg.PublicURL, "/") + "/@" + url.PathEscape(actor.Username),
+		"preferredUsername":         actor.Username,
+		"name":                      actor.Name,
+		"summary":                   nil,
+		"manuallyApprovesFollowers": false,
+		"discoverable":              true,
+		"publicKey":                 renderPublicKey(actor),
+		"alsoKnownAs":               []string{},
+		"attachment":                []any{},
+		"tag":                       []any{},
+	})
+}
+
+func renderPublicKey(actor *actors.Actor) map[string]any {
+	keyID := actor.PublicKeyID
+	if keyID == "" && actor.URI != "" {
+		keyID = actor.URI + "#main-key"
+	}
+	return withActivityContext(map[string]any{
+		"id":           keyID,
+		"type":         "Key",
+		"owner":        actor.URI,
+		"publicKeyPem": actor.PublicKeyPEM,
+	})
+}
+
+func withActivityContext(body map[string]any) map[string]any {
+	body["@context"] = []any{
+		"https://www.w3.org/ns/activitystreams",
+		"https://w3id.org/security/v1",
+		map[string]any{
+			"manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+			"sensitive":                 "as:sensitive",
+			"Hashtag":                   "as:Hashtag",
+			"quoteUrl":                  "as:quoteUrl",
+			"toot":                      "http://joinmastodon.org/ns#",
+			"Emoji":                     "toot:Emoji",
+			"featured":                  "toot:featured",
+			"discoverable":              "toot:discoverable",
+			"schema":                    "http://schema.org#",
+			"PropertyValue":             "schema:PropertyValue",
+			"value":                     "schema:value",
+			"misskey":                   "https://misskey-hub.net/ns#",
+			"_misskey_content":          "misskey:_misskey_content",
+			"_misskey_quote":            "misskey:_misskey_quote",
+			"isCat":                     "misskey:isCat",
+		},
+	}
+	return body
 }
 
 func lookupWebFingerActor(ctx context.Context, cfg config.Config, lookup ActorLookup, resource string) (*actors.Actor, int, error) {
