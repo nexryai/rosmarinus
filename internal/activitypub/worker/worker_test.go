@@ -222,6 +222,14 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 				"tag": []any{
 					map[string]any{"type": "Hashtag", "name": "#hello"},
 				},
+				"attachment": []any{
+					map[string]any{
+						"type":      "Document",
+						"mediaType": "image/png",
+						"url":       "https://remote.example/files/1.png",
+						"name":      "file",
+					},
+				},
 			},
 		},
 		Signature: map[string]any{
@@ -253,6 +261,9 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 	}
 	if len(note.Hashtags) != 1 || note.Hashtags[0] != "hello" {
 		t.Fatalf("hashtags = %#v", note.Hashtags)
+	}
+	if len(note.Attachments) != 1 || note.Attachments[0].URL != "https://remote.example/files/1.png" {
+		t.Fatalf("attachments = %#v", note.Attachments)
 	}
 }
 

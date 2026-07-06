@@ -42,8 +42,8 @@ func Render(note *domainnotes.Note) map[string]any {
 		"to":             to,
 		"cc":             cc,
 		"inReplyTo":      inReplyTo,
-		"attachment":     []any{},
-		"sensitive":      note.Sensitive || note.ContentWarning != nil,
+		"attachment":     renderAttachments(note.Attachments),
+		"sensitive":      note.Sensitive || note.ContentWarning != nil || hasSensitiveAttachment(note.Attachments),
 		"tag":            renderTags(note),
 	})
 }
@@ -119,4 +119,36 @@ func renderTags(note *domainnotes.Note) []any {
 		})
 	}
 	return tags
+}
+
+func renderAttachments(attachments []domainnotes.Attachment) []any {
+	if len(attachments) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(attachments))
+	for _, attachment := range attachments {
+		if attachment.URL == "" {
+			continue
+		}
+		typ := attachment.Type
+		if typ == "" {
+			typ = "Document"
+		}
+		out = append(out, map[string]any{
+			"type":      typ,
+			"mediaType": attachment.MediaType,
+			"url":       attachment.URL,
+			"name":      attachment.Name,
+		})
+	}
+	return out
+}
+
+func hasSensitiveAttachment(attachments []domainnotes.Attachment) bool {
+	for _, attachment := range attachments {
+		if attachment.Sensitive {
+			return true
+		}
+	}
+	return false
 }

@@ -33,6 +33,7 @@ type Note struct {
 	MentionURIs    []string
 	Hashtags       []string
 	Emojis         []domainnotes.Emoji
+	Attachments    []domainnotes.Attachment
 }
 
 func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
@@ -66,6 +67,7 @@ func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
 		MentionURIs:    ExtractMentionURIs(object["tag"]),
 		Hashtags:       ExtractHashtags(object["tag"]),
 		Emojis:         ExtractEmojis(object["tag"]),
+		Attachments:    ExtractAttachments(object["attachment"], boolField(object, "sensitive")),
 	}, nil
 }
 
@@ -231,6 +233,58 @@ func ExtractEmojis(tags any) []domainnotes.Emoji {
 		out = append(out, emoji)
 	}
 	return out
+}
+
+func ExtractAttachments(value any, noteSensitive bool) []domainnotes.Attachment {
+	items := aptypes.ToArray(value)
+	out := make([]domainnotes.Attachment, 0, len(items))
+	for _, item := range items {
+		attachment, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		url := attachmentURL(attachment["url"])
+		if url == "" {
+			continue
+		}
+		typ, _ := aptypes.GetAPType(attachment)
+		if typ == "" {
+			typ = "Document"
+		}
+		mediaType, _ := attachment["mediaType"].(string)
+		name, _ := attachment["name"].(string)
+		id, _ := attachment["id"].(string)
+		out = append(out, domainnotes.Attachment{
+			URI:       id,
+			Type:      typ,
+			MediaType: mediaType,
+			URL:       url,
+			Name:      name,
+			Sensitive: noteSensitive || boolField(attachment, "sensitive"),
+		})
+	}
+	return out
+}
+
+func attachmentURL(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		if href, ok := v["href"].(string); ok {
+			return href
+		}
+		if urlValue, ok := v["url"].(string); ok {
+			return urlValue
+		}
+	case []any:
+		for _, item := range v {
+			if url := attachmentURL(item); url != "" {
+				return url
+			}
+		}
+	}
+	return ""
 }
 
 func containsPublic(ids []string) bool {

@@ -219,7 +219,13 @@ func TestNoteByID(t *testing.T) {
 		Visibility:     domainnotes.VisibilityPublic,
 		Hashtags:       []string{"hello"},
 		MentionURIs:    []string{"https://remote.example/users/bob"},
-		CreatedAt:      time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
+		Attachments: []domainnotes.Attachment{{
+			Type:      "Document",
+			MediaType: "image/png",
+			URL:       "https://remote.example/files/1.png",
+			Name:      "file",
+		}},
+		CreatedAt: time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}}
 	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -248,6 +254,9 @@ func TestNoteByID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"type":"Mention"`) || !strings.Contains(rec.Body.String(), `"href":"https://remote.example/users/bob"`) {
 		t.Fatalf("unexpected mention body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"attachment":[`) || !strings.Contains(rec.Body.String(), `"url":"https://remote.example/files/1.png"`) {
+		t.Fatalf("unexpected attachment body: %s", rec.Body.String())
 	}
 }
 

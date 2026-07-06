@@ -33,6 +33,7 @@ type noteDocument struct {
 	MentionURIs    []string               `bson:"mentionUris,omitempty"`
 	Hashtags       []string               `bson:"hashtags,omitempty"`
 	Emojis         []emojiDocument        `bson:"emojis,omitempty"`
+	Attachments    []attachmentDocument   `bson:"attachments,omitempty"`
 	Raw            map[string]interface{} `bson:"raw"`
 	CreatedAt      time.Time              `bson:"createdAt"`
 	PublishedAt    *time.Time             `bson:"publishedAt,omitempty"`
@@ -44,6 +45,15 @@ type emojiDocument struct {
 	UpdatedAt *time.Time `bson:"updatedAt,omitempty"`
 	IconURL   string     `bson:"iconUrl,omitempty"`
 	MediaType string     `bson:"mediaType,omitempty"`
+}
+
+type attachmentDocument struct {
+	URI       string `bson:"uri,omitempty"`
+	Type      string `bson:"type,omitempty"`
+	MediaType string `bson:"mediaType,omitempty"`
+	URL       string `bson:"url"`
+	Name      string `bson:"name,omitempty"`
+	Sensitive bool   `bson:"sensitive"`
 }
 
 func NewNoteRepository(db *mongo.Database) *NoteRepository {
@@ -100,6 +110,7 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		MentionURIs:    doc.MentionURIs,
 		Hashtags:       doc.Hashtags,
 		Emojis:         toDomainEmojis(doc.Emojis),
+		Attachments:    toDomainAttachments(doc.Attachments),
 		Raw:            mapAny(doc.Raw),
 		CreatedAt:      doc.CreatedAt,
 		PublishedAt:    doc.PublishedAt,
@@ -121,6 +132,7 @@ func fromNote(note domainnotes.Note) noteDocument {
 		MentionURIs:    note.MentionURIs,
 		Hashtags:       note.Hashtags,
 		Emojis:         fromDomainEmojis(note.Emojis),
+		Attachments:    fromDomainAttachments(note.Attachments),
 		Raw:            mapInterface(note.Raw),
 		CreatedAt:      note.CreatedAt,
 		PublishedAt:    note.PublishedAt,
@@ -156,6 +168,42 @@ func fromDomainEmojis(src []domainnotes.Emoji) []emojiDocument {
 			UpdatedAt: emoji.UpdatedAt,
 			IconURL:   emoji.IconURL,
 			MediaType: emoji.MediaType,
+		})
+	}
+	return out
+}
+
+func toDomainAttachments(src []attachmentDocument) []domainnotes.Attachment {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]domainnotes.Attachment, 0, len(src))
+	for _, attachment := range src {
+		out = append(out, domainnotes.Attachment{
+			URI:       attachment.URI,
+			Type:      attachment.Type,
+			MediaType: attachment.MediaType,
+			URL:       attachment.URL,
+			Name:      attachment.Name,
+			Sensitive: attachment.Sensitive,
+		})
+	}
+	return out
+}
+
+func fromDomainAttachments(src []domainnotes.Attachment) []attachmentDocument {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]attachmentDocument, 0, len(src))
+	for _, attachment := range src {
+		out = append(out, attachmentDocument{
+			URI:       attachment.URI,
+			Type:      attachment.Type,
+			MediaType: attachment.MediaType,
+			URL:       attachment.URL,
+			Name:      attachment.Name,
+			Sensitive: attachment.Sensitive,
 		})
 	}
 	return out

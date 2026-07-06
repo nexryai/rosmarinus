@@ -225,6 +225,7 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		MentionURIs:    parsed.MentionURIs,
 		Hashtags:       parsed.Hashtags,
 		Emojis:         parsed.Emojis,
+		Attachments:    parsed.Attachments,
 		Raw:            object,
 		CreatedAt:      time.Now().UTC(),
 		PublishedAt:    publishedAt(object),

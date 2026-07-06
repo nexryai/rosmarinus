@@ -28,6 +28,7 @@ type Note struct {
 	MentionURIs    []string
 	Hashtags       []string
 	Emojis         []Emoji
+	Attachments    []Attachment
 	Raw            map[string]any
 	CreatedAt      time.Time
 	PublishedAt    *time.Time
@@ -39,6 +40,15 @@ type Emoji struct {
 	UpdatedAt *time.Time
 	IconURL   string
 	MediaType string
+}
+
+type Attachment struct {
+	URI       string
+	Type      string
+	MediaType string
+	URL       string
+	Name      string
+	Sensitive bool
 }
 
 type Repository interface {

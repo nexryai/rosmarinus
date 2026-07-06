@@ -124,6 +124,7 @@ same style as Concorde.
 - [x] Parse audience from `to` and `cc` into `public`, `home`, `followers`,
       or `specified`.
 - [x] Extract AP mentions and hashtags.
+- [x] Preserve remote attachment metadata on notes.
 - [ ] Resolve attachments as media records.
 - [x] Store and render basic reply and quote URIs.
 - [ ] Resolve replies and quotes.
@@ -136,7 +137,8 @@ same style as Concorde.
 - [x] Store basic URI, attributedTo, author, text, content warning, sensitive,
       reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP
       object, createdAt, and publishedAt for remote notes.
-- [ ] Store files, polls, URL, visible users, resolved reply/renote, and
+- [x] Store basic remote attachment metadata.
+- [ ] Store cached files, polls, URL, visible users, resolved reply/renote, and
       denormalized author fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
       where Rosmarinus owns those writes.
@@ -356,6 +358,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement initial audience parser.
 - [x] Extract AP note mentions, hashtags, and emoji tags.
 - [x] Store and render note CW, sensitive, inReplyTo, and quote URLs.
+- [x] Store and render basic note attachments.
 - [ ] Implement HTML to MFM conversion.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 

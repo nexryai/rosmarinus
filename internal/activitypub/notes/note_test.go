@@ -145,6 +145,46 @@ func TestConcordeNoteExtractsTags(t *testing.T) {
 	}
 }
 
+func TestConcordeNoteExtractsAttachments(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           PublicAudience,
+		"sensitive":    true,
+		"content":      "with file",
+		"attachment": []any{
+			map[string]any{
+				"id":        "https://host1.test/files/1",
+				"type":      "Document",
+				"mediaType": "image/png",
+				"url":       "https://host1.test/files/1.png",
+				"name":      "image",
+			},
+			map[string]any{
+				"type":      "Image",
+				"mediaType": "image/webp",
+				"url": []any{
+					map[string]any{"href": "https://host1.test/files/2.webp"},
+				},
+				"sensitive": true,
+			},
+		},
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if len(note.Attachments) != 2 {
+		t.Fatalf("Attachments = %#v", note.Attachments)
+	}
+	if note.Attachments[0].URL != "https://host1.test/files/1.png" || note.Attachments[0].MediaType != "image/png" || !note.Attachments[0].Sensitive {
+		t.Fatalf("Attachment[0] = %+v", note.Attachments[0])
+	}
+	if note.Attachments[1].URL != "https://host1.test/files/2.webp" || note.Attachments[1].Type != "Image" || !note.Attachments[1].Sensitive {
+		t.Fatalf("Attachment[1] = %+v", note.Attachments[1])
+	}
+}
+
 func TestConcordeNoteVisibility(t *testing.T) {
 	actorID := "https://host1.test/users/alice"
 	cases := []struct {
