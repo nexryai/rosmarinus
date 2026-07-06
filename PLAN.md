@@ -197,35 +197,35 @@ flags, but that is an operational option, not the default architecture.
 
 ### Single Binary Runtime
 
-- [ ] Start HTTP routes and queue workers from the same `cmd/rosmarinus`
+- [x] Start HTTP routes and queue workers from the same `cmd/rosmarinus`
       process by default.
-- [ ] Create one Asynq client for enqueueing jobs from HTTP handlers and domain
+- [x] Create one Asynq client for enqueueing jobs from HTTP handlers and domain
       services.
-- [ ] Create one Asynq server in the same process for `inbox`, `deliver`,
+- [x] Create one Asynq server in the same process for `inbox`, `deliver`,
       `system`, `poll-ended`, `media`, `metadata`, and `account-delete` jobs.
 - [ ] Register handlers through DI so job handlers use the same repositories,
       resolver, signer, renderer, and logger wiring as HTTP handlers.
-- [ ] Support graceful shutdown that stops accepting HTTP requests, stops
+- [x] Support graceful shutdown that stops accepting HTTP requests, stops
       enqueueing new jobs, drains or stops Asynq workers, then closes Redis and
       MongoDB clients.
-- [ ] Add config flags for advanced deployments:
+- [x] Add config flags for advanced deployments:
       `run_http`, `run_workers`, and `worker_queues`, all enabled by default.
-- [ ] Keep the default documented deployment as one Rosmarinus process plus
+- [x] Keep the default documented deployment as one Rosmarinus process plus
       MongoDB and Redis.
 
 ### Queue Requirements
 
-- [ ] Redis-backed persistence.
-- [ ] At-least-once processing.
+- [x] Redis-backed persistence.
+- [x] At-least-once processing.
 - [ ] Idempotent handlers keyed by AP URI where possible.
-- [ ] Worker concurrency per queue.
+- [x] Worker concurrency per queue.
 - [ ] Per-second rate limits:
       `deliver` defaults to 128/sec, `inbox` defaults to 16/sec.
-- [ ] Retry attempts:
+- [x] Retry attempts:
       `deliver` defaults to 17, `inbox` defaults to 10.
-- [ ] AP backoff compatible with Concorde:
+- [x] AP backoff compatible with Concorde:
       `(attempts^4 + 15) * 1s`, capped at 8 hours, plus up to 20% jitter.
-- [ ] Job timeout:
+- [x] Job timeout:
       `deliver` defaults to 1 minute, `inbox` defaults to 5 minutes.
 - [ ] Dead-letter or failed-job inspection.
 - [ ] Ability to promote delayed `deliver` and `inbox` jobs for operations.
@@ -297,23 +297,23 @@ flags, but that is an operational option, not the default architecture.
 
 ### Phase 0: Project Foundation
 
-- [ ] Add config model for host, URL, MongoDB, Redis, HTTP, queue limits, and
+- [x] Add config model for host, URL, MongoDB, Redis, HTTP, queue limits, and
       user agent.
-- [ ] Create app wiring with explicit DI.
-- [ ] Add graceful shutdown for HTTP, MongoDB, Redis, and workers.
-- [ ] Add MongoDB connection and index bootstrap.
-- [ ] Add Redis connection and health check.
-- [ ] Add logger injection.
-- [ ] Add basic tests for config validation.
+- [x] Create app wiring with explicit DI.
+- [x] Add graceful shutdown for HTTP, MongoDB, Redis, and workers.
+- [x] Add MongoDB connection and index bootstrap.
+- [x] Add Redis connection and health check.
+- [x] Add logger injection.
+- [x] Add basic tests for config validation.
 
 ### Phase 1: ActivityPub Types, Signatures, And Queues
 
-- [ ] Implement AP type helpers equivalent to Concorde `getApId`, `getApType`,
+- [x] Implement AP type helpers equivalent to Concorde `getApId`, `getApType`,
       actor/post/activity predicates, and array normalization.
-- [ ] Implement digest verification tests.
+- [x] Implement digest verification tests.
 - [ ] Implement HTTP Signature parse/verify tests with fixture requests.
-- [ ] Implement signed GET/POST tests with stable signing strings.
-- [ ] Implement Redis queues, workers, retry/backoff, and timeout handling.
+- [x] Implement signed GET/POST tests with stable signing strings.
+- [x] Implement Redis queues, workers, retry/backoff, and timeout handling.
 - [ ] Implement Redis AP locks and tests for duplicate lock behavior.
 
 ### Phase 2: Discovery And Actor Resolution

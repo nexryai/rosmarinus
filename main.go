@@ -1,9 +1,17 @@
 package main
 
-import "log"
+import (
+	"context"
+	"log"
+	"os"
+
+	"github.com/nexryai/rosmarinus/internal/app"
+)
 
 func main() {
-	log.Println("Starting rosmarinus server ver.0.0.1...")
-
-	// ToDo
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+	if err := app.Run(context.Background(), logger); err != nil {
+		logger.Printf("rosmarinus stopped: %v", err)
+		os.Exit(1)
+	}
 }
