@@ -203,6 +203,54 @@ func TestPublicKeyByID(t *testing.T) {
 	}
 }
 
+func TestActorCollectionsByID(t *testing.T) {
+	lookup := fakeActorLookup{actor: &actors.Actor{
+		ID:       "actor-id",
+		Username: "alice",
+		URI:      "https://example.test/users/actor-id",
+	}}
+	cases := []struct {
+		path string
+		want []string
+	}{
+		{
+			path: "/users/actor-id/outbox",
+			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/outbox"`, `"first":"https://example.test/users/actor-id/outbox?page=true"`, `"last":"https://example.test/users/actor-id/outbox?page=true\u0026since_id=000000000000000000000000"`},
+		},
+		{
+			path: "/users/actor-id/followers",
+			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/followers"`, `"first":"https://example.test/users/actor-id/followers?page=true"`},
+		},
+		{
+			path: "/users/actor-id/following",
+			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/following"`, `"first":"https://example.test/users/actor-id/following?page=true"`},
+		},
+		{
+			path: "/users/actor-id/outbox?page=true",
+			want: []string{`"type":"OrderedCollectionPage"`, `"partOf":"https://example.test/users/actor-id/outbox"`, `"orderedItems":[]`},
+		},
+		{
+			path: "/users/actor-id/collections/featured",
+			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/collections/featured"`, `"orderedItems":[]`},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			NewHandler(testConfig(), nil, lookup, nil).ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(rec.Body.String(), want) {
+					t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
 func TestNoteByID(t *testing.T) {
 	cw := "cw"
 	req := httptest.NewRequest(http.MethodGet, "/notes/note-id", nil)

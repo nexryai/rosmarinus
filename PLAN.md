@@ -4,7 +4,9 @@ Rosmarinus is the ActivityPub microservice successor to Concorde. It should not
 copy Concorde's frontend or Misskey API surface, but it should preserve the
 federation behavior that other ActivityPub servers depend on.
 
-Do not edit `./concorde`. Treat it as the behavioral reference.
+Do not edit `./concorde`. Treat it as the behavioral reference. `./misskey`
+is used only as a Docker federation test fixture/reference and must not drive
+Rosmarinus implementation semantics.
 
 ## Goals
 
@@ -40,10 +42,10 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [x] `GET /users/{user}`
 - [x] `GET /@{user}`
 - [x] `GET /users/{user}/publickey`
-- [ ] `GET /users/{user}/outbox`
-- [ ] `GET /users/{user}/followers`
-- [ ] `GET /users/{user}/following`
-- [ ] `GET /users/{user}/collections/featured`
+- [x] `GET /users/{user}/outbox`
+- [x] `GET /users/{user}/followers`
+- [x] `GET /users/{user}/following`
+- [x] `GET /users/{user}/collections/featured`
 - [x] `GET /notes/{note}`
 - [ ] `GET /notes/{note}/activity`
 - [ ] `GET /emojis/{emoji}`
@@ -101,14 +103,15 @@ same style as Concorde.
       `Application`.
 - [x] Require actor `id`, `inbox`, and `outbox` to belong to the expected host.
 - [x] Validate `sharedInbox` and public key host.
-- [ ] Validate `followers` and `following` host.
+- [x] Validate `followers` and `following` host.
 - [x] Validate `preferredUsername` against Concorde-compatible rules.
 - [x] Truncate display name to Concorde-compatible limits.
 - [ ] Truncate and store summary to Concorde-compatible limits.
 - [x] Store remote public keys by `keyId`.
-- [ ] Store `inbox`, `sharedInbox`, `followersUri`, `featured`, bot/cat flags,
-      discoverability, profile fields, birthday, location, avatar, banner, and
-      custom emoji names where available.
+- [x] Store `inbox`, `sharedInbox`, `followersUri`, `followingUri`, and
+      `featured`.
+- [ ] Store bot/cat flags, discoverability, profile fields, birthday, location,
+      avatar, banner, and custom emoji names where available.
 - [ ] Refresh remote actors when stale, initially after 24 hours.
 - [ ] Update featured notes from remote `featured` collections.
 
@@ -342,6 +345,9 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Implement remote WebFinger client.
 - [x] Implement actor renderer and `/users/{id}`.
 - [x] Implement `/users/{id}/publickey`.
+- [x] Implement Concorde-shaped local actor `outbox`, `followers`,
+      `following`, and `featured` AP collections with empty contents until
+      social graph and local note ownership are implemented.
 - [x] Implement remote actor create/update baseline.
 - [x] Implement signed remote AP GET.
 - [x] Add actor validation tests based on Concorde edge cases.
@@ -426,6 +432,9 @@ must write to MongoDB.
 - [x] `fetch-resource.ts`
   - [x] AP `GET /@:username` and `GET /users/:id` return
         `application/activity+json` when AP is requested.
+  - [x] AP `GET /users/:id/outbox`, `followers`, `following`, and
+        `collections/featured` return Concorde-shaped `OrderedCollection`
+        / `OrderedCollectionPage` responses.
   - [x] AP `GET /notes/:id` returns `application/activity+json` for stored
         notes.
   - [x] inbox `Accepted`.
@@ -455,6 +464,10 @@ must write to MongoDB.
 Use this once actor resolution, signed GET, Create Note ingestion, and delivery
 workers are implemented enough to exchange basic activities.
 
+Implementation compatibility should be checked against `./concorde`. The
+latest Misskey checkout in `./misskey` is used only to run a real Docker-based
+federation peer and to inspect its official local federation test topology.
+
 ### Local Test Topology
 
 - [ ] Run MongoDB and Redis for Rosmarinus.
@@ -479,6 +492,8 @@ workers are implemented enough to exchange basic activities.
 
 ### Local Misskey Test Execution Draft
 
+- [ ] Inspect `./misskey/packages/backend/test-federation` only for Docker
+      topology, service names, local DNS, and test command conventions.
 - [ ] Prepare a disposable Misskey/Concorde config with:
       `url: http(s)://misskey.example.test`,
       Postgres pointing to the test DB,

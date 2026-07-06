@@ -114,6 +114,17 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, queueClient QueueClie
 			writeActivityJSON(w, renderPublicKey(actor))
 			return
 		}
+		if len(parts) == 2 {
+			switch parts[1] {
+			case "outbox", "followers", "following":
+				writeActivityJSON(w, renderActorCollection(r, cfg, actor, parts[1]))
+				return
+			}
+		}
+		if len(parts) == 3 && parts[1] == "collections" && parts[2] == "featured" {
+			writeActivityJSON(w, renderFeaturedCollection(actor))
+			return
+		}
 		if len(parts) == 1 {
 			writeActivityJSON(w, renderActor(cfg, actor))
 			return
@@ -436,6 +447,68 @@ func renderPublicKey(actor *actors.Actor) map[string]any {
 		"owner":        actor.URI,
 		"publicKeyPem": actor.PublicKeyPEM,
 	})
+}
+
+func renderActorCollection(r *http.Request, cfg config.Config, actor *actors.Actor, name string) map[string]any {
+	partOf := strings.TrimRight(actor.URI, "/") + "/" + name
+	if r.URL.Query().Get("page") == "true" {
+		return renderOrderedCollectionPage(publicRequestURL(cfg, r), 0, []any{}, partOf, "", "")
+	}
+
+	var first string
+	var last string
+	switch name {
+	case "outbox":
+		first = partOf + "?page=true"
+		last = partOf + "?page=true&since_id=000000000000000000000000"
+	case "followers", "following":
+		first = partOf + "?page=true"
+	}
+	return renderOrderedCollection(partOf, 0, first, last, nil)
+}
+
+func renderFeaturedCollection(actor *actors.Actor) map[string]any {
+	id := strings.TrimRight(actor.URI, "/") + "/collections/featured"
+	return renderOrderedCollection(id, 0, "", "", []any{})
+}
+
+func renderOrderedCollection(id string, totalItems int, first string, last string, orderedItems []any) map[string]any {
+	body := map[string]any{
+		"id":         id,
+		"type":       "OrderedCollection",
+		"totalItems": totalItems,
+	}
+	if first != "" {
+		body["first"] = first
+	}
+	if last != "" {
+		body["last"] = last
+	}
+	if orderedItems != nil {
+		body["orderedItems"] = orderedItems
+	}
+	return withActivityContext(body)
+}
+
+func renderOrderedCollectionPage(id string, totalItems int, orderedItems []any, partOf string, prev string, next string) map[string]any {
+	body := map[string]any{
+		"id":           id,
+		"partOf":       partOf,
+		"type":         "OrderedCollectionPage",
+		"totalItems":   totalItems,
+		"orderedItems": orderedItems,
+	}
+	if prev != "" {
+		body["prev"] = prev
+	}
+	if next != "" {
+		body["next"] = next
+	}
+	return withActivityContext(body)
+}
+
+func publicRequestURL(cfg config.Config, r *http.Request) string {
+	return strings.TrimRight(cfg.PublicURL, "/") + r.URL.RequestURI()
 }
 
 func withActivityContext(body map[string]any) map[string]any {

@@ -81,6 +81,15 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	if err != nil {
 		return actors.Actor{}, err
 	}
+	followersURI, err := optionalSameHostID(object["followers"], expectHost, "followers")
+	if err != nil {
+		return actors.Actor{}, err
+	}
+	followingURI, err := optionalSameHostID(object["following"], expectHost, "following")
+	if err != nil {
+		return actors.Actor{}, err
+	}
+	featuredURI := optionalAPID(object["featured"])
 	username, ok := object["preferredUsername"].(string)
 	if !ok || !validRemoteUsername(username) {
 		return actors.Actor{}, fmt.Errorf("invalid actor: wrong username")
@@ -104,6 +113,9 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 		URI:           id,
 		Inbox:         inbox,
 		SharedInbox:   sharedInbox,
+		FollowersURI:  followersURI,
+		FollowingURI:  followingURI,
+		FeaturedURI:   featuredURI,
 		PublicKeyID:   publicKeyID,
 		PublicKeyPEM:  publicKeyPEM,
 		IsSuspended:   false,
@@ -133,6 +145,24 @@ func optionalSharedInbox(object map[string]any, expectHost string) (string, erro
 		return "", nil
 	}
 	return requiredSameHostID(value, expectHost, "shared inbox")
+}
+
+func optionalSameHostID(value any, expectHost, field string) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+	return requiredSameHostID(value, expectHost, field)
+}
+
+func optionalAPID(value any) string {
+	if value == nil {
+		return ""
+	}
+	id, err := aptypes.GetAPID(value)
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 func publicKey(object map[string]any, expectHost string) (string, string, error) {

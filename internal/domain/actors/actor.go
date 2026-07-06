@@ -12,6 +12,9 @@ type Actor struct {
 	URI           string
 	Inbox         string
 	SharedInbox   string
+	FollowersURI  string
+	FollowingURI  string
+	FeaturedURI   string
 	PublicKeyID   string
 	PublicKeyPEM  string
 	PrivateKeyPEM string

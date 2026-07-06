@@ -31,6 +31,9 @@ type actorDocument struct {
 	URI           string  `bson:"uri"`
 	Inbox         string  `bson:"inbox"`
 	SharedInbox   string  `bson:"sharedInbox"`
+	FollowersURI  string  `bson:"followersUri,omitempty"`
+	FollowingURI  string  `bson:"followingUri,omitempty"`
+	FeaturedURI   string  `bson:"featuredUri,omitempty"`
 	PublicKeyID   string  `bson:"publicKeyId"`
 	PublicKeyPEM  string  `bson:"publicKeyPem"`
 	PrivateKeyPEM string  `bson:"privateKeyPem,omitempty"`
@@ -116,6 +119,9 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 			"host":          doc.Host,
 			"inbox":         doc.Inbox,
 			"sharedInbox":   doc.SharedInbox,
+			"followersUri":  doc.FollowersURI,
+			"followingUri":  doc.FollowingURI,
+			"featuredUri":   doc.FeaturedURI,
 			"publicKeyId":   doc.PublicKeyID,
 			"publicKeyPem":  doc.PublicKeyPEM,
 			"isSuspended":   doc.IsSuspended,
@@ -149,6 +155,9 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		URI:           doc.URI,
 		Inbox:         doc.Inbox,
 		SharedInbox:   doc.SharedInbox,
+		FollowersURI:  doc.FollowersURI,
+		FollowingURI:  doc.FollowingURI,
+		FeaturedURI:   doc.FeaturedURI,
 		PublicKeyID:   doc.PublicKeyID,
 		PublicKeyPEM:  doc.PublicKeyPEM,
 		PrivateKeyPEM: doc.PrivateKeyPEM,
@@ -167,6 +176,9 @@ func fromActor(actor actors.Actor) actorDocument {
 		URI:           actor.URI,
 		Inbox:         actor.Inbox,
 		SharedInbox:   actor.SharedInbox,
+		FollowersURI:  actor.FollowersURI,
+		FollowingURI:  actor.FollowingURI,
+		FeaturedURI:   actor.FeaturedURI,
 		PublicKeyID:   actor.PublicKeyID,
 		PublicKeyPEM:  actor.PublicKeyPEM,
 		PrivateKeyPEM: actor.PrivateKeyPEM,
