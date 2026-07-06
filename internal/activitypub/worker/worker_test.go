@@ -14,6 +14,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -65,6 +66,44 @@ type fakeQueue struct {
 
 func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 	f.task = task
+	return nil
+}
+
+type fakeFollowRepo struct {
+	follows map[string]*follows.Follow
+	deleted *follows.Follow
+}
+
+func (f *fakeFollowRepo) Find(ctx context.Context, followerID, followeeID string) (*follows.Follow, error) {
+	if f.follows == nil {
+		return nil, nil
+	}
+	return f.follows[followerID+"\x00"+followeeID], nil
+}
+
+func (f *fakeFollowRepo) Upsert(ctx context.Context, follow follows.Follow) (*follows.Follow, error) {
+	if f.follows == nil {
+		f.follows = map[string]*follows.Follow{}
+	}
+	key := follow.FollowerID + "\x00" + follow.FolloweeID
+	if existing := f.follows[key]; existing != nil {
+		return existing, nil
+	}
+	if follow.ID == "" {
+		follow.ID = "follow-id"
+	}
+	f.follows[key] = &follow
+	return &follow, nil
+}
+
+func (f *fakeFollowRepo) Delete(ctx context.Context, followerID, followeeID, remoteUndoActivityID string) error {
+	existing, _ := f.Find(ctx, followerID, followeeID)
+	if existing != nil {
+		copy := *existing
+		copy.RemoteUndoActivityID = remoteUndoActivityID
+		f.deleted = &copy
+		delete(f.follows, followerID+"\x00"+followeeID)
+	}
 	return nil
 }
 
@@ -141,9 +180,10 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	q := &fakeQueue{}
+	followsRepo := &fakeFollowRepo{}
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
-	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, q, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -179,6 +219,91 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 	if payload.Object["type"] != "Accept" || payload.Object["actor"] != local.URI {
 		t.Fatalf("unexpected accept activity: %+v", payload.Object)
 	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow == nil || follow.FollowerURI != remote.URI || follow.FolloweeURI != local.URI {
+		t.Fatalf("follow was not stored: %+v", follow)
+	}
+}
+
+func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:          "relay",
+		Username:    "relay",
+		URI:         "https://rosmarinus.example/users/relay",
+		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		SharedInbox:  "https://remote.example/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	followsRepo := &fakeFollowRepo{}
+	_, err = followsRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:  remote.ID,
+		FolloweeID:  local.ID,
+		FollowerURI: remote.URI,
+		FolloweeURI: local.URI,
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeQueue{}, &fakeClient{}, local)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":    "https://remote.example/activities/undo-follow",
+			"type":  "Undo",
+			"actor": "https://remote.example/users/alice",
+			"object": map[string]any{
+				"id":     "https://remote.example/activities/follow",
+				"type":   "Follow",
+				"actor":  "https://remote.example/users/alice",
+				"object": "https://rosmarinus.example/users/relay",
+			},
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: unfollowed" {
+		t.Fatalf("result = %q", result)
+	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow != nil {
+		t.Fatalf("follow still exists: %+v", follow)
+	}
+	if followsRepo.deleted == nil || followsRepo.deleted.RemoteUndoActivityID != "https://remote.example/activities/undo-follow" {
+		t.Fatalf("delete was not recorded: %+v", followsRepo.deleted)
+	}
 }
 
 func TestProcessInboxCreateStoresNote(t *testing.T) {
@@ -203,7 +328,7 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{

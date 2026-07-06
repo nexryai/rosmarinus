@@ -42,5 +42,26 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetName("idx_notes_author_created_at"),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("follows").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "followerId", Value: 1}, {Key: "followeeId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_follows_follower_followee").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "followerId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_follows_follower_created_at"),
+		},
+		{
+			Keys: bson.D{{Key: "followeeId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_follows_followee_created_at"),
+		},
+	})
 	return err
 }

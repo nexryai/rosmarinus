@@ -84,10 +84,14 @@ same style as Concorde.
       tags, create reaction.
 - [x] `Follow`: basic remote actor follows local actor path, enqueueing
       `Accept(Follow)` for unlocked local actors.
+- [x] `Follow`: persist remote follower -> local followee relationships
+      idempotently in MongoDB before enqueueing `Accept(Follow)`.
 - [ ] `Follow`: block/lock/request persistence logic.
 - [ ] `Accept`: accept local outgoing follow requests.
 - [ ] `Reject`: reject local outgoing follow requests.
-- [ ] `Undo`: support undo follow, block, like, announce, and accept.
+- [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
+      followee relationships.
+- [ ] `Undo`: support undo block, like, announce, and accept.
 - [ ] `Delete`: delete notes, tombstone actors, and enqueue account cleanup.
 - [ ] `Update`: update actors, notes, and questions/polls.
 - [ ] `Block`: create local block state for remote actor against local actor.
@@ -235,7 +239,10 @@ flags, but that is an operational option, not the default architecture.
 
 - [x] Redis-backed persistence.
 - [x] At-least-once processing.
-- [ ] Idempotent handlers keyed by AP URI where possible.
+- [x] Idempotent inbound `Follow` persistence keyed by
+      `{ followerId, followeeId }`.
+- [ ] Idempotent handlers keyed by AP URI for notes, reactions, announces,
+      and updates where possible.
 - [x] Worker concurrency per queue.
 - [ ] Per-second rate limits:
       `deliver` defaults to 128/sec, `inbox` defaults to 16/sec.
@@ -268,7 +275,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] `notes`
 - [ ] `polls`
 - [ ] `reactions`
-- [ ] `follows`
+- [x] `follows`
 - [ ] `follow_requests`
 - [ ] `blocks`
 - [ ] `emojis`
@@ -285,7 +292,9 @@ flags, but that is an operational option, not the default architecture.
 - [x] `notes`: basic `{ authorId, createdAt }`
 - [ ] `notes`: `userId`, `userHost`, `replyId`, `renoteId`, `createdAt`
 - [ ] `notes`: tag and mention indexes suitable for MongoDB
-- [ ] `follows`: unique `{ followerId, followeeId }`
+- [x] `follows`: unique `{ followerId, followeeId }`
+- [x] `follows`: basic `{ followerId, createdAt }` and
+      `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
 - [ ] `blocks`: unique `{ blockerId, blockeeId }`
 - [ ] `emojis`: unique `{ name, host }`
@@ -388,7 +397,9 @@ flags, but that is an operational option, not the default architecture.
 ### Phase 5: Social Graph And Reactions
 
 - [x] Implement basic inbound `Follow` -> outbound `Accept`.
-- [ ] Implement full `Follow`, `Accept`, `Reject`, and `Undo Follow`.
+- [x] Persist inbound remote `Follow` relationships in MongoDB.
+- [x] Implement inbound remote `Undo(Follow)` for local followees.
+- [ ] Implement full `Follow`, `Accept`, and `Reject`.
 - [ ] Implement follow request storage and locked-account behavior.
 - [ ] Implement `Like`, `EmojiReaction`, and undo reaction.
 - [ ] Implement `Announce` and undo announce.

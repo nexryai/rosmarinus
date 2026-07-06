@@ -18,6 +18,7 @@ import (
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -36,18 +37,20 @@ type Handler struct {
 	logger     *log.Logger
 	repo       actors.Repository
 	notes      domainnotes.Repository
+	follows    follows.Repository
 	queue      QueueClient
 	client     APClient
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
 
-func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
 		repo:       repo,
 		notes:      noteRepo,
+		follows:    followRepo,
 		queue:      queueClient,
 		client:     apClient,
 		resolver:   apresolver.New(repo, apClient, localActor),
@@ -164,7 +167,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performCreate(ctx, actor, activity)
 	case aptypes.IsFollow(activity):
 		return h.performFollow(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsUndo(activity), aptypes.IsDelete(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsUndo(activity):
+		return h.performUndo(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsDelete(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -271,6 +276,26 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	if h.queue == nil {
 		return "skip: queue is not configured", nil
 	}
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	activityID, _ := activity["id"].(string)
+	if _, err := h.follows.Upsert(ctx, follows.Follow{
+		FollowerID:          follower.ID,
+		FolloweeID:          followee.ID,
+		FollowerURI:         follower.URI,
+		FolloweeURI:         followee.URI,
+		FollowerHost:        follower.Host,
+		FolloweeHost:        followee.Host,
+		FollowerInbox:       follower.Inbox,
+		FollowerSharedInbox: follower.SharedInbox,
+		FolloweeInbox:       followee.Inbox,
+		FolloweeSharedInbox: followee.SharedInbox,
+		CreatedAt:           time.Now().UTC(),
+		RemoteActivityID:    activityID,
+	}); err != nil {
+		return "", err
+	}
 	inbox := follower.SharedInbox
 	if inbox == "" {
 		inbox = follower.Inbox
@@ -284,6 +309,39 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		return "", err
 	}
 	return "ok: follow accepted delivery enqueued", nil
+}
+
+func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	object, ok := activity["object"].(map[string]any)
+	if !ok || !aptypes.IsFollow(object) {
+		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
+	}
+	followerID, err := aptypes.GetAPID(object["actor"])
+	if err != nil {
+		return "skip: undo follow actor is invalid", nil
+	}
+	if followerID != actor.URI {
+		return "skip: undo follow actor mismatch", nil
+	}
+	followeeID, err := aptypes.GetAPID(object["object"])
+	if err != nil {
+		return "skip: undo followee not found", nil
+	}
+	followee, err := h.repo.FindByURI(ctx, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if followee == nil || followee.Host != nil {
+		return "skip: undo followee is not a local user", nil
+	}
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	undoID, _ := activity["id"].(string)
+	if err := h.follows.Delete(ctx, actor.ID, followee.ID, undoID); err != nil {
+		return "", err
+	}
+	return "ok: unfollowed", nil
 }
 
 func copyCreateAudience(activity map[string]any, object map[string]any) {
