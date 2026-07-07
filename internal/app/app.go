@@ -139,7 +139,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer: queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, queueClient),
+			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, followRepo, queueClient),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

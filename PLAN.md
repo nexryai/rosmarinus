@@ -46,6 +46,8 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [x] `GET /users/{user}/followers`
 - [x] `GET /users/{user}/following`
 - [x] `GET /users/{user}/collections/featured`
+- [x] `GET /users/{user}/followers?page=true` backed by stored follows.
+- [x] `GET /users/{user}/following?page=true` backed by stored follows.
 - [x] `GET /notes/{note}`
 - [ ] `GET /notes/{note}/activity`
 - [ ] `GET /emojis/{emoji}`
@@ -362,6 +364,8 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement Concorde-shaped local actor `outbox`, `followers`,
       `following`, and `featured` AP collections with empty contents until
       social graph and local note ownership are implemented.
+- [x] Back local actor `followers` and `following` collections with stored
+      `follows` records.
 - [x] Implement remote actor create/update baseline.
 - [x] Implement signed remote AP GET.
 - [x] Add actor validation tests based on Concorde edge cases.

@@ -18,6 +18,7 @@ import (
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -32,6 +33,11 @@ type fakeQueueClient struct {
 
 type fakeNoteLookup struct {
 	note *domainnotes.Note
+}
+
+type fakeFollowLookup struct {
+	followers []follows.Follow
+	following []follows.Follow
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -62,6 +68,36 @@ func (f fakeNoteLookup) FindByID(ctx context.Context, id string) (*domainnotes.N
 		return f.note, nil
 	}
 	return nil, nil
+}
+
+func (f fakeFollowLookup) CountFollowers(ctx context.Context, id string) (int, error) {
+	_ = ctx
+	_ = id
+	return len(f.followers), nil
+}
+
+func (f fakeFollowLookup) CountFollowing(ctx context.Context, id string) (int, error) {
+	_ = ctx
+	_ = id
+	return len(f.following), nil
+}
+
+func (f fakeFollowLookup) ListFollowers(ctx context.Context, id string, limit int) ([]follows.Follow, error) {
+	_ = ctx
+	_ = id
+	if limit > len(f.followers) {
+		limit = len(f.followers)
+	}
+	return f.followers[:limit], nil
+}
+
+func (f fakeFollowLookup) ListFollowing(ctx context.Context, id string, limit int) ([]follows.Follow, error) {
+	_ = ctx
+	_ = id
+	if limit > len(f.following) {
+		limit = len(f.following)
+	}
+	return f.following[:limit], nil
 }
 
 func testConfig() config.Config {
@@ -251,6 +287,64 @@ func TestActorCollectionsByID(t *testing.T) {
 	}
 }
 
+func TestActorFollowCollectionsByIDUseStoredFollows(t *testing.T) {
+	lookup := fakeActorLookup{actor: &actors.Actor{
+		ID:       "actor-id",
+		Username: "alice",
+		URI:      "https://example.test/users/actor-id",
+	}}
+	followLookup := fakeFollowLookup{
+		followers: []follows.Follow{{
+			FollowerID:  "remote-alice",
+			FolloweeID:  "actor-id",
+			FollowerURI: "https://remote.example/users/alice",
+			FolloweeURI: "https://example.test/users/actor-id",
+		}},
+		following: []follows.Follow{{
+			FollowerID:  "actor-id",
+			FolloweeID:  "remote-bob",
+			FollowerURI: "https://example.test/users/actor-id",
+			FolloweeURI: "https://remote.example/users/bob",
+		}},
+	}
+	cases := []struct {
+		path string
+		want []string
+	}{
+		{
+			path: "/users/actor-id/followers",
+			want: []string{`"totalItems":1`, `"first":"https://example.test/users/actor-id/followers?page=true"`},
+		},
+		{
+			path: "/users/actor-id/followers?page=true",
+			want: []string{`"totalItems":1`, `"orderedItems":["https://remote.example/users/alice"]`},
+		},
+		{
+			path: "/users/actor-id/following",
+			want: []string{`"totalItems":1`, `"first":"https://example.test/users/actor-id/following?page=true"`},
+		},
+		{
+			path: "/users/actor-id/following?page=true",
+			want: []string{`"totalItems":1`, `"orderedItems":["https://remote.example/users/bob"]`},
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			NewHandlerWithStores(testConfig(), nil, lookup, nil, followLookup, nil).ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(rec.Body.String(), want) {
+					t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
 func TestNoteByID(t *testing.T) {
 	cw := "cw"
 	req := httptest.NewRequest(http.MethodGet, "/notes/note-id", nil)
@@ -275,7 +369,7 @@ func TestNoteByID(t *testing.T) {
 		}},
 		CreatedAt: time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}}
-	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil).ServeHTTP(rec, req)
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

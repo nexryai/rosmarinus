@@ -91,6 +91,36 @@ func (r *FollowRepository) Delete(ctx context.Context, followerID, followeeID, r
 	return err
 }
 
+func (r *FollowRepository) CountFollowers(ctx context.Context, followeeID string) (int, error) {
+	count, err := r.collection.CountDocuments(ctx, bson.M{
+		"followeeId": followeeID,
+		"deletedAt":  nil,
+	})
+	return int(count), err
+}
+
+func (r *FollowRepository) CountFollowing(ctx context.Context, followerID string) (int, error) {
+	count, err := r.collection.CountDocuments(ctx, bson.M{
+		"followerId": followerID,
+		"deletedAt":  nil,
+	})
+	return int(count), err
+}
+
+func (r *FollowRepository) ListFollowers(ctx context.Context, followeeID string, limit int) ([]follows.Follow, error) {
+	return r.findMany(ctx, bson.M{
+		"followeeId": followeeID,
+		"deletedAt":  nil,
+	}, limit)
+}
+
+func (r *FollowRepository) ListFollowing(ctx context.Context, followerID string, limit int) ([]follows.Follow, error) {
+	return r.findMany(ctx, bson.M{
+		"followerId": followerID,
+		"deletedAt":  nil,
+	}, limit)
+}
+
 func (r *FollowRepository) findOne(ctx context.Context, filter bson.M) (*follows.Follow, error) {
 	var doc followDocument
 	if err := r.collection.FindOne(ctx, filter).Decode(&doc); err != nil {
@@ -100,6 +130,29 @@ func (r *FollowRepository) findOne(ctx context.Context, filter bson.M) (*follows
 		return nil, err
 	}
 	return toFollow(doc), nil
+}
+
+func (r *FollowRepository) findMany(ctx context.Context, filter bson.M, limit int) ([]follows.Follow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().
+		SetSort(bson.D{{Key: "createdAt", Value: -1}}).
+		SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var docs []followDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]follows.Follow, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, *toFollow(doc))
+	}
+	return out, nil
 }
 
 func fromFollow(follow follows.Follow) followDocument {
