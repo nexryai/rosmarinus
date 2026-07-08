@@ -8,6 +8,9 @@ import (
 )
 
 func Render(note *domainnotes.Note) map[string]any {
+	if note.RenoteURI != "" && note.Text == "" && note.InReplyToURI == "" && len(note.Attachments) == 0 {
+		return RenderAnnounce(note)
+	}
 	to, cc := renderAudience(note.AttributedTo, note.Visibility)
 	published := note.CreatedAt
 	if note.PublishedAt != nil {
@@ -45,6 +48,23 @@ func Render(note *domainnotes.Note) map[string]any {
 		"attachment":     renderAttachments(note.Attachments),
 		"sensitive":      note.Sensitive || note.ContentWarning != nil || hasSensitiveAttachment(note.Attachments),
 		"tag":            renderTags(note),
+	})
+}
+
+func RenderAnnounce(note *domainnotes.Note) map[string]any {
+	to, cc := renderAudience(note.AttributedTo, note.Visibility)
+	published := note.CreatedAt
+	if note.PublishedAt != nil {
+		published = *note.PublishedAt
+	}
+	return withContext(map[string]any{
+		"id":        note.URI,
+		"type":      "Announce",
+		"actor":     note.AttributedTo,
+		"published": published.UTC().Format(time.RFC3339),
+		"to":        to,
+		"cc":        cc,
+		"object":    note.RenoteURI,
 	})
 }
 

@@ -176,7 +176,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performDelete(ctx, actor, activity)
 	case aptypes.IsLike(activity):
 		return h.performLike(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsAnnounce(activity):
+		return h.performAnnounce(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -360,6 +362,108 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 	return "ok: reaction created", nil
 }
 
+func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	activityID, err := aptypes.GetAPID(activity)
+	if err != nil {
+		return "skip: announce id is invalid", nil
+	}
+	existing, err := h.notes.FindByURI(ctx, activityID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return "skip: announce exists", nil
+	}
+	targetURI, err := aptypes.GetAPID(activity["object"])
+	if err != nil {
+		return "skip: announce target is invalid", nil
+	}
+	target, err := h.resolveAnnounceTarget(ctx, targetURI)
+	if err != nil {
+		return "", err
+	}
+	if target == nil {
+		return fmt.Sprintf("skip: announce target not found %s", targetURI), nil
+	}
+	note := domainnotes.Note{
+		URI:          activityID,
+		AttributedTo: actor.URI,
+		AuthorID:     actor.ID,
+		Visibility:   domainnotes.Visibility(apnotes.ParseVisibility(actor.URI, activity["to"], activity["cc"])),
+		RenoteID:     target.ID,
+		RenoteURI:    target.URI,
+		Raw:          activity,
+		CreatedAt:    time.Now().UTC(),
+		PublishedAt:  publishedAt(activity),
+	}
+	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
+		return "", err
+	}
+	return "ok: announce created", nil
+}
+
+func (h *Handler) resolveAnnounceTarget(ctx context.Context, targetURI string) (*domainnotes.Note, error) {
+	target, err := h.notes.FindByURI(ctx, targetURI)
+	if err != nil || target != nil {
+		return target, err
+	}
+	if h.client == nil {
+		return nil, fmt.Errorf("announce target resolver is not configured")
+	}
+	object, err := h.client.FetchObject(ctx, targetURI, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve announce target: %w", err)
+	}
+	if !aptypes.IsPost(object) {
+		return nil, fmt.Errorf("announce target is not a post: %v", object["type"])
+	}
+	attributedTo, err := aptypes.GetOneAPID(object["attributedTo"])
+	if err != nil {
+		return nil, fmt.Errorf("announce target attributedTo is invalid: %w", err)
+	}
+	if h.repo == nil {
+		return nil, fmt.Errorf("actor repository is not configured")
+	}
+	targetActor, err := h.repo.FindByURI(ctx, attributedTo)
+	if err != nil {
+		return nil, err
+	}
+	if targetActor == nil {
+		targetActor, err = h.resolver.ResolveActor(ctx, attributedTo)
+		if err != nil {
+			return nil, fmt.Errorf("resolve announce target actor: %w", err)
+		}
+	}
+	if targetActor == nil {
+		return nil, nil
+	}
+	parsed, err := apnotes.ParseRemoteNote(object, targetURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid announce target note: %w", err)
+	}
+	return h.notes.UpsertRemoteNote(ctx, domainnotes.Note{
+		URI:            parsed.URI,
+		AttributedTo:   parsed.AttributedTo,
+		AuthorID:       targetActor.ID,
+		Text:           parsed.Text,
+		ContentWarning: parsed.ContentWarning,
+		Sensitive:      parsed.Sensitive,
+		InReplyToURI:   parsed.InReplyToURI,
+		QuoteURI:       parsed.QuoteURI,
+		Visibility:     domainnotes.Visibility(parsed.Visibility),
+		MentionURIs:    parsed.MentionURIs,
+		Hashtags:       parsed.Hashtags,
+		Emojis:         parsed.Emojis,
+		Attachments:    parsed.Attachments,
+		Raw:            object,
+		CreatedAt:      time.Now().UTC(),
+		PublishedAt:    publishedAt(object),
+	})
+}
+
 func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
 	object, err := h.undoObject(ctx, activity["object"])
 	if err != nil {
@@ -370,6 +474,9 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 	}
 	if aptypes.IsLike(object) {
 		return h.performUndoLike(ctx, actor, activity, object)
+	}
+	if aptypes.IsAnnounce(object) {
+		return h.performUndoAnnounce(ctx, actor, object)
 	}
 	if !aptypes.IsFollow(object) {
 		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
@@ -450,6 +557,34 @@ func (h *Handler) performUndoLike(ctx context.Context, actor *actors.Actor, acti
 		return "", err
 	}
 	return "ok: reaction deleted", nil
+}
+
+func (h *Handler) performUndoAnnounce(ctx context.Context, actor *actors.Actor, object map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	announcerID, err := aptypes.GetAPID(object["actor"])
+	if err != nil {
+		return "skip: undo announce actor is invalid", nil
+	}
+	if announcerID != actor.URI {
+		return "skip: undo announce actor mismatch", nil
+	}
+	announceURI, err := aptypes.GetAPID(object)
+	if err != nil {
+		return "skip: undo announce id is invalid", nil
+	}
+	note, err := h.notes.FindByURI(ctx, announceURI)
+	if err != nil {
+		return "", err
+	}
+	if note == nil || note.AuthorID != actor.ID {
+		return "skip: no such Announce", nil
+	}
+	if err := h.notes.DeleteRemoteNote(ctx, announceURI, actor.ID); err != nil {
+		return "", err
+	}
+	return "ok: deleted", nil
 }
 
 func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {

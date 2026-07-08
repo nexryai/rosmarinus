@@ -84,7 +84,9 @@ same style as Concorde.
 - [x] `Create`: merge activity/object audiences, fill missing `attributedTo`,
       resolve object, and create basic notes.
 - [ ] `Create`: create questions/polls and full note side effects.
-- [ ] `Announce`: resolve target note, check visibility, create renote.
+- [x] `Announce`: resolve target note and create a basic renote record.
+- [ ] `Announce`: full visibility checks, blocked-host checks, counters, and
+      notification side effects.
 - [x] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note and create
       or replace the actor's reaction using Concorde-compatible
       `_misskey_reaction || content || name` precedence.
@@ -101,7 +103,8 @@ same style as Concorde.
       followee relationships.
 - [x] `Undo`: support remote `Undo(Like)`, `Undo(EmojiReaction)`, and
       `Undo(EmojiReact)` by deleting the actor's stored note reaction.
-- [ ] `Undo`: support undo block, announce, and accept.
+- [x] `Undo`: support remote `Undo(Announce)` by deleting the stored renote.
+- [ ] `Undo`: support undo block and accept.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
 - [ ] `Delete`: tombstone actors and enqueue account cleanup.
@@ -156,6 +159,7 @@ same style as Concorde.
 - [x] Store basic URI, attributedTo, author, text, content warning, sensitive,
       reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP
       object, createdAt, and publishedAt for remote notes.
+- [x] Store basic renote/Announce target references.
 - [x] Store basic remote attachment metadata.
 - [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
 - [ ] Store cached files, polls, URL, visible users, resolved reply/renote, and
@@ -306,7 +310,8 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `actor_public_keys`: unique `keyId`
 - [x] `notes`: unique sparse `uri`
 - [x] `notes`: basic `{ authorId, createdAt }`
-- [ ] `notes`: `userId`, `userHost`, `replyId`, `renoteId`, `createdAt`
+- [x] `notes`: basic `{ renoteId, createdAt }`
+- [ ] `notes`: `userId`, `userHost`, `replyId`, `createdAt`
 - [ ] `notes`: tag and mention indexes suitable for MongoDB
 - [x] `follows`: unique `{ followerId, followeeId }`
 - [x] `follows`: basic `{ followerId, createdAt }` and
@@ -434,7 +439,8 @@ flags, but that is an operational option, not the default architecture.
       persistence.
 - [ ] Implement reaction emoji extraction, counts, notifications, and local
       reaction delivery.
-- [ ] Implement `Announce` and undo announce.
+- [x] Implement basic inbound `Announce` and undo announce persistence.
+- [ ] Implement Announce visibility/counter/notification side effects.
 - [ ] Implement block and unblock.
 - [ ] Add tests for local/remote follow direction combinations.
 

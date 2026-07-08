@@ -580,6 +580,82 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 	}
 }
 
+func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	noteRepo := &fakeNoteRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
+		objects: map[string]map[string]any{
+			"https://remote.example/notes/1": {
+				"id":           "https://remote.example/notes/1",
+				"type":         "Note",
+				"attributedTo": "https://remote.example/users/alice",
+				"to":           "https://www.w3.org/ns/activitystreams#Public",
+				"content":      "hello",
+			},
+		},
+	}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":        "https://remote.example/activities/announce",
+			"type":      "Announce",
+			"actor":     "https://remote.example/users/alice",
+			"object":    "https://remote.example/notes/1",
+			"published": "2026-07-08T00:00:00Z",
+			"to":        "https://www.w3.org/ns/activitystreams#Public",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: announce created" {
+		t.Fatalf("result = %q", result)
+	}
+	target := noteRepo.notes["https://remote.example/notes/1"]
+	if target == nil {
+		t.Fatalf("announce target was not stored")
+	}
+	announce := noteRepo.notes["https://remote.example/activities/announce"]
+	if announce == nil {
+		t.Fatalf("announce was not stored")
+	}
+	if announce.AuthorID != remote.ID || announce.AttributedTo != remote.URI {
+		t.Fatalf("unexpected announce actor: %+v", announce)
+	}
+	if announce.RenoteURI != target.URI || announce.RenoteID != target.ID {
+		t.Fatalf("unexpected renote reference: %+v target=%+v", announce, target)
+	}
+	if announce.Visibility != domainnotes.VisibilityPublic {
+		t.Fatalf("visibility = %q", announce.Visibility)
+	}
+}
+
 func TestProcessInboxUndoLikeDeletesReaction(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
@@ -664,6 +740,75 @@ func TestProcessInboxUndoLikeDeletesReaction(t *testing.T) {
 	}
 	if reactionRepo.deleted == nil || reactionRepo.deleted.RemoteUndoActivityID != "https://remote.example/activities/undo-like" {
 		t.Fatalf("delete was not recorded: %+v", reactionRepo.deleted)
+	}
+}
+
+func TestProcessInboxUndoAnnounceDeletesRenote(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"https://remote.example/activities/announce": {
+			ID:           "announce-id",
+			URI:          "https://remote.example/activities/announce",
+			AttributedTo: remote.URI,
+			AuthorID:     remote.ID,
+			RenoteID:     "note-id",
+			RenoteURI:    "https://rosmarinus.example/notes/1",
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
+		objects: map[string]map[string]any{
+			"https://remote.example/activities/announce": {
+				"id":     "https://remote.example/activities/announce",
+				"type":   "Announce",
+				"actor":  "https://remote.example/users/alice",
+				"object": "https://rosmarinus.example/notes/1",
+			},
+		},
+	}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":     "https://remote.example/activities/undo-announce",
+			"type":   "Undo",
+			"actor":  "https://remote.example/users/alice",
+			"object": "https://remote.example/activities/announce",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: deleted" {
+		t.Fatalf("result = %q", result)
+	}
+	if noteRepo.notes["https://remote.example/activities/announce"] != nil {
+		t.Fatalf("announce still exists: %+v", noteRepo.notes["https://remote.example/activities/announce"])
 	}
 }
 

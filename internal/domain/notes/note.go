@@ -24,6 +24,8 @@ type Note struct {
 	Sensitive      bool
 	InReplyToURI   string
 	QuoteURI       string
+	RenoteID       string
+	RenoteURI      string
 	Visibility     Visibility
 	MentionURIs    []string
 	Hashtags       []string
