@@ -33,3 +33,6 @@
 
 - Make git commits at coherent implementation checkpoints after tests pass.
 - Do not mix unrelated or unfinished work into the same commit.
+- Always create signed git commits.
+- If signing fails, do not create an unsigned commit. Stop and notify the user
+  that the commit could not be signed.
