@@ -1,19 +1,35 @@
 # Rosmarinus ActivityPub Server
 
-## 追加規約
- - ActivityPub HTTP Signature の署名・検証は、ドラフト段階の仕様が現在も使われているため、独自暗号実装ではなく `github.com/go-fed/httpsig` を使用すること。Concorde / `@peertube/http-signature` 相当の互換挙動が必要な場合も、このライブラリを薄くラップして実装すること。
- - 実装がまとまり、テストが通った適切なタイミングで git commit を作成すること。未完了の作業や無関係な差分は同じ commit に混ぜないこと。
+## Engineering Rules
 
-## 規約
- - Goのベストプラクティスに従うこと
- - DIを使用すること
- - Goの`log`パッケージを使用してなるべくlogすること
- - テストをなるべく書くこと
- - ソースコードの改行コードにはLFを使用すること
+- Follow Go best practices.
+- Use dependency injection for services, repositories, queues, clients, and loggers.
+- Prefer Go's standard `log` package and log meaningful runtime events.
+- Write focused tests whenever practical.
+- Keep source files using LF line endings.
+- Load all runtime configuration from environment variables.
 
-## 要件
- - このプロジェクトは、concordeというMisskeyフォークの後継プロジェクトです。
- - Concordeの参考となるソースコードは`./concorde`にあります。このディレクトリは編集しないこと。ActivityPubのパース、署名関係の実装や、MFM、カスタム絵文字周りの扱いについてはこのディレクトリを参考にしてなるべく同等の処理で実装すること。
- - rosmarinusはActivityPubを使用して通信する部分のマイクロサービスであり、このプロジェクトにフロントエンドやAPIは含まれません。主な責務はActivityPubで他のインスタンスと通信し、MongoDBに書き込むことです。
- - データベースにはMongoDBを使用します。MongoDBのベストプラクティスに従ってDBを設計してください。
- - 設定はすべて環境変数で流し込むようにして
+## Project Scope
+
+- Rosmarinus is the successor project to Concorde, a Misskey fork.
+- Rosmarinus is an ActivityPub microservice. It does not include a frontend or a public Misskey-compatible API.
+- Its main responsibility is communicating with other ActivityPub servers and writing federation state to MongoDB.
+- Use MongoDB as the database and design collections/indexes with MongoDB best practices.
+
+## Concorde Compatibility
+
+- Treat `./concorde` as the behavioral reference for ActivityPub federation.
+- Do not edit `./concorde`.
+- For ActivityPub parsing, HTTP signatures, MFM handling, custom emoji handling, and federation edge cases, read Concorde and implement Rosmarinus as closely as practical.
+- Treat `./misskey` only as a Docker federation test fixture/reference. Do not use it as the primary implementation guide.
+
+## HTTP Signatures
+
+- ActivityPub still commonly uses draft-era HTTP Signatures, so compatibility matters more than strict modern spec interpretation.
+- Use `github.com/go-fed/httpsig` for HTTP Signature signing and verification.
+- Preserve Concorde-compatible behavior where it matches real-world `@peertube/http-signature` federation behavior.
+
+## Git Workflow
+
+- Make git commits at coherent implementation checkpoints after tests pass.
+- Do not mix unrelated or unfinished work into the same commit.
