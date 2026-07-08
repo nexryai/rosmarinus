@@ -16,6 +16,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -155,10 +156,47 @@ func (f *fakeNoteRepo) DeleteRemoteNote(ctx context.Context, uri, authorID strin
 	return nil
 }
 
-type fakeClient struct{}
+type fakeReactionRepo struct {
+	reactions map[string]*reactions.Reaction
+	deleted   *reactions.Reaction
+}
+
+func (f *fakeReactionRepo) Find(ctx context.Context, noteID, actorID string) (*reactions.Reaction, error) {
+	if f.reactions == nil {
+		return nil, nil
+	}
+	return f.reactions[noteID+"\x00"+actorID], nil
+}
+
+func (f *fakeReactionRepo) Upsert(ctx context.Context, reaction reactions.Reaction) (*reactions.Reaction, error) {
+	if f.reactions == nil {
+		f.reactions = map[string]*reactions.Reaction{}
+	}
+	key := reaction.NoteID + "\x00" + reaction.ActorID
+	if reaction.ID == "" {
+		reaction.ID = "reaction-id"
+	}
+	f.reactions[key] = &reaction
+	return &reaction, nil
+}
+
+func (f *fakeReactionRepo) Delete(ctx context.Context, noteID, actorID, remoteUndoActivityID string) error {
+	existing, _ := f.Find(ctx, noteID, actorID)
+	if existing != nil {
+		copy := *existing
+		copy.RemoteUndoActivityID = remoteUndoActivityID
+		f.deleted = &copy
+		delete(f.reactions, noteID+"\x00"+actorID)
+	}
+	return nil
+}
+
+type fakeClient struct {
+	objects map[string]map[string]any
+}
 
 func (f *fakeClient) FetchObject(ctx context.Context, uri string, signer *actors.Actor) (map[string]any, error) {
-	return nil, nil
+	return f.objects[uri], nil
 }
 
 func (f *fakeClient) Deliver(ctx context.Context, target string, signer actors.Actor, object map[string]any) error {
@@ -197,7 +235,7 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 	followsRepo := &fakeFollowRepo{}
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
-	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeReactionRepo{}, q, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -280,7 +318,7 @@ func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
-	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeQueue{}, &fakeClient{}, local)
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -342,7 +380,7 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -437,7 +475,7 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 			Visibility:   domainnotes.VisibilityPublic,
 		},
 	}}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -466,6 +504,166 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 	}
 	if noteRepo.notes["https://remote.example/notes/1"] != nil {
 		t.Fatalf("note still exists: %+v", noteRepo.notes["https://remote.example/notes/1"])
+	}
+}
+
+func TestProcessInboxLikeStoresReaction(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"https://rosmarinus.example/notes/1": {
+			ID:           "note-id",
+			URI:          "https://rosmarinus.example/notes/1",
+			AttributedTo: "https://rosmarinus.example/users/relay",
+			AuthorID:     "relay",
+			Text:         "hello",
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	reactionRepo := &fakeReactionRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":                "https://remote.example/activities/like",
+			"type":              "EmojiReaction",
+			"actor":             "https://remote.example/users/alice",
+			"object":            "https://rosmarinus.example/notes/1",
+			"_misskey_reaction": ":party@example.com:",
+			"content":           "ignored",
+			"name":              "also-ignored",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: reaction created" {
+		t.Fatalf("result = %q", result)
+	}
+	reaction, err := reactionRepo.Find(context.Background(), "note-id", remote.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if reaction == nil {
+		t.Fatalf("reaction was not stored")
+	}
+	if reaction.NoteURI != "https://rosmarinus.example/notes/1" || reaction.ActorURI != remote.URI {
+		t.Fatalf("unexpected reaction identity: %+v", reaction)
+	}
+	if reaction.Reaction != ":party@example.com:" || reaction.RemoteActivityID != "https://remote.example/activities/like" {
+		t.Fatalf("unexpected reaction payload: %+v", reaction)
+	}
+}
+
+func TestProcessInboxUndoLikeDeletesReaction(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"https://rosmarinus.example/notes/1": {
+			ID:           "note-id",
+			URI:          "https://rosmarinus.example/notes/1",
+			AttributedTo: "https://rosmarinus.example/users/relay",
+			AuthorID:     "relay",
+			Text:         "hello",
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	reactionRepo := &fakeReactionRepo{}
+	_, err = reactionRepo.Upsert(context.Background(), reactions.Reaction{
+		NoteID:   "note-id",
+		NoteURI:  "https://rosmarinus.example/notes/1",
+		ActorID:  remote.ID,
+		ActorURI: remote.URI,
+		Reaction: ":party@example.com:",
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{
+		objects: map[string]map[string]any{
+			"https://remote.example/activities/like": {
+				"id":                "https://remote.example/activities/like",
+				"type":              "Like",
+				"actor":             "https://remote.example/users/alice",
+				"object":            "https://rosmarinus.example/notes/1",
+				"_misskey_reaction": ":party@example.com:",
+			},
+		},
+	}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":     "https://remote.example/activities/undo-like",
+			"type":   "Undo",
+			"actor":  "https://remote.example/users/alice",
+			"object": "https://remote.example/activities/like",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: reaction deleted" {
+		t.Fatalf("result = %q", result)
+	}
+	reaction, err := reactionRepo.Find(context.Background(), "note-id", remote.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if reaction != nil {
+		t.Fatalf("reaction still exists: %+v", reaction)
+	}
+	if reactionRepo.deleted == nil || reactionRepo.deleted.RemoteUndoActivityID != "https://remote.example/activities/undo-like" {
+		t.Fatalf("delete was not recorded: %+v", reactionRepo.deleted)
 	}
 }
 

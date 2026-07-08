@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -38,19 +39,21 @@ type Handler struct {
 	repo       actors.Repository
 	notes      domainnotes.Repository
 	follows    follows.Repository
+	reactions  reactions.Repository
 	queue      QueueClient
 	client     APClient
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
 
-func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, reactionRepo reactions.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
 		repo:       repo,
 		notes:      noteRepo,
 		follows:    followRepo,
+		reactions:  reactionRepo,
 		queue:      queueClient,
 		client:     apClient,
 		resolver:   apresolver.New(repo, apClient, localActor),
@@ -171,7 +174,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performUndo(ctx, actor, activity)
 	case aptypes.IsDelete(activity):
 		return h.performDelete(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsLike(activity):
+		return h.performLike(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -313,9 +318,60 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	return "ok: follow accepted delivery enqueued", nil
 }
 
+func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	if h.reactions == nil {
+		return "skip: reaction repository is not configured", nil
+	}
+	targetURI, err := aptypes.GetAPID(activity["object"])
+	if err != nil {
+		return "skip: target note is invalid", nil
+	}
+	note, err := h.notes.FindByURI(ctx, targetURI)
+	if err != nil {
+		return "", err
+	}
+	if note == nil {
+		return fmt.Sprintf("skip: target note not found %s", targetURI), nil
+	}
+	reaction := reactionFromActivity(activity)
+	existing, err := h.reactions.Find(ctx, note.ID, actor.ID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil && existing.Reaction == reaction {
+		return "skip: already reacted", nil
+	}
+	activityID, _ := activity["id"].(string)
+	if _, err := h.reactions.Upsert(ctx, reactions.Reaction{
+		NoteID:           note.ID,
+		NoteURI:          note.URI,
+		ActorID:          actor.ID,
+		ActorURI:         actor.URI,
+		ActorHost:        actor.Host,
+		Reaction:         reaction,
+		RemoteActivityID: activityID,
+		CreatedAt:        time.Now().UTC(),
+	}); err != nil {
+		return "", err
+	}
+	return "ok: reaction created", nil
+}
+
 func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
-	object, ok := activity["object"].(map[string]any)
-	if !ok || !aptypes.IsFollow(object) {
+	object, err := h.undoObject(ctx, activity["object"])
+	if err != nil {
+		return "", err
+	}
+	if object == nil {
+		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
+	}
+	if aptypes.IsLike(object) {
+		return h.performUndoLike(ctx, actor, activity, object)
+	}
+	if !aptypes.IsFollow(object) {
 		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
 	}
 	followerID, err := aptypes.GetAPID(object["actor"])
@@ -344,6 +400,56 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 		return "", err
 	}
 	return "ok: unfollowed", nil
+}
+
+func (h *Handler) undoObject(ctx context.Context, value any) (map[string]any, error) {
+	if object, ok := value.(map[string]any); ok {
+		return object, nil
+	}
+	uri, err := aptypes.GetAPID(value)
+	if err != nil {
+		return nil, nil
+	}
+	if h.client == nil {
+		return nil, fmt.Errorf("undo object resolver is not configured")
+	}
+	object, err := h.client.FetchObject(ctx, uri, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve undo object: %w", err)
+	}
+	return object, nil
+}
+
+func (h *Handler) performUndoLike(ctx context.Context, actor *actors.Actor, activity, object map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	if h.reactions == nil {
+		return "skip: reaction repository is not configured", nil
+	}
+	reacterID, err := aptypes.GetAPID(object["actor"])
+	if err != nil {
+		return "skip: undo like actor is invalid", nil
+	}
+	if reacterID != actor.URI {
+		return "skip: undo like actor mismatch", nil
+	}
+	targetURI, err := aptypes.GetAPID(object["object"])
+	if err != nil {
+		return "skip: target note is invalid", nil
+	}
+	note, err := h.notes.FindByURI(ctx, targetURI)
+	if err != nil {
+		return "", err
+	}
+	if note == nil {
+		return fmt.Sprintf("skip: target note not found %s", targetURI), nil
+	}
+	undoID, _ := activity["id"].(string)
+	if err := h.reactions.Delete(ctx, note.ID, actor.ID, undoID); err != nil {
+		return "", err
+	}
+	return "ok: reaction deleted", nil
 }
 
 func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
@@ -413,6 +519,15 @@ func firstString(value any) string {
 func isDeletePostType(typ string) bool {
 	_, ok := aptypes.ValidPostTypes[typ]
 	return ok
+}
+
+func reactionFromActivity(activity map[string]any) string {
+	for _, field := range []string{"_misskey_reaction", "content", "name"} {
+		if reaction := firstString(activity[field]); reaction != "" {
+			return reaction
+		}
+	}
+	return "like"
 }
 
 func copyCreateAudience(activity map[string]any, object map[string]any) {

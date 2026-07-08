@@ -85,8 +85,11 @@ same style as Concorde.
       resolve object, and create basic notes.
 - [ ] `Create`: create questions/polls and full note side effects.
 - [ ] `Announce`: resolve target note, check visibility, create renote.
-- [ ] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note, extract emoji
-      tags, create reaction.
+- [x] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note and create
+      or replace the actor's reaction using Concorde-compatible
+      `_misskey_reaction || content || name` precedence.
+- [ ] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and update
+      note reaction counts/notification side effects.
 - [x] `Follow`: basic remote actor follows local actor path, enqueueing
       `Accept(Follow)` for unlocked local actors.
 - [x] `Follow`: persist remote follower -> local followee relationships
@@ -96,7 +99,9 @@ same style as Concorde.
 - [ ] `Reject`: reject local outgoing follow requests.
 - [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
       followee relationships.
-- [ ] `Undo`: support undo block, like, announce, and accept.
+- [x] `Undo`: support remote `Undo(Like)`, `Undo(EmojiReaction)`, and
+      `Undo(EmojiReact)` by deleting the actor's stored note reaction.
+- [ ] `Undo`: support undo block, announce, and accept.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
 - [ ] `Delete`: tombstone actors and enqueue account cleanup.
@@ -285,7 +290,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `actor_public_keys`
 - [x] `notes`
 - [ ] `polls`
-- [ ] `reactions`
+- [x] `reactions`
 - [x] `follows`
 - [ ] `follow_requests`
 - [ ] `blocks`
@@ -308,6 +313,9 @@ flags, but that is an operational option, not the default architecture.
       `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
 - [ ] `blocks`: unique `{ blockerId, blockeeId }`
+- [x] `reactions`: unique `{ noteId, actorId }`
+- [x] `reactions`: basic `{ noteId, createdAt }` and
+      `{ actorId, createdAt }`
 - [ ] `emojis`: unique `{ name, host }`
 - [ ] `instances`: unique `host`
 - [ ] `media`: unique sparse `uri`, and content hash if available
@@ -422,7 +430,10 @@ flags, but that is an operational option, not the default architecture.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
 - [ ] Implement full `Follow`, `Accept`, and `Reject`.
 - [ ] Implement follow request storage and locked-account behavior.
-- [ ] Implement `Like`, `EmojiReaction`, and undo reaction.
+- [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
+      persistence.
+- [ ] Implement reaction emoji extraction, counts, notifications, and local
+      reaction delivery.
 - [ ] Implement `Announce` and undo announce.
 - [ ] Implement block and unblock.
 - [ ] Add tests for local/remote follow direction combinations.

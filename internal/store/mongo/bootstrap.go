@@ -45,6 +45,27 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
+	_, err = db.Collection("reactions").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "noteId", Value: 1}, {Key: "actorId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_reactions_note_actor").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "noteId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_reactions_note_created_at"),
+		},
+		{
+			Keys: bson.D{{Key: "actorId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_reactions_actor_created_at"),
+		},
+	})
+	if err != nil {
+		return err
+	}
 	_, err = db.Collection("follows").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{{Key: "followerId", Value: 1}, {Key: "followeeId", Value: 1}},
