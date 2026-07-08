@@ -64,6 +64,9 @@ same style as Concorde.
 - [x] Parse JSON after preserving the raw body.
 - [x] Require and verify `Digest: SHA-256=...`.
 - [x] Parse HTTP Signature.
+- [x] Use `github.com/go-fed/httpsig` for HTTP Signature RSA sign/verify
+      behavior instead of hand-rolled crypto or Node-side
+      `@peertube/http-signature` semantics.
 - [x] Accept only supported algorithms such as `rsa-sha256` and compatible
       hs2019 forms.
 - [x] Require signed `(request-target)`, `digest`, `host`, and `date` for POST.
@@ -175,6 +178,9 @@ same style as Concorde.
 - [x] Include `Date`, `Host`, `Content-Type`, `Digest`, `Signature`, and
       `User-Agent`.
 - [x] Sign GET requests with `Accept`, `Date`, `Host`, and `Signature`.
+- [x] Delegate HTTP Signature cryptographic signing and verification to
+      `github.com/go-fed/httpsig`, while preserving Concorde-compatible header
+      lists and signing string shape.
 - [x] Use `(request-target) date host digest` for POST signing strings.
 - [x] Use `(request-target) date host accept` for GET signing strings.
 - [ ] Build delivery inbox lists from followers and direct recipients.
@@ -325,6 +331,14 @@ flags, but that is an operational option, not the default architecture.
 - [x] `internal/queue`: Redis queue interfaces and implementation.
 - [ ] `internal/cache`: Redis-backed caches and locks.
 - [ ] `internal/mfm`: MFM/HTML conversion compatibility layer.
+
+## Development Workflow Notes
+
+- [x] HTTP Signature implementation should use `github.com/go-fed/httpsig` for
+      signing and verification. Keep compatibility wrappers only for
+      ActivityPub draft-era quirks and Concorde-compatible behavior.
+- [x] Make git commits at coherent implementation checkpoints after tests pass,
+      instead of leaving unrelated completed changes uncommitted.
 
 ## Implementation Phases
 

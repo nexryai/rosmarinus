@@ -1,17 +1,17 @@
 package signature
 
 import (
-	"crypto"
-	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
+
+	gofedhttpsig "github.com/go-fed/httpsig"
 )
 
 var supportedAlgorithm = regexp.MustCompile(`(?i)^((dsa|rsa|ecdsa)-(sha256|sha384|sha512)|ed25519-sha512|hs2019)$`)
@@ -44,6 +44,9 @@ func ParseRequest(r *http.Request, requiredHeaders []string) (HTTPSignature, err
 	}
 	if err := requireSignedHeaders(sig.Headers, requiredHeaders); err != nil {
 		return HTTPSignature{}, err
+	}
+	if _, err := gofedhttpsig.NewVerifier(r); err != nil {
+		return HTTPSignature{}, fmt.Errorf("parse http signature with go-fed/httpsig: %w", err)
 	}
 	req := Request{
 		URL:     "https://" + r.Host + r.URL.RequestURI(),
@@ -106,8 +109,15 @@ func VerifyRSA(sig HTTPSignature, publicKeyPEM string) error {
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256([]byte(sig.SigningString))
-	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], sig.Signature); err != nil {
+	req, err := requestFromSigningString(sig)
+	if err != nil {
+		return err
+	}
+	verifier, err := gofedhttpsig.NewVerifier(req)
+	if err != nil {
+		return fmt.Errorf("create go-fed/httpsig verifier: %w", err)
+	}
+	if err := verifier.Verify(pub, httpsigAlgorithm(sig.Algorithm)); err != nil {
 		return fmt.Errorf("verify rsa signature: %w", err)
 	}
 	return nil
@@ -118,12 +128,32 @@ func SignRSA(signingString string, privateKeyPEM string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sum := sha256.Sum256([]byte(signingString))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, sum[:])
+	req, err := requestFromSigningString(HTTPSignature{
+		KeyID:         "rosmarinus-signing-key",
+		Algorithm:     "rsa-sha256",
+		SigningString: signingString,
+		Signature:     []byte("placeholder"),
+	})
 	if err != nil {
+		return nil, err
+	}
+	req.Header.Del("Signature")
+	headers, err := headersFromSigningString(signingString)
+	if err != nil {
+		return nil, err
+	}
+	signer, _, err := gofedhttpsig.NewSigner([]gofedhttpsig.Algorithm{gofedhttpsig.RSA_SHA256}, gofedhttpsig.DigestSha256, headers, gofedhttpsig.Signature, 0)
+	if err != nil {
+		return nil, fmt.Errorf("create go-fed/httpsig signer: %w", err)
+	}
+	if err := signer.SignRequest(key, "rosmarinus-signing-key", req, nil); err != nil {
 		return nil, fmt.Errorf("sign rsa signature: %w", err)
 	}
-	return sig, nil
+	parsed, err := ParseHeader(req.Header.Get("Signature"))
+	if err != nil {
+		return nil, err
+	}
+	return parsed.Signature, nil
 }
 
 func SignatureHeader(keyID string, headers []string, signature []byte) string {
@@ -193,6 +223,73 @@ func headerMap(r *http.Request) map[string]string {
 	}
 	headers["Host"] = r.Host
 	return headers
+}
+
+func requestFromSigningString(sig HTTPSignature) (*http.Request, error) {
+	method := http.MethodGet
+	target := "/"
+	headers := http.Header{}
+	for _, line := range strings.Split(sig.SigningString, "\n") {
+		name, value, ok := strings.Cut(line, ": ")
+		if !ok {
+			return nil, fmt.Errorf("invalid signing string line: %s", line)
+		}
+		if name == "(request-target)" {
+			parts := strings.SplitN(value, " ", 2)
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("invalid request-target: %s", value)
+			}
+			method = strings.ToUpper(parts[0])
+			target = parts[1]
+			continue
+		}
+		headers.Add(name, value)
+	}
+	req := httptest.NewRequest(method, "https://example.test"+target, nil)
+	req.Header = headers
+	if host := headers.Get("Host"); host != "" {
+		req.Host = host
+	} else {
+		req.Header.Set("Host", req.Host)
+	}
+	keyID := sig.KeyID
+	if keyID == "" {
+		keyID = "rosmarinus-signing-key"
+	}
+	headersToSign := sig.Headers
+	if len(headersToSign) == 0 {
+		var err error
+		headersToSign, err = headersFromSigningString(sig.SigningString)
+		if err != nil {
+			return nil, err
+		}
+	}
+	req.Header.Set("Signature", SignatureHeader(keyID, headersToSign, sig.Signature))
+	return req, nil
+}
+
+func headersFromSigningString(signingString string) ([]string, error) {
+	lines := strings.Split(signingString, "\n")
+	headers := make([]string, 0, len(lines))
+	for _, line := range lines {
+		name, _, ok := strings.Cut(line, ": ")
+		if !ok {
+			return nil, fmt.Errorf("invalid signing string line: %s", line)
+		}
+		headers = append(headers, strings.ToLower(name))
+	}
+	return headers, nil
+}
+
+func httpsigAlgorithm(algorithm string) gofedhttpsig.Algorithm {
+	switch strings.ToLower(algorithm) {
+	case "rsa-sha384":
+		return gofedhttpsig.RSA_SHA384
+	case "rsa-sha512":
+		return gofedhttpsig.RSA_SHA512
+	default:
+		return gofedhttpsig.RSA_SHA256
+	}
 }
 
 func parseRSAPublicKey(publicKeyPEM string) (*rsa.PublicKey, error) {

@@ -3,6 +3,7 @@ module github.com/nexryai/rosmarinus
 go 1.26.4
 
 require (
+	github.com/go-fed/httpsig v1.1.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.21.0
 	go.mongodb.org/mongo-driver/v2 v2.7.0
