@@ -37,6 +37,7 @@ type noteDocument struct {
 	Raw            map[string]interface{} `bson:"raw"`
 	CreatedAt      time.Time              `bson:"createdAt"`
 	PublishedAt    *time.Time             `bson:"publishedAt,omitempty"`
+	DeletedAt      *time.Time             `bson:"deletedAt,omitempty"`
 }
 
 type emojiDocument struct {
@@ -61,11 +62,11 @@ func NewNoteRepository(db *mongo.Database) *NoteRepository {
 }
 
 func (r *NoteRepository) FindByID(ctx context.Context, id string) (*domainnotes.Note, error) {
-	return r.findOne(ctx, bson.M{"_id": id})
+	return r.findOne(ctx, bson.M{"_id": id, "deletedAt": nil})
 }
 
 func (r *NoteRepository) FindByURI(ctx context.Context, uri string) (*domainnotes.Note, error) {
-	return r.findOne(ctx, bson.M{"uri": uri})
+	return r.findOne(ctx, bson.M{"uri": uri, "deletedAt": nil})
 }
 
 func (r *NoteRepository) UpsertRemoteNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
@@ -86,6 +87,18 @@ func (r *NoteRepository) UpsertRemoteNote(ctx context.Context, note domainnotes.
 		return nil, err
 	}
 	return r.FindByURI(ctx, note.URI)
+}
+
+func (r *NoteRepository) DeleteRemoteNote(ctx context.Context, uri, authorID string) error {
+	now := time.Now().UTC()
+	_, err := r.collection.UpdateOne(ctx, bson.M{
+		"uri":       uri,
+		"authorId":  authorID,
+		"deletedAt": nil,
+	}, bson.M{
+		"$set": bson.M{"deletedAt": now},
+	})
+	return err
 }
 
 func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnotes.Note, error) {
@@ -114,6 +127,7 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		Raw:            mapAny(doc.Raw),
 		CreatedAt:      doc.CreatedAt,
 		PublishedAt:    doc.PublishedAt,
+		DeletedAt:      doc.DeletedAt,
 	}, nil
 }
 
@@ -136,6 +150,7 @@ func fromNote(note domainnotes.Note) noteDocument {
 		Raw:            mapInterface(note.Raw),
 		CreatedAt:      note.CreatedAt,
 		PublishedAt:    note.PublishedAt,
+		DeletedAt:      note.DeletedAt,
 	}
 }
 

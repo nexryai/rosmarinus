@@ -141,6 +141,20 @@ func (f *fakeNoteRepo) UpsertRemoteNote(ctx context.Context, note domainnotes.No
 	return &note, nil
 }
 
+func (f *fakeNoteRepo) DeleteRemoteNote(ctx context.Context, uri, authorID string) error {
+	if f.notes == nil {
+		return nil
+	}
+	note := f.notes[uri]
+	if note == nil || note.AuthorID != authorID {
+		return nil
+	}
+	now := time.Now().UTC()
+	note.DeletedAt = &now
+	delete(f.notes, uri)
+	return nil
+}
+
 type fakeClient struct{}
 
 func (f *fakeClient) FetchObject(ctx context.Context, uri string, signer *actors.Actor) (map[string]any, error) {
@@ -389,6 +403,69 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 	}
 	if len(note.Attachments) != 1 || note.Attachments[0].URL != "https://remote.example/files/1.png" {
 		t.Fatalf("attachments = %#v", note.Attachments)
+	}
+}
+
+func TestProcessInboxDeleteRemovesNote(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"https://remote.example/notes/1": {
+			ID:           "note-id",
+			URI:          "https://remote.example/notes/1",
+			AttributedTo: remote.URI,
+			AuthorID:     remote.ID,
+			Text:         "hello",
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":    "https://remote.example/activities/delete",
+			"type":  "Delete",
+			"actor": "https://remote.example/users/alice",
+			"object": map[string]any{
+				"id":         "https://remote.example/notes/1",
+				"type":       "Tombstone",
+				"formerType": "Note",
+			},
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: note deleted" {
+		t.Fatalf("result = %q", result)
+	}
+	if noteRepo.notes["https://remote.example/notes/1"] != nil {
+		t.Fatalf("note still exists: %+v", noteRepo.notes["https://remote.example/notes/1"])
 	}
 }
 

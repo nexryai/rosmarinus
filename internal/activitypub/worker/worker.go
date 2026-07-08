@@ -169,7 +169,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performFollow(ctx, actor, activity)
 	case aptypes.IsUndo(activity):
 		return h.performUndo(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsDelete(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsDelete(activity):
+		return h.performDelete(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsAnnounce(activity), aptypes.IsLike(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -342,6 +344,75 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 		return "", err
 	}
 	return "ok: unfollowed", nil
+}
+
+func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
+	}
+	if activityActor, err := aptypes.GetAPID(activity["actor"]); err != nil || activityActor != actor.URI {
+		return "skip: delete actor mismatch", nil
+	}
+	object := activity["object"]
+	uri, err := aptypes.GetAPID(object)
+	if err != nil {
+		return "skip: delete object id is invalid", nil
+	}
+	formerType := deleteObjectFormerType(object)
+	if formerType == "" {
+		if uri == actor.URI {
+			formerType = "Person"
+		} else {
+			formerType = "Note"
+		}
+	}
+	if !isDeletePostType(formerType) {
+		if _, ok := aptypes.ValidActorTypes[formerType]; ok {
+			return fmt.Sprintf("skip: delete actor is not implemented yet: %s", uri), nil
+		}
+		return fmt.Sprintf("skip: unknown delete object type %s", formerType), nil
+	}
+	note, err := h.notes.FindByURI(ctx, uri)
+	if err != nil {
+		return "", err
+	}
+	if note == nil {
+		return "skip: note not found", nil
+	}
+	if note.AuthorID != actor.ID {
+		return "skip: delete actor is not note author", nil
+	}
+	if err := h.notes.DeleteRemoteNote(ctx, uri, actor.ID); err != nil {
+		return "", err
+	}
+	return "ok: note deleted", nil
+}
+
+func deleteObjectFormerType(object any) string {
+	obj, ok := object.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if aptypes.IsType(obj, "Tombstone") {
+		return firstString(obj["formerType"])
+	}
+	return firstString(obj["type"])
+}
+
+func firstString(value any) string {
+	items := aptypes.ToArray(value)
+	if len(items) == 0 {
+		return ""
+	}
+	if s, ok := items[0].(string); ok {
+		return s
+	}
+	return ""
+}
+
+func isDeletePostType(typ string) bool {
+	_, ok := aptypes.ValidPostTypes[typ]
+	return ok
 }
 
 func copyCreateAudience(activity map[string]any, object map[string]any) {

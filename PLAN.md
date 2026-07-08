@@ -97,7 +97,9 @@ same style as Concorde.
 - [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
       followee relationships.
 - [ ] `Undo`: support undo block, like, announce, and accept.
-- [ ] `Delete`: delete notes, tombstone actors, and enqueue account cleanup.
+- [x] `Delete`: delete remote notes when the deleting actor is the stored note
+      author.
+- [ ] `Delete`: tombstone actors and enqueue account cleanup.
 - [ ] `Update`: update actors, notes, and questions/polls.
 - [ ] `Block`: create local block state for remote actor against local actor.
 - [ ] `Flag`: store abuse reports for local users mentioned in the object list.
@@ -150,6 +152,7 @@ same style as Concorde.
       reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP
       object, createdAt, and publishedAt for remote notes.
 - [x] Store basic remote attachment metadata.
+- [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
 - [ ] Store cached files, polls, URL, visible users, resolved reply/renote, and
       denormalized author fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
@@ -428,7 +431,8 @@ flags, but that is an operational option, not the default architecture.
 
 - [ ] Implement actor update.
 - [ ] Implement note update.
-- [ ] Implement note delete.
+- [x] Implement inbound remote note delete.
+- [ ] Implement local note delete delivery and cascaded delete behavior.
 - [ ] Implement actor delete and account cleanup queue.
 - [ ] Implement poll extraction, vote ingestion, delayed poll-ended jobs, and
       poll update delivery.

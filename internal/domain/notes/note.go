@@ -32,6 +32,7 @@ type Note struct {
 	Raw            map[string]any
 	CreatedAt      time.Time
 	PublishedAt    *time.Time
+	DeletedAt      *time.Time
 }
 
 type Emoji struct {
@@ -55,4 +56,5 @@ type Repository interface {
 	FindByID(context.Context, string) (*Note, error)
 	FindByURI(context.Context, string) (*Note, error)
 	UpsertRemoteNote(context.Context, Note) (*Note, error)
+	DeleteRemoteNote(context.Context, string, string) error
 }
