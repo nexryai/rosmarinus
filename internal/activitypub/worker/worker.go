@@ -292,9 +292,6 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	if followee == nil || followee.Host != nil {
 		return "skip: followee is not a local user", nil
 	}
-	if h.queue == nil {
-		return "skip: queue is not configured", nil
-	}
 	if h.follows == nil {
 		return "skip: follow repository is not configured", nil
 	}
@@ -311,18 +308,51 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		FolloweeInbox:       followee.Inbox,
 		FolloweeSharedInbox: followee.SharedInbox,
 		CreatedAt:           time.Now().UTC(),
+		Status:              follows.StatusPending,
 		RemoteActivityID:    activityID,
 	}); err != nil {
 		return "", err
 	}
-	inbox := follower.SharedInbox
+	return "ok: follow request pending", nil
+}
+
+func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	if h.queue == nil {
+		return "skip: queue is not configured", nil
+	}
+	follow, err := h.follows.Approve(ctx, followerID, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if follow == nil {
+		return "skip: follow request not found", nil
+	}
+	followee, err := h.repo.FindLocalByID(ctx, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if followee == nil {
+		return "skip: followee is not a local user", nil
+	}
+	inbox := follow.FollowerSharedInbox
 	if inbox == "" {
-		inbox = follower.Inbox
+		inbox = follow.FollowerInbox
 	}
 	if inbox == "" {
 		return "skip: follower inbox is empty", nil
 	}
-	accept := renderAccept(followee, activity)
+	followActivity := map[string]any{
+		"type":   "Follow",
+		"actor":  follow.FollowerURI,
+		"object": follow.FolloweeURI,
+	}
+	if follow.RemoteActivityID != "" {
+		followActivity["id"] = follow.RemoteActivityID
+	}
+	accept := renderAccept(followee, followActivity)
 	task := queue.NewDeliverTask(followee.ID, inbox, accept, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err

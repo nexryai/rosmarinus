@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+type Status string
+
+const (
+	StatusPending  Status = "pending"
+	StatusAccepted Status = "accepted"
+)
+
 type Follow struct {
 	ID                   string
 	FollowerID           string
@@ -18,6 +25,8 @@ type Follow struct {
 	FolloweeInbox        string
 	FolloweeSharedInbox  string
 	CreatedAt            time.Time
+	Status               Status
+	AcceptedAt           *time.Time
 	RemoteActivityID     string
 	RemoteUndoActivityID string
 }
@@ -25,5 +34,6 @@ type Follow struct {
 type Repository interface {
 	Find(context.Context, string, string) (*Follow, error)
 	Upsert(context.Context, Follow) (*Follow, error)
+	Approve(context.Context, string, string) (*Follow, error)
 	Delete(context.Context, string, string, string) error
 }

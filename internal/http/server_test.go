@@ -215,6 +215,9 @@ func TestActorByID(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"preferredUsername":"alice"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"manuallyApprovesFollowers":true`) {
+		t.Fatalf("unexpected follow approval body: %s", rec.Body.String())
+	}
 	if !strings.Contains(rec.Body.String(), `"publicKeyPem":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"`) {
 		t.Fatalf("unexpected public key body: %s", rec.Body.String())
 	}

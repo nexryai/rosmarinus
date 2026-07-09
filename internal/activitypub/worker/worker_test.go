@@ -99,13 +99,33 @@ func (f *fakeFollowRepo) Upsert(ctx context.Context, follow follows.Follow) (*fo
 	}
 	key := follow.FollowerID + "\x00" + follow.FolloweeID
 	if existing := f.follows[key]; existing != nil {
+		if existing.Status == follows.StatusAccepted && follow.Status == follows.StatusPending {
+			return existing, nil
+		}
+		if follow.Status != "" {
+			existing.Status = follow.Status
+		}
 		return existing, nil
 	}
 	if follow.ID == "" {
 		follow.ID = "follow-id"
 	}
+	if follow.Status == "" {
+		follow.Status = follows.StatusAccepted
+	}
 	f.follows[key] = &follow
 	return &follow, nil
+}
+
+func (f *fakeFollowRepo) Approve(ctx context.Context, followerID, followeeID string) (*follows.Follow, error) {
+	existing, _ := f.Find(ctx, followerID, followeeID)
+	if existing == nil {
+		return nil, nil
+	}
+	existing.Status = follows.StatusAccepted
+	now := time.Now().UTC()
+	existing.AcceptedAt = &now
+	return existing, nil
 }
 
 func (f *fakeFollowRepo) Delete(ctx context.Context, followerID, followeeID, remoteUndoActivityID string) error {
@@ -274,7 +294,7 @@ func (f *fakeClient) Deliver(ctx context.Context, target string, signer actors.A
 	return nil
 }
 
-func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
+func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatalf("GenerateKey returned error: %v", err)
@@ -326,8 +346,75 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessInbox returned error: %v", err)
 	}
+	if result != "ok: follow request pending" {
+		t.Fatalf("result = %q", result)
+	}
+	if q.task.Type != "" {
+		t.Fatalf("unexpected task enqueued: %+v", q.task)
+	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow == nil || follow.FollowerURI != remote.URI || follow.FolloweeURI != local.URI {
+		t.Fatalf("follow was not stored: %+v", follow)
+	}
+	if follow.Status != follows.StatusPending {
+		t.Fatalf("follow status = %q", follow.Status)
+	}
+}
+
+func TestApproveFollowEnqueuesAccept(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:          "relay",
+		Username:    "relay",
+		URI:         "https://rosmarinus.example/users/relay",
+		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		SharedInbox:  "https://remote.example/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: "unused",
+	}
+	followsRepo := &fakeFollowRepo{}
+	_, err := followsRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:          remote.ID,
+		FolloweeID:          local.ID,
+		FollowerURI:         remote.URI,
+		FolloweeURI:         local.URI,
+		FollowerHost:        remote.Host,
+		FolloweeHost:        local.Host,
+		FollowerInbox:       remote.Inbox,
+		FollowerSharedInbox: remote.SharedInbox,
+		Status:              follows.StatusPending,
+		RemoteActivityID:    "https://remote.example/activities/follow",
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	result, err := h.ApproveFollow(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("ApproveFollow returned error: %v", err)
+	}
 	if result != "ok: follow accepted delivery enqueued" {
 		t.Fatalf("result = %q", result)
+	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow == nil || follow.Status != follows.StatusAccepted || follow.AcceptedAt == nil {
+		t.Fatalf("follow was not accepted: %+v", follow)
 	}
 	if q.task.Type != queue.TaskDeliver || q.task.Queue != queue.QueueDeliver {
 		t.Fatalf("unexpected task: %+v", q.task)
@@ -342,12 +429,12 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 	if payload.Object["type"] != "Accept" || payload.Object["actor"] != local.URI {
 		t.Fatalf("unexpected accept activity: %+v", payload.Object)
 	}
-	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
-	if err != nil {
-		t.Fatalf("Find returned error: %v", err)
+	object, ok := payload.Object["object"].(map[string]any)
+	if !ok {
+		t.Fatalf("accept object type = %T", payload.Object["object"])
 	}
-	if follow == nil || follow.FollowerURI != remote.URI || follow.FolloweeURI != local.URI {
-		t.Fatalf("follow was not stored: %+v", follow)
+	if object["id"] != "https://remote.example/activities/follow" || object["actor"] != remote.URI || object["object"] != local.URI {
+		t.Fatalf("unexpected accepted follow object: %+v", object)
 	}
 }
 

@@ -32,6 +32,8 @@ type followDocument struct {
 	FolloweeInbox        string     `bson:"followeeInbox,omitempty"`
 	FolloweeSharedInbox  string     `bson:"followeeSharedInbox,omitempty"`
 	CreatedAt            time.Time  `bson:"createdAt"`
+	Status               string     `bson:"status"`
+	AcceptedAt           *time.Time `bson:"acceptedAt,omitempty"`
 	RemoteActivityID     string     `bson:"remoteActivityId,omitempty"`
 	RemoteUndoActivityID string     `bson:"remoteUndoActivityId,omitempty"`
 	DeletedAt            *time.Time `bson:"deletedAt,omitempty"`
@@ -59,20 +61,65 @@ func (r *FollowRepository) Upsert(ctx context.Context, follow follows.Follow) (*
 	if follow.CreatedAt.IsZero() {
 		follow.CreatedAt = time.Now().UTC()
 	}
+	if follow.Status == "" {
+		follow.Status = follows.StatusAccepted
+	}
+	if follow.Status == follows.StatusAccepted && follow.AcceptedAt == nil {
+		now := time.Now().UTC()
+		follow.AcceptedAt = &now
+	}
+	existing, err := r.Find(ctx, follow.FollowerID, follow.FolloweeID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.Status == follows.StatusAccepted && follow.Status == follows.StatusPending {
+		return existing, nil
+	}
 	doc := fromFollow(follow)
-	_, err := r.collection.UpdateOne(ctx, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{
 		"followerId": doc.FollowerID,
 		"followeeId": doc.FolloweeID,
 	}, bson.M{
-		"$setOnInsert": doc,
+		"$setOnInsert": bson.M{
+			"_id":       doc.ID,
+			"createdAt": doc.CreatedAt,
+		},
 		"$set": bson.M{
-			"deletedAt": nil,
+			"followerUri":          doc.FollowerURI,
+			"followeeUri":          doc.FolloweeURI,
+			"followerHost":         doc.FollowerHost,
+			"followeeHost":         doc.FolloweeHost,
+			"followerInbox":        doc.FollowerInbox,
+			"followerSharedInbox":  doc.FollowerSharedInbox,
+			"followeeInbox":        doc.FolloweeInbox,
+			"followeeSharedInbox":  doc.FolloweeSharedInbox,
+			"status":               doc.Status,
+			"acceptedAt":           doc.AcceptedAt,
+			"remoteActivityId":     doc.RemoteActivityID,
+			"remoteUndoActivityId": doc.RemoteUndoActivityID,
+			"deletedAt":            nil,
 		},
 	}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
 	return r.Find(ctx, follow.FollowerID, follow.FolloweeID)
+}
+
+func (r *FollowRepository) Approve(ctx context.Context, followerID, followeeID string) (*follows.Follow, error) {
+	now := time.Now().UTC()
+	_, err := r.collection.UpdateOne(ctx, bson.M{
+		"followerId": followerID,
+		"followeeId": followeeID,
+		"deletedAt":  nil,
+	}, bson.M{"$set": bson.M{
+		"status":     string(follows.StatusAccepted),
+		"acceptedAt": now,
+	}})
+	if err != nil {
+		return nil, err
+	}
+	return r.Find(ctx, followerID, followeeID)
 }
 
 func (r *FollowRepository) Delete(ctx context.Context, followerID, followeeID, remoteUndoActivityID string) error {
@@ -92,33 +139,35 @@ func (r *FollowRepository) Delete(ctx context.Context, followerID, followeeID, r
 }
 
 func (r *FollowRepository) CountFollowers(ctx context.Context, followeeID string) (int, error) {
-	count, err := r.collection.CountDocuments(ctx, bson.M{
+	filter := acceptedFollowFilter(bson.M{
 		"followeeId": followeeID,
 		"deletedAt":  nil,
 	})
+	count, err := r.collection.CountDocuments(ctx, filter)
 	return int(count), err
 }
 
 func (r *FollowRepository) CountFollowing(ctx context.Context, followerID string) (int, error) {
-	count, err := r.collection.CountDocuments(ctx, bson.M{
+	filter := acceptedFollowFilter(bson.M{
 		"followerId": followerID,
 		"deletedAt":  nil,
 	})
+	count, err := r.collection.CountDocuments(ctx, filter)
 	return int(count), err
 }
 
 func (r *FollowRepository) ListFollowers(ctx context.Context, followeeID string, limit int) ([]follows.Follow, error) {
-	return r.findMany(ctx, bson.M{
+	return r.findMany(ctx, acceptedFollowFilter(bson.M{
 		"followeeId": followeeID,
 		"deletedAt":  nil,
-	}, limit)
+	}), limit)
 }
 
 func (r *FollowRepository) ListFollowing(ctx context.Context, followerID string, limit int) ([]follows.Follow, error) {
-	return r.findMany(ctx, bson.M{
+	return r.findMany(ctx, acceptedFollowFilter(bson.M{
 		"followerId": followerID,
 		"deletedAt":  nil,
-	}, limit)
+	}), limit)
 }
 
 func (r *FollowRepository) findOne(ctx context.Context, filter bson.M) (*follows.Follow, error) {
@@ -156,6 +205,10 @@ func (r *FollowRepository) findMany(ctx context.Context, filter bson.M, limit in
 }
 
 func fromFollow(follow follows.Follow) followDocument {
+	status := follow.Status
+	if status == "" {
+		status = follows.StatusAccepted
+	}
 	return followDocument{
 		ID:                   follow.ID,
 		FollowerID:           follow.FollowerID,
@@ -169,12 +222,18 @@ func fromFollow(follow follows.Follow) followDocument {
 		FolloweeInbox:        follow.FolloweeInbox,
 		FolloweeSharedInbox:  follow.FolloweeSharedInbox,
 		CreatedAt:            follow.CreatedAt,
+		Status:               string(status),
+		AcceptedAt:           follow.AcceptedAt,
 		RemoteActivityID:     follow.RemoteActivityID,
 		RemoteUndoActivityID: follow.RemoteUndoActivityID,
 	}
 }
 
 func toFollow(doc followDocument) *follows.Follow {
+	status := follows.Status(doc.Status)
+	if status == "" {
+		status = follows.StatusAccepted
+	}
 	return &follows.Follow{
 		ID:                   doc.ID,
 		FollowerID:           doc.FollowerID,
@@ -188,9 +247,20 @@ func toFollow(doc followDocument) *follows.Follow {
 		FolloweeInbox:        doc.FolloweeInbox,
 		FolloweeSharedInbox:  doc.FolloweeSharedInbox,
 		CreatedAt:            doc.CreatedAt,
+		Status:               status,
+		AcceptedAt:           doc.AcceptedAt,
 		RemoteActivityID:     doc.RemoteActivityID,
 		RemoteUndoActivityID: doc.RemoteUndoActivityID,
 	}
+}
+
+func acceptedFollowFilter(filter bson.M) bson.M {
+	filter["$or"] = []bson.M{
+		{"status": string(follows.StatusAccepted)},
+		{"status": ""},
+		{"status": bson.M{"$exists": false}},
+	}
+	return filter
 }
 
 func followID(followerID, followeeID string) string {

@@ -440,7 +440,7 @@ func renderActor(cfg config.Config, actor *actors.Actor) map[string]any {
 		"preferredUsername":         actor.Username,
 		"name":                      actor.Name,
 		"summary":                   nil,
-		"manuallyApprovesFollowers": false,
+		"manuallyApprovesFollowers": true,
 		"discoverable":              true,
 		"publicKey":                 renderPublicKey(actor),
 		"alsoKnownAs":               []string{},

@@ -98,10 +98,11 @@ same style as Concorde.
       `_misskey_reaction || content || name` precedence.
 - [ ] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and update
       note reaction counts/notification side effects.
-- [ ] `Follow`: store every remote follower -> local followee request as
+- [x] `Follow`: store every remote follower -> local followee request as
       pending and do not enqueue `Accept(Follow)` automatically.
-- [ ] `Follow`: explicit local approval transitions a pending request into an
-      accepted relationship and enqueues `Accept(Follow)`.
+- [x] `Follow`: basic internal approval path transitions a pending request into
+      an accepted relationship and enqueues `Accept(Follow)`.
+- [ ] `Follow`: expose a user/admin-facing approval command or HTTP endpoint.
 - [ ] `Follow`: block/request persistence logic.
 - [ ] `Accept`: accept local outgoing follow requests.
 - [ ] `Reject`: reject local outgoing follow requests.
@@ -441,13 +442,14 @@ flags, but that is an operational option, not the default architecture.
 
 ### Phase 5: Social Graph And Reactions
 
-- [ ] Replace the current basic inbound `Follow` auto-accept behavior with
+- [x] Replace the current basic inbound `Follow` auto-accept behavior with
       pending follow request storage for every local actor.
-- [ ] Implement explicit local approval for pending follow requests, then
+- [x] Implement basic explicit local approval for pending follow requests, then
       persist the accepted relationship and enqueue `Accept(Follow)`.
+- [ ] Expose follow approval through an operator/user-facing API or command.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
 - [ ] Implement full `Follow`, `Accept`, and `Reject`.
-- [ ] Implement follow request storage without unlocked-account auto-accept.
+- [x] Implement follow request storage without unlocked-account auto-accept.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
 - [ ] Implement reaction emoji extraction, counts, notifications, and local
