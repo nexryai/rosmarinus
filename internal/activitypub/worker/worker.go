@@ -22,6 +22,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
+	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -42,13 +43,14 @@ type Handler struct {
 	follows    follows.Repository
 	blocks     blocks.Repository
 	reactions  reactions.Repository
+	reports    reports.Repository
 	queue      QueueClient
 	client     APClient
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
 
-func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
@@ -57,6 +59,7 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 		follows:    followRepo,
 		blocks:     blockRepo,
 		reactions:  reactionRepo,
+		reports:    reportRepo,
 		queue:      queueClient,
 		client:     apClient,
 		resolver:   apresolver.New(repo, apClient, localActor),
@@ -183,7 +186,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performAnnounce(ctx, actor, activity)
 	case aptypes.IsBlock(activity):
 		return h.performBlock(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity), aptypes.IsFlag(activity):
+	case aptypes.IsFlag(activity):
+		return h.performFlag(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -357,6 +362,53 @@ func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activ
 		return "", err
 	}
 	return "ok", nil
+}
+
+func (h *Handler) performFlag(ctx context.Context, reporter *actors.Actor, activity map[string]any) (string, error) {
+	if h.reports == nil {
+		return "skip: report repository is not configured", nil
+	}
+	objectURIs := aptypes.GetAPIDs(activity["object"])
+	target, err := h.firstLocalFlagTarget(ctx, objectURIs)
+	if err != nil {
+		return "", err
+	}
+	if target == nil {
+		return "skip", nil
+	}
+	activityID, _ := activity["id"].(string)
+	content, _ := activity["content"].(string)
+	if _, err := h.reports.Create(ctx, reports.Report{
+		TargetUserID:     target.ID,
+		TargetUserHost:   target.Host,
+		ReporterID:       reporter.ID,
+		ReporterHost:     reporter.Host,
+		ReporterURI:      reporter.URI,
+		Content:          content,
+		Comment:          flagComment(content, objectURIs),
+		ObjectURIs:       objectURIs,
+		RemoteActivityID: activityID,
+		CreatedAt:        time.Now().UTC(),
+	}); err != nil {
+		return "", err
+	}
+	return "ok", nil
+}
+
+func (h *Handler) firstLocalFlagTarget(ctx context.Context, objectURIs []string) (*actors.Actor, error) {
+	for _, uri := range objectURIs {
+		if !strings.HasPrefix(uri, strings.TrimRight(h.cfg.PublicURL, "/")+"/users/") {
+			continue
+		}
+		target, err := h.repo.FindByURI(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		if target != nil && target.Host == nil {
+			return target, nil
+		}
+	}
+	return nil, nil
 }
 
 func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
@@ -737,6 +789,14 @@ func reactionFromActivity(activity map[string]any) string {
 		}
 	}
 	return "like"
+}
+
+func flagComment(content string, objectURIs []string) string {
+	raw, err := json.MarshalIndent(objectURIs, "", "  ")
+	if err != nil {
+		raw = []byte("[]")
+	}
+	return content + "\n" + string(raw)
 }
 
 func copyCreateAudience(activity map[string]any, object map[string]any) {

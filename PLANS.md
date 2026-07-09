@@ -111,7 +111,7 @@ same style as Concorde.
 - [ ] `Delete`: tombstone actors and enqueue account cleanup.
 - [ ] `Update`: update actors, notes, and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
-- [ ] `Flag`: store abuse reports for local users mentioned in the object list.
+- [x] `Flag`: store abuse reports for local users mentioned in the object list.
 - [ ] `Add` and `Remove`: inspect Concorde handling before deciding exact scope.
 - [x] Refuse to ingest `Collection` / `OrderedCollection` as a single activity.
 
@@ -302,7 +302,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `emojis`
 - [ ] `media`
 - [ ] `instances`
-- [ ] `abuse_reports`
+- [x] `abuse_reports`
 
 ### Required Indexes
 
@@ -322,6 +322,9 @@ flags, but that is an operational option, not the default architecture.
 - [x] `reactions`: unique `{ noteId, actorId }`
 - [x] `reactions`: basic `{ noteId, createdAt }` and
       `{ actorId, createdAt }`
+- [x] `abuse_reports`: unique sparse `remoteActivityId`
+- [x] `abuse_reports`: basic `{ targetUserId, createdAt }` and
+      `{ reporterId, createdAt }`
 - [ ] `emojis`: unique `{ name, host }`
 - [ ] `instances`: unique `host`
 - [ ] `media`: unique sparse `uri`, and content hash if available
