@@ -1,8 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_VERSION=1.26.4
-
-FROM golang:${GO_VERSION}-bookworm AS build
+FROM golang:alpine AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -13,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 \
     go build -trimpath -ldflags="-s -w" -o /out/rosmarinus .
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 
 COPY --from=build --chown=root:root /out/rosmarinus /usr/local/bin/rosmarinus
 
