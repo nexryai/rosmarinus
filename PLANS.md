@@ -104,12 +104,13 @@ same style as Concorde.
 - [x] `Undo`: support remote `Undo(Like)`, `Undo(EmojiReaction)`, and
       `Undo(EmojiReact)` by deleting the actor's stored note reaction.
 - [x] `Undo`: support remote `Undo(Announce)` by deleting the stored renote.
-- [ ] `Undo`: support undo block and accept.
+- [x] `Undo`: support remote `Undo(Block)` by deleting stored local block state.
+- [ ] `Undo`: support undo accept.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
 - [ ] `Delete`: tombstone actors and enqueue account cleanup.
 - [ ] `Update`: update actors, notes, and questions/polls.
-- [ ] `Block`: create local block state for remote actor against local actor.
+- [x] `Block`: create local block state for remote actor against local actor.
 - [ ] `Flag`: store abuse reports for local users mentioned in the object list.
 - [ ] `Add` and `Remove`: inspect Concorde handling before deciding exact scope.
 - [x] Refuse to ingest `Collection` / `OrderedCollection` as a single activity.
@@ -297,7 +298,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] `reactions`
 - [x] `follows`
 - [ ] `follow_requests`
-- [ ] `blocks`
+- [x] `blocks`
 - [ ] `emojis`
 - [ ] `media`
 - [ ] `instances`
@@ -317,7 +318,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] `follows`: basic `{ followerId, createdAt }` and
       `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
-- [ ] `blocks`: unique `{ blockerId, blockeeId }`
+- [x] `blocks`: unique `{ blockerId, blockeeId }`
 - [x] `reactions`: unique `{ noteId, actorId }`
 - [x] `reactions`: basic `{ noteId, createdAt }` and
       `{ actorId, createdAt }`
@@ -441,7 +442,8 @@ flags, but that is an operational option, not the default architecture.
       reaction delivery.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
 - [ ] Implement Announce visibility/counter/notification side effects.
-- [ ] Implement block and unblock.
+- [x] Implement basic inbound block and unblock.
+- [ ] Apply stored blocks to follow, delivery, and visibility decisions.
 - [ ] Add tests for local/remote follow direction combinations.
 
 ### Phase 6: Updates, Deletes, Polls, And Media

@@ -18,6 +18,7 @@ import (
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
@@ -39,6 +40,7 @@ type Handler struct {
 	repo       actors.Repository
 	notes      domainnotes.Repository
 	follows    follows.Repository
+	blocks     blocks.Repository
 	reactions  reactions.Repository
 	queue      QueueClient
 	client     APClient
@@ -46,13 +48,14 @@ type Handler struct {
 	localActor *actors.Actor
 }
 
-func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, reactionRepo reactions.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
 		repo:       repo,
 		notes:      noteRepo,
 		follows:    followRepo,
+		blocks:     blockRepo,
 		reactions:  reactionRepo,
 		queue:      queueClient,
 		client:     apClient,
@@ -178,7 +181,9 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performLike(ctx, actor, activity)
 	case aptypes.IsAnnounce(activity):
 		return h.performAnnounce(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity), aptypes.IsBlock(activity), aptypes.IsFlag(activity):
+	case aptypes.IsBlock(activity):
+		return h.performBlock(ctx, actor, activity)
+	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity), aptypes.IsFlag(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
@@ -318,6 +323,40 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		return "", err
 	}
 	return "ok: follow accepted delivery enqueued", nil
+}
+
+func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activity map[string]any) (string, error) {
+	blockeeURI, err := aptypes.GetAPID(activity["object"])
+	if err != nil {
+		return "skip: blockee not found", nil
+	}
+	blockee, err := h.repo.FindByURI(ctx, blockeeURI)
+	if err != nil {
+		return "", err
+	}
+	if blockee == nil {
+		return "skip: blockee not found", nil
+	}
+	if blockee.Host != nil {
+		return "skip: blockee is not a local user", nil
+	}
+	if h.blocks == nil {
+		return "skip: block repository is not configured", nil
+	}
+	activityID, _ := activity["id"].(string)
+	if _, err := h.blocks.Upsert(ctx, blocks.Block{
+		BlockerID:        blocker.ID,
+		BlockeeID:        blockee.ID,
+		BlockerURI:       blocker.URI,
+		BlockeeURI:       blockee.URI,
+		BlockerHost:      blocker.Host,
+		BlockeeHost:      blockee.Host,
+		CreatedAt:        time.Now().UTC(),
+		RemoteActivityID: activityID,
+	}); err != nil {
+		return "", err
+	}
+	return "ok", nil
 }
 
 func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
@@ -478,6 +517,9 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 	if aptypes.IsAnnounce(object) {
 		return h.performUndoAnnounce(ctx, actor, object)
 	}
+	if aptypes.IsBlock(object) {
+		return h.performUndoBlock(ctx, actor, activity, object)
+	}
 	if !aptypes.IsFollow(object) {
 		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
 	}
@@ -585,6 +627,38 @@ func (h *Handler) performUndoAnnounce(ctx context.Context, actor *actors.Actor, 
 		return "", err
 	}
 	return "ok: deleted", nil
+}
+
+func (h *Handler) performUndoBlock(ctx context.Context, blocker *actors.Actor, activity, object map[string]any) (string, error) {
+	blockerID, err := aptypes.GetAPID(object["actor"])
+	if err != nil {
+		return "skip: undo block actor is invalid", nil
+	}
+	if blockerID != blocker.URI {
+		return "skip: undo block actor mismatch", nil
+	}
+	blockeeURI, err := aptypes.GetAPID(object["object"])
+	if err != nil {
+		return "skip: blockee not found", nil
+	}
+	blockee, err := h.repo.FindByURI(ctx, blockeeURI)
+	if err != nil {
+		return "", err
+	}
+	if blockee == nil {
+		return "skip: blockee not found", nil
+	}
+	if blockee.Host != nil {
+		return "skip: blockee is not a local user", nil
+	}
+	if h.blocks == nil {
+		return "skip: block repository is not configured", nil
+	}
+	undoID, _ := activity["id"].(string)
+	if err := h.blocks.Delete(ctx, blocker.ID, blockee.ID, undoID); err != nil {
+		return "", err
+	}
+	return "ok", nil
 }
 
 func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
@@ -104,6 +105,44 @@ func (f *fakeFollowRepo) Delete(ctx context.Context, followerID, followeeID, rem
 		copy.RemoteUndoActivityID = remoteUndoActivityID
 		f.deleted = &copy
 		delete(f.follows, followerID+"\x00"+followeeID)
+	}
+	return nil
+}
+
+type fakeBlockRepo struct {
+	blocks  map[string]*blocks.Block
+	deleted *blocks.Block
+}
+
+func (f *fakeBlockRepo) Find(ctx context.Context, blockerID, blockeeID string) (*blocks.Block, error) {
+	if f.blocks == nil {
+		return nil, nil
+	}
+	return f.blocks[blockerID+"\x00"+blockeeID], nil
+}
+
+func (f *fakeBlockRepo) Upsert(ctx context.Context, block blocks.Block) (*blocks.Block, error) {
+	if f.blocks == nil {
+		f.blocks = map[string]*blocks.Block{}
+	}
+	key := block.BlockerID + "\x00" + block.BlockeeID
+	if existing := f.blocks[key]; existing != nil {
+		return existing, nil
+	}
+	if block.ID == "" {
+		block.ID = "block-id"
+	}
+	f.blocks[key] = &block
+	return &block, nil
+}
+
+func (f *fakeBlockRepo) Delete(ctx context.Context, blockerID, blockeeID, remoteUndoActivityID string) error {
+	existing, _ := f.Find(ctx, blockerID, blockeeID)
+	if existing != nil {
+		copy := *existing
+		copy.RemoteUndoActivityID = remoteUndoActivityID
+		f.deleted = &copy
+		delete(f.blocks, blockerID+"\x00"+blockeeID)
 	}
 	return nil
 }
@@ -235,7 +274,7 @@ func TestProcessInboxFollowEnqueuesAccept(t *testing.T) {
 	followsRepo := &fakeFollowRepo{}
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
-	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeReactionRepo{}, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, q, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -318,7 +357,7 @@ func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
-	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -358,6 +397,147 @@ func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
 	}
 }
 
+func TestProcessInboxBlockStoresBlock(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:          "relay",
+		Username:    "relay",
+		URI:         "https://rosmarinus.example/users/relay",
+		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	blockRepo := &fakeBlockRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, blockRepo, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":     "https://remote.example/activities/block",
+			"type":   "Block",
+			"actor":  "https://remote.example/users/alice",
+			"object": "https://rosmarinus.example/users/relay",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("result = %q", result)
+	}
+	block, err := blockRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if block == nil || block.BlockerURI != remote.URI || block.BlockeeURI != local.URI {
+		t.Fatalf("block was not stored: %+v", block)
+	}
+}
+
+func TestProcessInboxUndoBlockDeletesBlock(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:          "relay",
+		Username:    "relay",
+		URI:         "https://rosmarinus.example/users/relay",
+		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	blockRepo := &fakeBlockRepo{}
+	_, err = blockRepo.Upsert(context.Background(), blocks.Block{
+		BlockerID:  remote.ID,
+		BlockeeID:  local.ID,
+		BlockerURI: remote.URI,
+		BlockeeURI: local.URI,
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, blockRepo, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
+		objects: map[string]map[string]any{
+			"https://remote.example/activities/block": {
+				"id":     "https://remote.example/activities/block",
+				"type":   "Block",
+				"actor":  "https://remote.example/users/alice",
+				"object": "https://rosmarinus.example/users/relay",
+			},
+		},
+	}, local)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":     "https://remote.example/activities/undo-block",
+			"type":   "Undo",
+			"actor":  "https://remote.example/users/alice",
+			"object": "https://remote.example/activities/block",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("result = %q", result)
+	}
+	block, err := blockRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if block != nil {
+		t.Fatalf("block still exists: %+v", block)
+	}
+	if blockRepo.deleted == nil || blockRepo.deleted.RemoteUndoActivityID != "https://remote.example/activities/undo-block" {
+		t.Fatalf("delete was not recorded: %+v", blockRepo.deleted)
+	}
+}
+
 func TestProcessInboxCreateStoresNote(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
@@ -380,7 +560,7 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -475,7 +655,7 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 			Visibility:   domainnotes.VisibilityPublic,
 		},
 	}}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -539,7 +719,7 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 		},
 	}}
 	reactionRepo := &fakeReactionRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{}, nil)
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{}, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -602,7 +782,7 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
 		objects: map[string]map[string]any{
 			"https://remote.example/notes/1": {
 				"id":           "https://remote.example/notes/1",
@@ -698,7 +878,7 @@ func TestProcessInboxUndoLikeDeletesReaction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeQueue{}, &fakeClient{
 		objects: map[string]map[string]any{
 			"https://remote.example/activities/like": {
 				"id":                "https://remote.example/activities/like",
@@ -775,7 +955,7 @@ func TestProcessInboxUndoAnnounceDeletesRenote(t *testing.T) {
 			Visibility:   domainnotes.VisibilityPublic,
 		},
 	}}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeQueue{}, &fakeClient{
 		objects: map[string]map[string]any{
 			"https://remote.example/activities/announce": {
 				"id":     "https://remote.example/activities/announce",

@@ -38,6 +38,7 @@ type App struct {
 	actors      *mongostore.ActorRepository
 	notes       *mongostore.NoteRepository
 	follows     *mongostore.FollowRepository
+	blocks      *mongostore.BlockRepository
 	reactions   *mongostore.ReactionRepository
 	localActor  *actors.Actor
 	apClient    *apclient.Client
@@ -92,6 +93,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	actorRepo := mongostore.NewActorRepository(mongoDB)
 	noteRepo := mongostore.NewNoteRepository(mongoDB)
 	followRepo := mongostore.NewFollowRepository(mongoDB)
+	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	var localActor *actors.Actor
 	if cfg.LocalActorUsername != "" {
@@ -122,7 +124,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	queueClient := queue.NewAsynqClient(redisCfg)
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
-	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, apClient, localActor)
+	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, queueClient, apClient, localActor)
 
 	return &App{
 		cfg:         cfg,
@@ -134,6 +136,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		actors:      actorRepo,
 		notes:       noteRepo,
 		follows:     followRepo,
+		blocks:      blockRepo,
 		reactions:   reactionRepo,
 		localActor:  localActor,
 		apClient:    apClient,
