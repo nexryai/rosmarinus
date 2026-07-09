@@ -10,16 +10,12 @@ RUN go mod download
 
 COPY . .
 
-ARG TARGETOS
-ARG TARGETARCH
 RUN CGO_ENABLED=0 \
-    GOOS=${TARGETOS:-linux} \
-    GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags="-s -w" -o /out/rosmarinus .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
-COPY --from=build --chown=nonroot:nonroot /out/rosmarinus /usr/local/bin/rosmarinus
+COPY --from=build --chown=root:root /out/rosmarinus /usr/local/bin/rosmarinus
 
 USER nonroot:nonroot
 EXPOSE 3000
