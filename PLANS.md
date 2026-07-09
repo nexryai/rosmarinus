@@ -23,6 +23,12 @@ Concorde does more than just receive inbox activities. The relevant federation
 surface is spread across ActivityPub routes, well-known routes, resolver code,
 queue processors, note/follow services, and instance metadata services.
 
+Rosmarinus intentionally differs from Concorde in follow approval policy:
+Concorde could auto-accept follows depending on each user's settings, but
+Rosmarinus requires local user approval for every inbound follow. Inbound
+`Follow` activities must be stored as pending requests and must not deliver
+`Accept(Follow)` until an explicit local approval action occurs.
+
 ### Public Discovery Endpoints
 
 - [x] `GET /.well-known/host-meta`
@@ -92,11 +98,11 @@ same style as Concorde.
       `_misskey_reaction || content || name` precedence.
 - [ ] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and update
       note reaction counts/notification side effects.
-- [x] `Follow`: basic remote actor follows local actor path, enqueueing
-      `Accept(Follow)` for unlocked local actors.
-- [x] `Follow`: persist remote follower -> local followee relationships
-      idempotently in MongoDB before enqueueing `Accept(Follow)`.
-- [ ] `Follow`: block/lock/request persistence logic.
+- [ ] `Follow`: store every remote follower -> local followee request as
+      pending and do not enqueue `Accept(Follow)` automatically.
+- [ ] `Follow`: explicit local approval transitions a pending request into an
+      accepted relationship and enqueues `Accept(Follow)`.
+- [ ] `Follow`: block/request persistence logic.
 - [ ] `Accept`: accept local outgoing follow requests.
 - [ ] `Reject`: reject local outgoing follow requests.
 - [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
@@ -435,11 +441,13 @@ flags, but that is an operational option, not the default architecture.
 
 ### Phase 5: Social Graph And Reactions
 
-- [x] Implement basic inbound `Follow` -> outbound `Accept`.
-- [x] Persist inbound remote `Follow` relationships in MongoDB.
+- [ ] Replace the current basic inbound `Follow` auto-accept behavior with
+      pending follow request storage for every local actor.
+- [ ] Implement explicit local approval for pending follow requests, then
+      persist the accepted relationship and enqueue `Accept(Follow)`.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
 - [ ] Implement full `Follow`, `Accept`, and `Reject`.
-- [ ] Implement follow request storage and locked-account behavior.
+- [ ] Implement follow request storage without unlocked-account auto-accept.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
 - [ ] Implement reaction emoji extraction, counts, notifications, and local
@@ -596,8 +604,11 @@ federation peer and to inspect its official local federation test topology.
 - [ ] Use Misskey search/follow UI or API to follow
       `@relay@rosmarinus.example.test`.
 - [ ] Confirm Rosmarinus enqueues and processes:
-      `inbox Follow -> signature verify -> deliver Accept`.
-- [ ] Confirm Misskey marks the follow as accepted.
+      `inbox Follow -> signature verify -> pending follow request`.
+- [ ] Trigger the Rosmarinus local approval path for the pending follow request.
+- [ ] Confirm Rosmarinus enqueues and processes `deliver Accept` only after
+      approval.
+- [ ] Confirm Misskey marks the follow as accepted after approval.
 
 ### Rosmarinus Visibility Checks From Misskey
 
@@ -622,8 +633,9 @@ federation peer and to inspect its official local federation test topology.
 
 ### Outbound Federation Checks
 
-- [ ] Have Rosmarinus send an `Accept(Follow)` back to Misskey.
-- [ ] Confirm Misskey marks the follow request accepted.
+- [ ] Approve a pending Misskey follow request in Rosmarinus.
+- [ ] Confirm Rosmarinus sends `Accept(Follow)` back to Misskey only after
+      approval and Misskey marks the follow request accepted.
 - [ ] Have Rosmarinus send a public `Create(Note)` to Misskey followers.
 - [ ] Confirm Misskey displays or at least stores the note.
 - [ ] Have Rosmarinus send `Like` or `Announce` for a Misskey note.
