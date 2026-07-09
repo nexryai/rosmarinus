@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -22,22 +23,23 @@ type ActorRepository struct {
 }
 
 type actorDocument struct {
-	ID            string  `bson:"_id,omitempty"`
-	Username      string  `bson:"username"`
-	UsernameLower string  `bson:"usernameLower"`
-	Name          string  `bson:"name,omitempty"`
-	Type          string  `bson:"type"`
-	Host          *string `bson:"host"`
-	URI           string  `bson:"uri"`
-	Inbox         string  `bson:"inbox"`
-	SharedInbox   string  `bson:"sharedInbox"`
-	FollowersURI  string  `bson:"followersUri,omitempty"`
-	FollowingURI  string  `bson:"followingUri,omitempty"`
-	FeaturedURI   string  `bson:"featuredUri,omitempty"`
-	PublicKeyID   string  `bson:"publicKeyId"`
-	PublicKeyPEM  string  `bson:"publicKeyPem"`
-	PrivateKeyPEM string  `bson:"privateKeyPem,omitempty"`
-	IsSuspended   bool    `bson:"isSuspended"`
+	ID            string     `bson:"_id,omitempty"`
+	Username      string     `bson:"username"`
+	UsernameLower string     `bson:"usernameLower"`
+	Name          string     `bson:"name,omitempty"`
+	Type          string     `bson:"type"`
+	Host          *string    `bson:"host"`
+	URI           string     `bson:"uri"`
+	Inbox         string     `bson:"inbox"`
+	SharedInbox   string     `bson:"sharedInbox"`
+	FollowersURI  string     `bson:"followersUri,omitempty"`
+	FollowingURI  string     `bson:"followingUri,omitempty"`
+	FeaturedURI   string     `bson:"featuredUri,omitempty"`
+	PublicKeyID   string     `bson:"publicKeyId"`
+	PublicKeyPEM  string     `bson:"publicKeyPem"`
+	PrivateKeyPEM string     `bson:"privateKeyPem,omitempty"`
+	IsSuspended   bool       `bson:"isSuspended"`
+	DeletedAt     *time.Time `bson:"deletedAt,omitempty"`
 }
 
 func NewActorRepository(db *mongo.Database) *ActorRepository {
@@ -135,6 +137,20 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 		return nil, err
 	}
 	return r.FindByURI(ctx, actor.URI)
+}
+
+func (r *ActorRepository) MarkRemoteActorDeleted(ctx context.Context, uri string) error {
+	if uri == "" {
+		return fmt.Errorf("remote actor uri is required")
+	}
+	now := time.Now().UTC()
+	_, err := r.collection.UpdateOne(ctx, bson.M{"uri": uri, "host": bson.M{"$ne": nil}}, bson.M{
+		"$set": bson.M{
+			"isSuspended": true,
+			"deletedAt":   now,
+		},
+	})
+	return err
 }
 
 func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.Actor, error) {

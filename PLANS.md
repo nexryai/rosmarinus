@@ -108,7 +108,8 @@ same style as Concorde.
 - [ ] `Undo`: support undo accept.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
-- [ ] `Delete`: tombstone actors and enqueue account cleanup.
+- [x] `Delete`: tombstone remote actors and enqueue account cleanup tasks.
+- [ ] `Delete`: implement full cascaded account cleanup side effects.
 - [ ] `Update`: update actors, notes, and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
@@ -236,7 +237,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `poll-ended`: delayed poll expiration work.
 - [ ] `media`: remote attachment/avatar/banner fetch and cleanup.
 - [ ] `metadata`: remote instance metadata refresh.
-- [ ] `account-delete`: remote actor delete cleanup.
+- [x] `account-delete`: remote actor delete cleanup task payload/enqueue path.
 
 ### Single Binary Runtime
 
@@ -455,7 +456,8 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Implement note update.
 - [x] Implement inbound remote note delete.
 - [ ] Implement local note delete delivery and cascaded delete behavior.
-- [ ] Implement actor delete and account cleanup queue.
+- [x] Implement inbound remote actor delete and account cleanup queue enqueue.
+- [ ] Implement full account cleanup worker behavior.
 - [ ] Implement poll extraction, vote ingestion, delayed poll-ended jobs, and
       poll update delivery.
 - [ ] Implement media fetch for note attachments, avatars, banners, and emoji.

@@ -23,8 +23,9 @@ import (
 )
 
 type fakeRepo struct {
-	local  *actors.Actor
-	remote *actors.Actor
+	local            *actors.Actor
+	remote           *actors.Actor
+	deletedRemoteURI string
 }
 
 func (f *fakeRepo) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
@@ -61,6 +62,14 @@ func (f *fakeRepo) FindByPublicKeyID(ctx context.Context, keyID string) (*actors
 func (f *fakeRepo) UpsertRemoteActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
 	f.remote = &actor
 	return f.remote, nil
+}
+
+func (f *fakeRepo) MarkRemoteActorDeleted(ctx context.Context, uri string) error {
+	f.deletedRemoteURI = uri
+	if f.remote != nil && f.remote.URI == uri {
+		f.remote.IsSuspended = true
+	}
+	return nil
 }
 
 type fakeQueue struct {
@@ -780,6 +789,74 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 	}
 	if noteRepo.notes["https://remote.example/notes/1"] != nil {
 		t.Fatalf("note still exists: %+v", noteRepo.notes["https://remote.example/notes/1"])
+	}
+}
+
+func TestProcessInboxDeleteActorQueuesAccountDelete(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	repo := &fakeRepo{remote: remote}
+	q := &fakeQueue{}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":    "https://remote.example/activities/delete-account",
+			"type":  "Delete",
+			"actor": "https://remote.example/users/alice",
+			"object": map[string]any{
+				"id":         "https://remote.example/users/alice",
+				"type":       "Tombstone",
+				"formerType": "Person",
+			},
+		},
+		Signature: map[string]any{
+			"keyId":         "https://remote.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil {
+		t.Fatalf("ProcessInbox returned error: %v", err)
+	}
+	if result != "ok: account delete queued" {
+		t.Fatalf("result = %q", result)
+	}
+	if repo.deletedRemoteURI != remote.URI {
+		t.Fatalf("deletedRemoteURI = %q", repo.deletedRemoteURI)
+	}
+	if !remote.IsSuspended {
+		t.Fatalf("remote actor was not suspended")
+	}
+	if q.task.Type != queue.TaskAccountDelete || q.task.Queue != queue.QueueAccountDelete {
+		t.Fatalf("unexpected task: %+v", q.task)
+	}
+	payload, ok := q.task.Payload.(queue.AccountDeletePayload)
+	if !ok {
+		t.Fatalf("payload type = %T", q.task.Payload)
+	}
+	if payload.Version != 1 || payload.ActorID != remote.ID || payload.ActorURI != remote.URI {
+		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
 

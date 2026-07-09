@@ -31,4 +31,5 @@ type Repository interface {
 	FindByURI(context.Context, string) (*Actor, error)
 	FindByPublicKeyID(context.Context, string) (*Actor, error)
 	UpsertRemoteActor(context.Context, Actor) (*Actor, error)
+	MarkRemoteActorDeleted(context.Context, string) error
 }

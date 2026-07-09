@@ -49,6 +49,12 @@ type DeliverPayload struct {
 	Object  map[string]any `json:"object"`
 }
 
+type AccountDeletePayload struct {
+	Version  int    `json:"version"`
+	ActorID  string `json:"actor_id"`
+	ActorURI string `json:"actor_uri"`
+}
+
 func NewInboxTask(activity map[string]any, signature map[string]any, maxRetry int, timeout time.Duration) Task {
 	return Task{
 		Type:     TaskInbox,
@@ -74,6 +80,20 @@ func NewDeliverTask(actorID, to string, object map[string]any, maxRetry int, tim
 			ActorID: actorID,
 			To:      to,
 			Object:  object,
+		},
+	}
+}
+
+func NewAccountDeleteTask(actorID, actorURI string) Task {
+	return Task{
+		Type:     TaskAccountDelete,
+		Queue:    QueueAccountDelete,
+		MaxRetry: 10,
+		Timeout:  5 * time.Minute,
+		Payload: AccountDeletePayload{
+			Version:  1,
+			ActorID:  actorID,
+			ActorURI: actorURI,
 		},
 	}
 }

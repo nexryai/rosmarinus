@@ -714,9 +714,6 @@ func (h *Handler) performUndoBlock(ctx context.Context, blocker *actors.Actor, a
 }
 
 func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
-	if h.notes == nil {
-		return "skip: note repository is not configured", nil
-	}
 	if activityActor, err := aptypes.GetAPID(activity["actor"]); err != nil || activityActor != actor.URI {
 		return "skip: delete actor mismatch", nil
 	}
@@ -735,9 +732,12 @@ func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activi
 	}
 	if !isDeletePostType(formerType) {
 		if _, ok := aptypes.ValidActorTypes[formerType]; ok {
-			return fmt.Sprintf("skip: delete actor is not implemented yet: %s", uri), nil
+			return h.performDeleteActor(ctx, actor, uri)
 		}
 		return fmt.Sprintf("skip: unknown delete object type %s", formerType), nil
+	}
+	if h.notes == nil {
+		return "skip: note repository is not configured", nil
 	}
 	note, err := h.notes.FindByURI(ctx, uri)
 	if err != nil {
@@ -753,6 +753,22 @@ func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activi
 		return "", err
 	}
 	return "ok: note deleted", nil
+}
+
+func (h *Handler) performDeleteActor(ctx context.Context, actor *actors.Actor, uri string) (string, error) {
+	if actor.URI != uri {
+		return fmt.Sprintf("skip: delete actor %s !== %s", actor.URI, uri), nil
+	}
+	if h.queue == nil {
+		return "skip: queue is not configured", nil
+	}
+	if err := h.repo.MarkRemoteActorDeleted(ctx, uri); err != nil {
+		return "", err
+	}
+	if err := h.queue.Enqueue(ctx, queue.NewAccountDeleteTask(actor.ID, actor.URI)); err != nil {
+		return "", err
+	}
+	return "ok: account delete queued", nil
 }
 
 func deleteObjectFormerType(object any) string {

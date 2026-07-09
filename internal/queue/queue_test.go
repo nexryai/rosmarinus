@@ -47,6 +47,23 @@ func TestClientInterface(t *testing.T) {
 	}
 }
 
+func TestNewAccountDeleteTask(t *testing.T) {
+	task := NewAccountDeleteTask("actor-id", "https://remote.example/users/alice")
+	if task.Type != TaskAccountDelete || task.Queue != QueueAccountDelete {
+		t.Fatalf("unexpected task routing: type=%s queue=%s", task.Type, task.Queue)
+	}
+	if task.MaxRetry != 10 || task.Timeout != 5*time.Minute {
+		t.Fatalf("unexpected task options")
+	}
+	payload, ok := task.Payload.(AccountDeletePayload)
+	if !ok {
+		t.Fatalf("payload type = %T", task.Payload)
+	}
+	if payload.Version != 1 || payload.ActorID != "actor-id" || payload.ActorURI != "https://remote.example/users/alice" {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
 func TestAPBackoffRange(t *testing.T) {
 	got := APBackoff(1, nil, nil)
 	if got < 16*time.Second || got > 20*time.Second {
