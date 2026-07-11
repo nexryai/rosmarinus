@@ -25,6 +25,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InboxQueue.Timeout != 5*time.Minute || cfg.DeliverQueue.Timeout != time.Minute {
 		t.Fatalf("unexpected timeout defaults")
 	}
+	if cfg.BFFChannel != "rosmarinus:bff" {
+		t.Fatalf("BFFChannel = %q", cfg.BFFChannel)
+	}
 }
 
 func TestLoadRejectsInvalidPublicURL(t *testing.T) {
@@ -67,6 +70,25 @@ func TestLoadLocalActorConfig(t *testing.T) {
 	}
 	if cfg.LocalActorUsername != "relay_bot" || cfg.LocalActorType != "Service" {
 		t.Fatalf("unexpected local actor config: %+v", cfg)
+	}
+}
+
+func TestLoadAblyConfig(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		switch key {
+		case "ABLY_API_KEY":
+			return "app.key:secret", true
+		case "BFF_CHANNEL":
+			return "test:bff", true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.AblyAPIKey != "app.key:secret" || cfg.BFFChannel != "test:bff" {
+		t.Fatalf("unexpected Ably config: %+v", cfg)
 	}
 }
 

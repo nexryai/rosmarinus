@@ -13,6 +13,9 @@ Rosmarinus implementation semantics.
 - Implement ActivityPub federation in Go.
 - Use MongoDB as the primary database.
 - Use Redis for job queues, delayed retries, rate limiting, and distributed AP locks.
+- Use Ably Pub/Sub for communication with the frontend/BFF layer, including
+  post events, notifications, follow approval requests, and follow approval
+  completion events.
 - Keep dependencies injectable through interfaces.
 - Use Go's `log` package through injected `*log.Logger` values.
 - Add focused tests for parsing, signing, resolving, rendering, and queue behavior.
@@ -293,6 +296,28 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Actor URI cache.
 - [ ] Suspended host cache.
 - [ ] Optional WebFinger cache with short TTL.
+
+## BFF Pub/Sub Design
+
+Rosmarinus does not include a frontend or public Misskey-compatible API. UI and
+operator workflows are expected to live in a separate frontend/BFF layer.
+Communication between Rosmarinus and that BFF should use Ably Pub/Sub rather
+than direct frontend coupling.
+
+- [x] Add `github.com/ably/ably-go/ably` as the Ably SDK dependency.
+- [x] Add an injectable BFF publisher abstraction with an Ably adapter.
+- [x] Configure Ably publishing through environment variables:
+      `ABLY_API_KEY` and `BFF_CHANNEL`.
+- [x] Test BFF publishing with a dummy injected channel instead of a real Ably
+      network connection.
+- [x] Publish follow approval request events when inbound `Follow` is stored as
+      pending.
+- [x] Publish follow approval completion events when Rosmarinus accepts a
+      pending follow and sends `Accept(Follow)`.
+- [ ] Publish post events for BFF-owned compose/post workflows.
+- [ ] Publish notification events for local user-facing notifications.
+- [ ] Define BFF-to-Rosmarinus command handling for post creation, follow
+      approval/rejection, and notification read state.
 
 ## MongoDB Collections
 
@@ -658,8 +683,10 @@ federation peer and to inspect its official local federation test topology.
 
 - [x] Choose the Redis queue implementation: use Asynq by default, hidden behind
       `internal/queue` interfaces.
-- [ ] Decide whether Rosmarinus owns notifications/webhooks or only writes
-      federation-visible state to MongoDB.
+- [x] Decide whether Rosmarinus owns notifications/webhooks or only writes
+      federation-visible state to MongoDB: Rosmarinus publishes BFF-facing
+      events through Ably Pub/Sub while MongoDB remains the federation state
+      store.
 - [ ] Decide media ownership: store remote files, proxy URLs only, or delegate
       media storage to another service.
 - [ ] Decide how much of Concorde's antenna/word-mute/timeline side effects

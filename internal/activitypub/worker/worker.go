@@ -16,6 +16,7 @@ import (
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
+	"github.com/nexryai/rosmarinus/internal/bff"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
@@ -35,6 +36,11 @@ type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
 }
 
+type BFFPublisher interface {
+	PublishFollowApprovalRequested(context.Context, bff.FollowApproval) error
+	PublishFollowApprovalCompleted(context.Context, bff.FollowApproval) error
+}
+
 type Handler struct {
 	cfg        config.Config
 	logger     *log.Logger
@@ -46,6 +52,7 @@ type Handler struct {
 	reports    reports.Repository
 	queue      QueueClient
 	client     APClient
+	bff        BFFPublisher
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
@@ -65,6 +72,10 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 		resolver:   apresolver.New(repo, apClient, localActor),
 		localActor: localActor,
 	}
+}
+
+func (h *Handler) SetBFFPublisher(publisher BFFPublisher) {
+	h.bff = publisher
 }
 
 func (h *Handler) Register(server *queue.AsynqServer) {
@@ -296,7 +307,7 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		return "skip: follow repository is not configured", nil
 	}
 	activityID, _ := activity["id"].(string)
-	if _, err := h.follows.Upsert(ctx, follows.Follow{
+	follow, err := h.follows.Upsert(ctx, follows.Follow{
 		FollowerID:          follower.ID,
 		FolloweeID:          followee.ID,
 		FollowerURI:         follower.URI,
@@ -310,8 +321,19 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		CreatedAt:           time.Now().UTC(),
 		Status:              follows.StatusPending,
 		RemoteActivityID:    activityID,
-	}); err != nil {
+	})
+	if err != nil {
 		return "", err
+	}
+	if h.bff != nil {
+		if err := h.bff.PublishFollowApprovalRequested(ctx, bff.FollowApproval{
+			FollowerID:  follow.FollowerID,
+			FolloweeID:  follow.FolloweeID,
+			FollowerURI: follow.FollowerURI,
+			FolloweeURI: follow.FolloweeURI,
+		}); err != nil {
+			return "", err
+		}
 	}
 	return "ok: follow request pending", nil
 }
@@ -356,6 +378,16 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	task := queue.NewDeliverTask(followee.ID, inbox, accept, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err
+	}
+	if h.bff != nil {
+		if err := h.bff.PublishFollowApprovalCompleted(ctx, bff.FollowApproval{
+			FollowerID:  follow.FollowerID,
+			FolloweeID:  follow.FolloweeID,
+			FollowerURI: follow.FollowerURI,
+			FolloweeURI: follow.FolloweeURI,
+		}); err != nil {
+			return "", err
+		}
 	}
 	return "ok: follow accepted delivery enqueued", nil
 }

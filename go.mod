@@ -3,6 +3,7 @@ module github.com/nexryai/rosmarinus
 go 1.26.4
 
 require (
+	github.com/ably/ably-go v1.4.1
 	github.com/go-fed/httpsig v1.1.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.21.0
@@ -10,7 +11,6 @@ require (
 )
 
 require (
-	github.com/ably/ably-go v1.4.1 // indirect
 	github.com/ably/vcdiff-go v0.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.12 // indirect
