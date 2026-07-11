@@ -6,55 +6,77 @@ import (
 )
 
 type fakeCommandSource struct {
-	name   string
-	handle func(CommandMessage)
+	names   []string
+	handles map[string]func(CommandMessage)
 }
 
 func (f *fakeCommandSource) Subscribe(ctx context.Context, name string, handle func(CommandMessage)) (func(), error) {
 	_ = ctx
-	f.name = name
-	f.handle = handle
-	return func() { f.handle = nil }, nil
+	if f.handles == nil {
+		f.handles = map[string]func(CommandMessage){}
+	}
+	f.names = append(f.names, name)
+	f.handles[name] = handle
+	return func() { delete(f.handles, name) }, nil
 }
 
 type fakeFollowApprover struct {
-	followerID string
-	followeeID string
+	approvedFollowerID string
+	approvedFolloweeID string
+	rejectedFollowerID string
+	rejectedFolloweeID string
 }
 
 func (f *fakeFollowApprover) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
 	_ = ctx
-	f.followerID = followerID
-	f.followeeID = followeeID
+	f.approvedFollowerID = followerID
+	f.approvedFolloweeID = followeeID
 	return "ok: follow accepted delivery enqueued", nil
 }
 
-func TestCommandHandlerSubscribesFollowApprove(t *testing.T) {
+func (f *fakeFollowApprover) RejectFollow(ctx context.Context, followerID, followeeID string) (string, error) {
+	_ = ctx
+	f.rejectedFollowerID = followerID
+	f.rejectedFolloweeID = followeeID
+	return "ok: follow rejected delivery enqueued", nil
+}
+
+func TestCommandHandlerSubscribesFollowDecisionCommands(t *testing.T) {
 	source := &fakeCommandSource{}
 	approver := &fakeFollowApprover{}
 	unsubscribe, err := NewCommandHandler(source, approver).Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if source.name != CommandFollowApprove {
-		t.Fatalf("subscription name = %q", source.name)
+	if len(source.names) != 2 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject {
+		t.Fatalf("subscription names = %+v", source.names)
 	}
-	if source.handle == nil {
+	if source.handles[CommandFollowApprove] == nil || source.handles[CommandFollowReject] == nil {
 		t.Fatalf("subscription handler was not stored")
 	}
-	source.handle(CommandMessage{
+	source.handles[CommandFollowApprove](CommandMessage{
 		Name: CommandFollowApprove,
 		Data: map[string]any{
 			"follower_id": "remote-alice",
 			"followee_id": "relay",
 		},
 	})
-	if approver.followerID != "remote-alice" || approver.followeeID != "relay" {
-		t.Fatalf("approval call = follower:%q followee:%q", approver.followerID, approver.followeeID)
+	if approver.approvedFollowerID != "remote-alice" || approver.approvedFolloweeID != "relay" {
+		t.Fatalf("approval call = follower:%q followee:%q", approver.approvedFollowerID, approver.approvedFolloweeID)
+	}
+	source.handles[CommandFollowReject](CommandMessage{
+		Name: CommandFollowReject,
+		Data: map[string]any{
+			"follower_id": "remote-bob",
+			"followee_id": "relay",
+		},
+	})
+	if approver.rejectedFollowerID != "remote-bob" || approver.rejectedFolloweeID != "relay" {
+		t.Fatalf("rejection call = follower:%q followee:%q", approver.rejectedFollowerID, approver.rejectedFolloweeID)
 	}
 	unsubscribe()
-	if source.handle != nil {
-		t.Fatalf("unsubscribe did not clear handler")
+	if len(source.handles) != 0 {
+		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
 	}
 }
 

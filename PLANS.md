@@ -321,8 +321,9 @@ Next.js app, rather than direct frontend coupling.
 - [x] Define Connector-to-Rosmarinus command envelope and Ably command source.
 - [x] Handle Next.js-driven `follow.approve` commands through the existing
       follow approval path.
-- [ ] Handle Next.js-driven post creation, follow rejection, and notification
-      read state commands.
+- [x] Handle Next.js-driven `follow.reject` commands by deleting the pending
+      request and delivering `Reject(Follow)`.
+- [ ] Handle Next.js-driven post creation and notification read state commands.
 
 ## MongoDB Collections
 

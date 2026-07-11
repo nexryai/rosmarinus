@@ -39,6 +39,7 @@ type QueueClient interface {
 type ConnectorPublisher interface {
 	PublishFollowApprovalRequested(context.Context, connector.FollowApproval) error
 	PublishFollowApprovalCompleted(context.Context, connector.FollowApproval) error
+	PublishFollowApprovalRejected(context.Context, connector.FollowApproval) error
 }
 
 type Handler struct {
@@ -390,6 +391,66 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 		}
 	}
 	return "ok: follow accepted delivery enqueued", nil
+}
+
+func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID string) (string, error) {
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	if h.queue == nil {
+		return "skip: queue is not configured", nil
+	}
+	follow, err := h.follows.Find(ctx, followerID, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if follow == nil {
+		return "skip: follow request not found", nil
+	}
+	if follow.Status != follows.StatusPending {
+		return "skip: follow request is not pending", nil
+	}
+	followee, err := h.repo.FindLocalByID(ctx, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if followee == nil {
+		return "skip: followee is not a local user", nil
+	}
+	inbox := follow.FollowerSharedInbox
+	if inbox == "" {
+		inbox = follow.FollowerInbox
+	}
+	if inbox == "" {
+		return "skip: follower inbox is empty", nil
+	}
+	followActivity := map[string]any{
+		"type":   "Follow",
+		"actor":  follow.FollowerURI,
+		"object": follow.FolloweeURI,
+	}
+	if follow.RemoteActivityID != "" {
+		followActivity["id"] = follow.RemoteActivityID
+	}
+	if err := h.follows.Delete(ctx, followerID, followeeID, ""); err != nil {
+		return "", err
+	}
+	reject := renderReject(followee, followActivity)
+	task := queue.NewDeliverTask(followee.ID, inbox, reject, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return "", err
+	}
+	if h.connector != nil {
+		if err := h.connector.PublishFollowApprovalRejected(ctx, connector.FollowApproval{
+			FollowerID:  follow.FollowerID,
+			FolloweeID:  follow.FolloweeID,
+			FollowerURI: follow.FollowerURI,
+			FolloweeURI: follow.FolloweeURI,
+		}); err != nil {
+			return "", err
+		}
+	}
+	return "ok: follow rejected delivery enqueued", nil
 }
 
 func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activity map[string]any) (string, error) {
@@ -924,6 +985,19 @@ func renderAccept(localActor *actors.Actor, follow map[string]any) map[string]an
 		},
 		"id":     strings.TrimRight(localActor.URI, "/") + "#accepts/" + shortID(follow["id"]),
 		"type":   "Accept",
+		"actor":  localActor.URI,
+		"object": follow,
+	}
+}
+
+func renderReject(localActor *actors.Actor, follow map[string]any) map[string]any {
+	return map[string]any{
+		"@context": []any{
+			"https://www.w3.org/ns/activitystreams",
+			"https://w3id.org/security/v1",
+		},
+		"id":     strings.TrimRight(localActor.URI, "/") + "#rejects/" + shortID(follow["id"]),
+		"type":   "Reject",
 		"actor":  localActor.URI,
 		"object": follow,
 	}

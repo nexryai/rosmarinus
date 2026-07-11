@@ -25,6 +25,7 @@ type CommandSource interface {
 
 type FollowApprover interface {
 	ApproveFollow(context.Context, string, string) (string, error)
+	RejectFollow(context.Context, string, string) (string, error)
 }
 
 type CommandHandler struct {
@@ -37,6 +38,11 @@ type FollowApproveCommand struct {
 	FolloweeID string `json:"followee_id"`
 }
 
+type FollowRejectCommand struct {
+	FollowerID string `json:"follower_id"`
+	FolloweeID string `json:"followee_id"`
+}
+
 func NewCommandHandler(source CommandSource, followApprover FollowApprover) *CommandHandler {
 	return &CommandHandler{source: source, followApprover: followApprover}
 }
@@ -45,9 +51,23 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	return h.source.Subscribe(ctx, CommandFollowApprove, func(message CommandMessage) {
+	unsubscribeApprove, err := h.source.Subscribe(ctx, CommandFollowApprove, func(message CommandMessage) {
 		_ = h.Handle(ctx, message)
 	})
+	if err != nil {
+		return nil, err
+	}
+	unsubscribeReject, err := h.source.Subscribe(ctx, CommandFollowReject, func(message CommandMessage) {
+		_ = h.Handle(ctx, message)
+	})
+	if err != nil {
+		unsubscribeApprove()
+		return nil, err
+	}
+	return func() {
+		unsubscribeReject()
+		unsubscribeApprove()
+	}, nil
 }
 
 func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) error {
@@ -55,13 +75,30 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 	switch name {
 	case CommandFollowApprove:
 		return h.handleFollowApprove(ctx, message.Data)
-	case CommandFollowReject, CommandPostCreate, CommandNotificationMarkRead:
+	case CommandFollowReject:
+		return h.handleFollowReject(ctx, message.Data)
+	case CommandPostCreate, CommandNotificationMarkRead:
 		return fmt.Errorf("connector command %s is not implemented", name)
 	case "":
 		return fmt.Errorf("connector command name is required")
 	default:
 		return fmt.Errorf("unknown connector command: %s", name)
 	}
+}
+
+func (h *CommandHandler) handleFollowReject(ctx context.Context, data any) error {
+	if h.followApprover == nil {
+		return fmt.Errorf("follow approver is not configured")
+	}
+	var command FollowRejectCommand
+	if err := decodeCommandData(data, &command); err != nil {
+		return err
+	}
+	if strings.TrimSpace(command.FollowerID) == "" || strings.TrimSpace(command.FolloweeID) == "" {
+		return fmt.Errorf("follower_id and followee_id are required")
+	}
+	_, err := h.followApprover.RejectFollow(ctx, command.FollowerID, command.FolloweeID)
+	return err
 }
 
 func (h *CommandHandler) handleFollowApprove(ctx context.Context, data any) error {

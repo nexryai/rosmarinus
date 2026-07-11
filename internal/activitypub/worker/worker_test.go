@@ -85,6 +85,7 @@ func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 type fakeConnectorPublisher struct {
 	requested *connector.FollowApproval
 	completed *connector.FollowApproval
+	rejected  *connector.FollowApproval
 }
 
 func (f *fakeConnectorPublisher) PublishFollowApprovalRequested(ctx context.Context, payload connector.FollowApproval) error {
@@ -96,6 +97,12 @@ func (f *fakeConnectorPublisher) PublishFollowApprovalRequested(ctx context.Cont
 func (f *fakeConnectorPublisher) PublishFollowApprovalCompleted(ctx context.Context, payload connector.FollowApproval) error {
 	_ = ctx
 	f.completed = &payload
+	return nil
+}
+
+func (f *fakeConnectorPublisher) PublishFollowApprovalRejected(ctx context.Context, payload connector.FollowApproval) error {
+	_ = ctx
+	f.rejected = &payload
 	return nil
 }
 
@@ -469,6 +476,144 @@ func TestApproveFollowEnqueuesAccept(t *testing.T) {
 	}
 	if connectorPublisher.completed.FollowerID != remote.ID || connectorPublisher.completed.FolloweeID != local.ID {
 		t.Fatalf("unexpected approval completed payload: %+v", connectorPublisher.completed)
+	}
+}
+
+func TestRejectFollowEnqueuesReject(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:          "relay",
+		Username:    "relay",
+		URI:         "https://rosmarinus.example/users/relay",
+		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		SharedInbox:  "https://remote.example/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: "unused",
+	}
+	followsRepo := &fakeFollowRepo{}
+	_, err := followsRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:          remote.ID,
+		FolloweeID:          local.ID,
+		FollowerURI:         remote.URI,
+		FolloweeURI:         local.URI,
+		FollowerHost:        remote.Host,
+		FolloweeHost:        local.Host,
+		FollowerInbox:       remote.Inbox,
+		FollowerSharedInbox: remote.SharedInbox,
+		Status:              follows.StatusPending,
+		RemoteActivityID:    "https://remote.example/activities/follow",
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	q := &fakeQueue{}
+	connectorPublisher := &fakeConnectorPublisher{}
+	h := New(config.Config{
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetConnectorPublisher(connectorPublisher)
+	result, err := h.RejectFollow(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("RejectFollow returned error: %v", err)
+	}
+	if result != "ok: follow rejected delivery enqueued" {
+		t.Fatalf("result = %q", result)
+	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow != nil {
+		t.Fatalf("follow was not deleted: %+v", follow)
+	}
+	if q.task.Type != queue.TaskDeliver || q.task.Queue != queue.QueueDeliver {
+		t.Fatalf("unexpected task: %+v", q.task)
+	}
+	payload, ok := q.task.Payload.(queue.DeliverPayload)
+	if !ok {
+		t.Fatalf("payload type = %T", q.task.Payload)
+	}
+	if payload.ActorID != "relay" || payload.To != "https://remote.example/inbox" {
+		t.Fatalf("unexpected deliver payload: %+v", payload)
+	}
+	if payload.Object["type"] != "Reject" || payload.Object["actor"] != local.URI {
+		t.Fatalf("unexpected reject activity: %+v", payload.Object)
+	}
+	object, ok := payload.Object["object"].(map[string]any)
+	if !ok {
+		t.Fatalf("reject object type = %T", payload.Object["object"])
+	}
+	if object["id"] != "https://remote.example/activities/follow" || object["actor"] != remote.URI || object["object"] != local.URI {
+		t.Fatalf("unexpected rejected follow object: %+v", object)
+	}
+	if connectorPublisher.rejected == nil {
+		t.Fatalf("follow approval rejected event was not published")
+	}
+	if connectorPublisher.rejected.FollowerID != remote.ID || connectorPublisher.rejected.FolloweeID != local.ID {
+		t.Fatalf("unexpected approval rejected payload: %+v", connectorPublisher.rejected)
+	}
+}
+
+func TestRejectFollowSkipsAcceptedFollow(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:       "relay",
+		Username: "relay",
+		URI:      "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:           "remote_alice",
+		Username:     "alice",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		SharedInbox:  "https://remote.example/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: "unused",
+	}
+	followsRepo := &fakeFollowRepo{}
+	_, err := followsRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:          remote.ID,
+		FolloweeID:          local.ID,
+		FollowerURI:         remote.URI,
+		FolloweeURI:         local.URI,
+		FollowerHost:        remote.Host,
+		FolloweeHost:        local.Host,
+		FollowerInbox:       remote.Inbox,
+		FollowerSharedInbox: remote.SharedInbox,
+		Status:              follows.StatusAccepted,
+		RemoteActivityID:    "https://remote.example/activities/follow",
+	})
+	if err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	result, err := h.RejectFollow(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("RejectFollow returned error: %v", err)
+	}
+	if result != "skip: follow request is not pending" {
+		t.Fatalf("result = %q", result)
+	}
+	follow, err := followsRepo.Find(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if follow == nil || follow.Status != follows.StatusAccepted {
+		t.Fatalf("accepted follow was changed: %+v", follow)
+	}
+	if q.task.Type != "" {
+		t.Fatalf("unexpected task: %+v", q.task)
 	}
 }
 

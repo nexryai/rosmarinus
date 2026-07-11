@@ -16,6 +16,7 @@ const (
 	EventNotificationCreated     = "notification.created"
 	EventFollowApprovalRequested = "follow.approval.requested"
 	EventFollowApprovalCompleted = "follow.approval.completed"
+	EventFollowApprovalRejected  = "follow.approval.rejected"
 )
 
 type Channel interface {
@@ -115,4 +116,8 @@ func (p *Publisher) PublishFollowApprovalRequested(ctx context.Context, payload 
 
 func (p *Publisher) PublishFollowApprovalCompleted(ctx context.Context, payload FollowApproval) error {
 	return p.Publish(ctx, EventFollowApprovalCompleted, payload)
+}
+
+func (p *Publisher) PublishFollowApprovalRejected(ctx context.Context, payload FollowApproval) error {
+	return p.Publish(ctx, EventFollowApprovalRejected, payload)
 }
