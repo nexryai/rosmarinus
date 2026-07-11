@@ -106,7 +106,7 @@ same style as Concorde.
       pending and do not enqueue `Accept(Follow)` automatically.
 - [x] `Follow`: basic internal approval path transitions a pending request into
       an accepted relationship and enqueues `Accept(Follow)`.
-- [ ] `Follow`: expose a user/admin-facing approval command or HTTP endpoint.
+- [x] `Follow`: expose a Connector command for user-facing approval via Next.js.
 - [ ] `Follow`: block/request persistence logic.
 - [ ] `Accept`: accept local outgoing follow requests.
 - [ ] `Reject`: reject local outgoing follow requests.
@@ -308,7 +308,7 @@ Next.js app, rather than direct frontend coupling.
 - [x] Add `github.com/ably/ably-go/ably` as the Ably SDK dependency.
 - [x] Add an injectable connector publisher abstraction with an Ably adapter in
       `internal/connector`.
-- [x] Configure Ably publishing through environment variables:
+- [x] Configure Ably publishing through `ABLY_API_KEY`.
 - [x] Configure the Connector channel through `CONNECTOR_CHANNEL`.
 - [x] Test Connector publishing with a dummy injected channel instead of a real Ably
       network connection.
@@ -318,8 +318,11 @@ Next.js app, rather than direct frontend coupling.
       pending follow and sends `Accept(Follow)`.
 - [ ] Publish post events for Next.js-owned compose/post workflows.
 - [ ] Publish notification events for local user-facing notifications.
-- [ ] Define Connector-to-Rosmarinus command handling for Next.js-driven post
-      creation, follow approval/rejection, and notification read state.
+- [x] Define Connector-to-Rosmarinus command envelope and Ably command source.
+- [x] Handle Next.js-driven `follow.approve` commands through the existing
+      follow approval path.
+- [ ] Handle Next.js-driven post creation, follow rejection, and notification
+      read state commands.
 
 ## MongoDB Collections
 
@@ -473,7 +476,7 @@ Next.js app, rather than direct frontend coupling.
       pending follow request storage for every local actor.
 - [x] Implement basic explicit local approval for pending follow requests, then
       persist the accepted relationship and enqueue `Accept(Follow)`.
-- [ ] Expose follow approval through an operator/user-facing API or command.
+- [x] Expose follow approval through a Connector command for Next.js.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
 - [ ] Implement full `Follow`, `Accept`, and `Reject`.
 - [x] Implement follow request storage without unlocked-account auto-accept.

@@ -32,23 +32,26 @@ type App struct {
 	cfg    config.Config
 	logger *log.Logger
 
-	mongoClient        *mongo.Client
-	mongoDB            *mongo.Database
-	redisClient        *redis.Client
-	apLocker           *cache.Locker
-	actors             *mongostore.ActorRepository
-	notes              *mongostore.NoteRepository
-	follows            *mongostore.FollowRepository
-	blocks             *mongostore.BlockRepository
-	reactions          *mongostore.ReactionRepository
-	reports            *mongostore.ReportRepository
-	localActor         *actors.Actor
-	apClient           *apclient.Client
-	apWorker           *apworker.Handler
-	connectorPublisher *connector.Publisher
-	queueClient        *queue.AsynqClient
-	queueServer        *queue.AsynqServer
-	httpServer         *http.Server
+	mongoClient            *mongo.Client
+	mongoDB                *mongo.Database
+	redisClient            *redis.Client
+	apLocker               *cache.Locker
+	actors                 *mongostore.ActorRepository
+	notes                  *mongostore.NoteRepository
+	follows                *mongostore.FollowRepository
+	blocks                 *mongostore.BlockRepository
+	reactions              *mongostore.ReactionRepository
+	reports                *mongostore.ReportRepository
+	localActor             *actors.Actor
+	apClient               *apclient.Client
+	apWorker               *apworker.Handler
+	connectorPublisher     *connector.Publisher
+	connectorCommandSource *connector.AblyCommandSource
+	connectorCommands      *connector.CommandHandler
+	connectorUnsubscribe   func()
+	queueClient            *queue.AsynqClient
+	queueServer            *queue.AsynqServer
+	httpServer             *http.Server
 }
 
 func Run(ctx context.Context, logger *log.Logger) error {
@@ -130,6 +133,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	var connectorPublisher *connector.Publisher
+	var connectorCommandSource *connector.AblyCommandSource
+	var connectorCommands *connector.CommandHandler
 	if cfg.AblyAPIKey != "" {
 		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyAPIKey, cfg.ConnectorChannel)
 		if err != nil {
@@ -138,6 +143,15 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector publisher: %w", err)
 		}
+		connectorCommandSource, err = connector.NewAblyCommandSource(cfg.AblyAPIKey, cfg.ConnectorChannel)
+		if err != nil {
+			_ = mongoClient.Disconnect(context.Background())
+			_ = redisClient.Close()
+			_ = queueClient.Close()
+			connectorCommandSource.Close()
+			return nil, fmt.Errorf("create ably connector command source: %w", err)
+		}
+		connectorCommands = connector.NewCommandHandler(connectorCommandSource, apWorker)
 		logger.Printf("connector: ably publisher ready channel=%s", cfg.ConnectorChannel)
 	}
 	if connectorPublisher != nil {
@@ -145,24 +159,26 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 
 	return &App{
-		cfg:                cfg,
-		logger:             logger,
-		mongoClient:        mongoClient,
-		mongoDB:            mongoDB,
-		redisClient:        redisClient,
-		apLocker:           cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
-		actors:             actorRepo,
-		notes:              noteRepo,
-		follows:            followRepo,
-		blocks:             blockRepo,
-		reactions:          reactionRepo,
-		reports:            reportRepo,
-		localActor:         localActor,
-		apClient:           apClient,
-		apWorker:           apWorker,
-		connectorPublisher: connectorPublisher,
-		queueClient:        queueClient,
-		queueServer:        queueServer,
+		cfg:                    cfg,
+		logger:                 logger,
+		mongoClient:            mongoClient,
+		mongoDB:                mongoDB,
+		redisClient:            redisClient,
+		apLocker:               cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
+		actors:                 actorRepo,
+		notes:                  noteRepo,
+		follows:                followRepo,
+		blocks:                 blockRepo,
+		reactions:              reactionRepo,
+		reports:                reportRepo,
+		localActor:             localActor,
+		apClient:               apClient,
+		apWorker:               apWorker,
+		connectorPublisher:     connectorPublisher,
+		connectorCommandSource: connectorCommandSource,
+		connectorCommands:      connectorCommands,
+		queueClient:            queueClient,
+		queueServer:            queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, followRepo, queueClient),
@@ -172,7 +188,14 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 }
 
 func (a *App) Start(ctx context.Context) error {
-	_ = ctx
+	if a.connectorCommands != nil {
+		unsubscribe, err := a.connectorCommands.Subscribe(ctx)
+		if err != nil {
+			return fmt.Errorf("subscribe connector commands: %w", err)
+		}
+		a.connectorUnsubscribe = unsubscribe
+		a.logger.Printf("connector: command subscription ready channel=%s", a.cfg.ConnectorChannel)
+	}
 	if a.cfg.RunWorkers {
 		a.apWorker.Register(a.queueServer)
 		a.queueServer.RegisterSystemNoopHandlers()
@@ -195,6 +218,10 @@ func (a *App) Start(ctx context.Context) error {
 
 func (a *App) Shutdown(ctx context.Context) error {
 	var errs []error
+	if a.connectorUnsubscribe != nil {
+		a.connectorUnsubscribe()
+		a.connectorUnsubscribe = nil
+	}
 	if a.httpServer != nil {
 		if err := a.httpServer.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs = append(errs, err)
@@ -207,6 +234,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		if err := a.queueClient.Close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if a.connectorCommandSource != nil {
+		a.connectorCommandSource.Close()
 	}
 	if a.redisClient != nil {
 		if err := a.redisClient.Close(); err != nil {
