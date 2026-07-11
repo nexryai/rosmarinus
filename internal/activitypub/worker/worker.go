@@ -37,6 +37,7 @@ type QueueClient interface {
 }
 
 type ConnectorPublisher interface {
+	PublishPostCreated(context.Context, connector.PostCreated) error
 	PublishFollowApprovalRequested(context.Context, connector.FollowApproval) error
 	PublishFollowApprovalCompleted(context.Context, connector.FollowApproval) error
 	PublishFollowApprovalRejected(context.Context, connector.FollowApproval) error
@@ -451,6 +452,72 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 		}
 	}
 	return "ok: follow rejected delivery enqueued", nil
+}
+
+func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCommand) (connector.PostCreated, error) {
+	if h.notes == nil {
+		return connector.PostCreated{}, fmt.Errorf("note repository is not configured")
+	}
+	actor, err := h.repo.FindLocalByID(ctx, command.ActorID)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	if actor == nil {
+		return connector.PostCreated{}, fmt.Errorf("local actor not found: %s", command.ActorID)
+	}
+	visibility, err := postVisibility(command.Visibility)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	now := time.Now().UTC()
+	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
+	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
+		ID:             command.NoteID,
+		URI:            noteURI,
+		AttributedTo:   actor.URI,
+		AuthorID:       actor.ID,
+		Text:           command.Text,
+		ContentWarning: command.ContentWarning,
+		Sensitive:      command.Sensitive,
+		InReplyToURI:   command.InReplyToURI,
+		QuoteURI:       command.QuoteURI,
+		Visibility:     visibility,
+		MentionURIs:    command.MentionURIs,
+		Hashtags:       command.Hashtags,
+		CreatedAt:      now,
+		PublishedAt:    &now,
+	})
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	payload := connector.PostCreated{
+		ActorID: actor.ID,
+		NoteID:  note.ID,
+		URI:     note.URI,
+	}
+	if h.connector != nil {
+		if err := h.connector.PublishPostCreated(ctx, payload); err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
+	return payload, nil
+}
+
+func postVisibility(value string) (domainnotes.Visibility, error) {
+	switch domainnotes.Visibility(strings.TrimSpace(value)) {
+	case "":
+		return domainnotes.VisibilityPublic, nil
+	case domainnotes.VisibilityPublic:
+		return domainnotes.VisibilityPublic, nil
+	case domainnotes.VisibilityHome:
+		return domainnotes.VisibilityHome, nil
+	case domainnotes.VisibilityFollowers:
+		return domainnotes.VisibilityFollowers, nil
+	case domainnotes.VisibilitySpecified:
+		return domainnotes.VisibilitySpecified, nil
+	default:
+		return "", fmt.Errorf("unsupported post visibility: %s", value)
+	}
 }
 
 func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activity map[string]any) (string, error) {

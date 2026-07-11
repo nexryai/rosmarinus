@@ -25,6 +25,7 @@ type fakeFollowApprover struct {
 	approvedFolloweeID string
 	rejectedFollowerID string
 	rejectedFolloweeID string
+	postCommand        PostCreateCommand
 }
 
 func (f *fakeFollowApprover) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
@@ -41,17 +42,23 @@ func (f *fakeFollowApprover) RejectFollow(ctx context.Context, followerID, follo
 	return "ok: follow rejected delivery enqueued", nil
 }
 
-func TestCommandHandlerSubscribesFollowDecisionCommands(t *testing.T) {
+func (f *fakeFollowApprover) CreatePost(ctx context.Context, command PostCreateCommand) (PostCreated, error) {
+	_ = ctx
+	f.postCommand = command
+	return PostCreated{ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, nil
+}
+
+func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	source := &fakeCommandSource{}
 	approver := &fakeFollowApprover{}
 	unsubscribe, err := NewCommandHandler(source, approver).Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 2 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject {
+	if len(source.names) != 3 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject || source.names[2] != CommandPostCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
-	if source.handles[CommandFollowApprove] == nil || source.handles[CommandFollowReject] == nil {
+	if source.handles[CommandFollowApprove] == nil || source.handles[CommandFollowReject] == nil || source.handles[CommandPostCreate] == nil {
 		t.Fatalf("subscription handler was not stored")
 	}
 	source.handles[CommandFollowApprove](CommandMessage{
@@ -73,6 +80,18 @@ func TestCommandHandlerSubscribesFollowDecisionCommands(t *testing.T) {
 	})
 	if approver.rejectedFollowerID != "remote-bob" || approver.rejectedFolloweeID != "relay" {
 		t.Fatalf("rejection call = follower:%q followee:%q", approver.rejectedFollowerID, approver.rejectedFolloweeID)
+	}
+	source.handles[CommandPostCreate](CommandMessage{
+		Name: CommandPostCreate,
+		Data: map[string]any{
+			"actor_id":   "relay",
+			"note_id":    "note-1",
+			"text":       "hello",
+			"visibility": "followers",
+		},
+	})
+	if approver.postCommand.ActorID != "relay" || approver.postCommand.NoteID != "note-1" || approver.postCommand.Text != "hello" {
+		t.Fatalf("post command = %+v", approver.postCommand)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {

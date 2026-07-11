@@ -83,9 +83,16 @@ func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 }
 
 type fakeConnectorPublisher struct {
+	post      *connector.PostCreated
 	requested *connector.FollowApproval
 	completed *connector.FollowApproval
 	rejected  *connector.FollowApproval
+}
+
+func (f *fakeConnectorPublisher) PublishPostCreated(ctx context.Context, payload connector.PostCreated) error {
+	_ = ctx
+	f.post = &payload
+	return nil
 }
 
 func (f *fakeConnectorPublisher) PublishFollowApprovalRequested(ctx context.Context, payload connector.FollowApproval) error {
@@ -232,6 +239,22 @@ func (f *fakeNoteRepo) UpsertRemoteNote(ctx context.Context, note domainnotes.No
 	if note.ID == "" {
 		note.ID = "note-id"
 	}
+	f.notes[note.URI] = &note
+	return &note, nil
+}
+
+func (f *fakeNoteRepo) CreateLocalNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
+	if f.notes == nil {
+		f.notes = map[string]*domainnotes.Note{}
+	}
+	if note.CreatedAt.IsZero() {
+		note.CreatedAt = time.Now().UTC()
+	}
+	if note.PublishedAt == nil {
+		publishedAt := note.CreatedAt
+		note.PublishedAt = &publishedAt
+	}
+	f.notes[note.ID] = &note
 	f.notes[note.URI] = &note
 	return &note, nil
 }
@@ -614,6 +637,52 @@ func TestRejectFollowSkipsAcceptedFollow(t *testing.T) {
 	}
 	if q.task.Type != "" {
 		t.Fatalf("unexpected task: %+v", q.task)
+	}
+}
+
+func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
+	local := &actors.Actor{
+		ID:       "relay",
+		Username: "relay",
+		URI:      "https://rosmarinus.example/users/relay",
+	}
+	noteRepo := &fakeNoteRepo{}
+	connectorPublisher := &fakeConnectorPublisher{}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example",
+	}, nil, &fakeRepo{local: local}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetConnectorPublisher(connectorPublisher)
+	post, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID:    "relay",
+		NoteID:     "note-1",
+		Text:       "hello from Next.js",
+		Visibility: string(domainnotes.VisibilityFollowers),
+		Hashtags:   []string{"rosmarinus"},
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	if post.ActorID != "relay" || post.NoteID != "note-1" || post.URI != "https://rosmarinus.example/notes/note-1" {
+		t.Fatalf("unexpected post payload: %+v", post)
+	}
+	note, err := noteRepo.FindByID(context.Background(), "note-1")
+	if err != nil {
+		t.Fatalf("FindByID returned error: %v", err)
+	}
+	if note == nil {
+		t.Fatalf("note was not stored")
+	}
+	if note.AuthorID != local.ID || note.AttributedTo != local.URI || note.Text != "hello from Next.js" {
+		t.Fatalf("unexpected note: %+v", note)
+	}
+	if note.Visibility != domainnotes.VisibilityFollowers || len(note.Hashtags) != 1 || note.Hashtags[0] != "rosmarinus" {
+		t.Fatalf("unexpected note metadata: %+v", note)
+	}
+	if connectorPublisher.post == nil {
+		t.Fatalf("post.created event was not published")
+	}
+	if *connectorPublisher.post != post {
+		t.Fatalf("published post = %+v", connectorPublisher.post)
 	}
 }
 

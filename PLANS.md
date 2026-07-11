@@ -316,14 +316,16 @@ Next.js app, rather than direct frontend coupling.
       pending.
 - [x] Publish follow approval completion events when Rosmarinus accepts a
       pending follow and sends `Accept(Follow)`.
-- [ ] Publish post events for Next.js-owned compose/post workflows.
+- [x] Publish post events for Next.js-owned compose/post workflows.
 - [ ] Publish notification events for local user-facing notifications.
 - [x] Define Connector-to-Rosmarinus command envelope and Ably command source.
 - [x] Handle Next.js-driven `follow.approve` commands through the existing
       follow approval path.
 - [x] Handle Next.js-driven `follow.reject` commands by deleting the pending
       request and delivering `Reject(Follow)`.
-- [ ] Handle Next.js-driven post creation and notification read state commands.
+- [x] Handle Next.js-driven `post.create` commands by storing a local note and
+      publishing `post.created`.
+- [ ] Handle Next.js-driven notification read state commands.
 
 ## MongoDB Collections
 

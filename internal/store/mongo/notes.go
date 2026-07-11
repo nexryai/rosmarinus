@@ -71,6 +71,34 @@ func (r *NoteRepository) FindByURI(ctx context.Context, uri string) (*domainnote
 	return r.findOne(ctx, bson.M{"uri": uri, "deletedAt": nil})
 }
 
+func (r *NoteRepository) CreateLocalNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
+	if note.ID == "" {
+		return nil, fmt.Errorf("note id is required")
+	}
+	if note.URI == "" {
+		return nil, fmt.Errorf("note uri is required")
+	}
+	if note.AuthorID == "" || note.AttributedTo == "" {
+		return nil, fmt.Errorf("note author is required")
+	}
+	if note.CreatedAt.IsZero() {
+		note.CreatedAt = time.Now().UTC()
+	}
+	if note.PublishedAt == nil {
+		publishedAt := note.CreatedAt
+		note.PublishedAt = &publishedAt
+	}
+	if note.Visibility == "" {
+		note.Visibility = domainnotes.VisibilityPublic
+	}
+	doc := fromNote(note)
+	_, err := r.collection.InsertOne(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
+	return r.FindByID(ctx, note.ID)
+}
+
 func (r *NoteRepository) UpsertRemoteNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	if note.URI == "" {
 		return nil, fmt.Errorf("note uri is required")
