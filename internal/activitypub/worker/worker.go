@@ -16,8 +16,8 @@ import (
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
-	"github.com/nexryai/rosmarinus/internal/bff"
 	"github.com/nexryai/rosmarinus/internal/config"
+	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
@@ -36,9 +36,9 @@ type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
 }
 
-type BFFPublisher interface {
-	PublishFollowApprovalRequested(context.Context, bff.FollowApproval) error
-	PublishFollowApprovalCompleted(context.Context, bff.FollowApproval) error
+type ConnectorPublisher interface {
+	PublishFollowApprovalRequested(context.Context, connector.FollowApproval) error
+	PublishFollowApprovalCompleted(context.Context, connector.FollowApproval) error
 }
 
 type Handler struct {
@@ -52,7 +52,7 @@ type Handler struct {
 	reports    reports.Repository
 	queue      QueueClient
 	client     APClient
-	bff        BFFPublisher
+	connector  ConnectorPublisher
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
@@ -74,8 +74,8 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 	}
 }
 
-func (h *Handler) SetBFFPublisher(publisher BFFPublisher) {
-	h.bff = publisher
+func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
+	h.connector = publisher
 }
 
 func (h *Handler) Register(server *queue.AsynqServer) {
@@ -325,8 +325,8 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	if err != nil {
 		return "", err
 	}
-	if h.bff != nil {
-		if err := h.bff.PublishFollowApprovalRequested(ctx, bff.FollowApproval{
+	if h.connector != nil {
+		if err := h.connector.PublishFollowApprovalRequested(ctx, connector.FollowApproval{
 			FollowerID:  follow.FollowerID,
 			FolloweeID:  follow.FolloweeID,
 			FollowerURI: follow.FollowerURI,
@@ -379,8 +379,8 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err
 	}
-	if h.bff != nil {
-		if err := h.bff.PublishFollowApprovalCompleted(ctx, bff.FollowApproval{
+	if h.connector != nil {
+		if err := h.connector.PublishFollowApprovalCompleted(ctx, connector.FollowApproval{
 			FollowerID:  follow.FollowerID,
 			FolloweeID:  follow.FolloweeID,
 			FollowerURI: follow.FollowerURI,

@@ -305,7 +305,8 @@ Communication between Rosmarinus and that BFF should use Ably Pub/Sub rather
 than direct frontend coupling.
 
 - [x] Add `github.com/ably/ably-go/ably` as the Ably SDK dependency.
-- [x] Add an injectable BFF publisher abstraction with an Ably adapter.
+- [x] Add an injectable connector publisher abstraction with an Ably adapter in
+      `internal/connector`.
 - [x] Configure Ably publishing through environment variables:
       `ABLY_API_KEY` and `BFF_CHANNEL`.
 - [x] Test BFF publishing with a dummy injected channel instead of a real Ably

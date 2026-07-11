@@ -19,9 +19,9 @@ import (
 
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
-	"github.com/nexryai/rosmarinus/internal/bff"
 	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
+	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -32,23 +32,23 @@ type App struct {
 	cfg    config.Config
 	logger *log.Logger
 
-	mongoClient  *mongo.Client
-	mongoDB      *mongo.Database
-	redisClient  *redis.Client
-	apLocker     *cache.Locker
-	actors       *mongostore.ActorRepository
-	notes        *mongostore.NoteRepository
-	follows      *mongostore.FollowRepository
-	blocks       *mongostore.BlockRepository
-	reactions    *mongostore.ReactionRepository
-	reports      *mongostore.ReportRepository
-	localActor   *actors.Actor
-	apClient     *apclient.Client
-	apWorker     *apworker.Handler
-	bffPublisher *bff.Publisher
-	queueClient  *queue.AsynqClient
-	queueServer  *queue.AsynqServer
-	httpServer   *http.Server
+	mongoClient        *mongo.Client
+	mongoDB            *mongo.Database
+	redisClient        *redis.Client
+	apLocker           *cache.Locker
+	actors             *mongostore.ActorRepository
+	notes              *mongostore.NoteRepository
+	follows            *mongostore.FollowRepository
+	blocks             *mongostore.BlockRepository
+	reactions          *mongostore.ReactionRepository
+	reports            *mongostore.ReportRepository
+	localActor         *actors.Actor
+	apClient           *apclient.Client
+	apWorker           *apworker.Handler
+	connectorPublisher *connector.Publisher
+	queueClient        *queue.AsynqClient
+	queueServer        *queue.AsynqServer
+	httpServer         *http.Server
 }
 
 func Run(ctx context.Context, logger *log.Logger) error {
@@ -129,40 +129,40 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
-	var bffPublisher *bff.Publisher
+	var connectorPublisher *connector.Publisher
 	if cfg.AblyAPIKey != "" {
-		bffPublisher, err = bff.NewAblyPublisher(cfg.AblyAPIKey, cfg.BFFChannel)
+		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyAPIKey, cfg.BFFChannel)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
-			return nil, fmt.Errorf("create ably bff publisher: %w", err)
+			return nil, fmt.Errorf("create ably connector publisher: %w", err)
 		}
-		logger.Printf("bff: ably publisher ready channel=%s", cfg.BFFChannel)
+		logger.Printf("connector: ably publisher ready channel=%s", cfg.BFFChannel)
 	}
-	if bffPublisher != nil {
-		apWorker.SetBFFPublisher(bffPublisher)
+	if connectorPublisher != nil {
+		apWorker.SetConnectorPublisher(connectorPublisher)
 	}
 
 	return &App{
-		cfg:          cfg,
-		logger:       logger,
-		mongoClient:  mongoClient,
-		mongoDB:      mongoDB,
-		redisClient:  redisClient,
-		apLocker:     cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
-		actors:       actorRepo,
-		notes:        noteRepo,
-		follows:      followRepo,
-		blocks:       blockRepo,
-		reactions:    reactionRepo,
-		reports:      reportRepo,
-		localActor:   localActor,
-		apClient:     apClient,
-		apWorker:     apWorker,
-		bffPublisher: bffPublisher,
-		queueClient:  queueClient,
-		queueServer:  queueServer,
+		cfg:                cfg,
+		logger:             logger,
+		mongoClient:        mongoClient,
+		mongoDB:            mongoDB,
+		redisClient:        redisClient,
+		apLocker:           cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
+		actors:             actorRepo,
+		notes:              noteRepo,
+		follows:            followRepo,
+		blocks:             blockRepo,
+		reactions:          reactionRepo,
+		reports:            reportRepo,
+		localActor:         localActor,
+		apClient:           apClient,
+		apWorker:           apWorker,
+		connectorPublisher: connectorPublisher,
+		queueClient:        queueClient,
+		queueServer:        queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, followRepo, queueClient),

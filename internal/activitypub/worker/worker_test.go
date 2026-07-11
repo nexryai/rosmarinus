@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexryai/rosmarinus/internal/bff"
 	"github.com/nexryai/rosmarinus/internal/config"
+	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
@@ -82,18 +82,18 @@ func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 	return nil
 }
 
-type fakeBFFPublisher struct {
-	requested *bff.FollowApproval
-	completed *bff.FollowApproval
+type fakeConnectorPublisher struct {
+	requested *connector.FollowApproval
+	completed *connector.FollowApproval
 }
 
-func (f *fakeBFFPublisher) PublishFollowApprovalRequested(ctx context.Context, payload bff.FollowApproval) error {
+func (f *fakeConnectorPublisher) PublishFollowApprovalRequested(ctx context.Context, payload connector.FollowApproval) error {
 	_ = ctx
 	f.requested = &payload
 	return nil
 }
 
-func (f *fakeBFFPublisher) PublishFollowApprovalCompleted(ctx context.Context, payload bff.FollowApproval) error {
+func (f *fakeConnectorPublisher) PublishFollowApprovalCompleted(ctx context.Context, payload connector.FollowApproval) error {
 	_ = ctx
 	f.completed = &payload
 	return nil
@@ -341,12 +341,12 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	q := &fakeQueue{}
-	bffPublisher := &fakeBFFPublisher{}
+	connectorPublisher := &fakeConnectorPublisher{}
 	followsRepo := &fakeFollowRepo{}
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
 	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
-	h.SetBFFPublisher(bffPublisher)
+	h.SetConnectorPublisher(connectorPublisher)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -382,11 +382,11 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	if follow.Status != follows.StatusPending {
 		t.Fatalf("follow status = %q", follow.Status)
 	}
-	if bffPublisher.requested == nil {
+	if connectorPublisher.requested == nil {
 		t.Fatalf("follow approval request event was not published")
 	}
-	if bffPublisher.requested.FollowerID != remote.ID || bffPublisher.requested.FolloweeID != local.ID {
-		t.Fatalf("unexpected approval request payload: %+v", bffPublisher.requested)
+	if connectorPublisher.requested.FollowerID != remote.ID || connectorPublisher.requested.FolloweeID != local.ID {
+		t.Fatalf("unexpected approval request payload: %+v", connectorPublisher.requested)
 	}
 }
 
@@ -425,11 +425,11 @@ func TestApproveFollowEnqueuesAccept(t *testing.T) {
 		t.Fatalf("Upsert returned error: %v", err)
 	}
 	q := &fakeQueue{}
-	bffPublisher := &fakeBFFPublisher{}
+	connectorPublisher := &fakeConnectorPublisher{}
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
 	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
-	h.SetBFFPublisher(bffPublisher)
+	h.SetConnectorPublisher(connectorPublisher)
 	result, err := h.ApproveFollow(context.Background(), remote.ID, local.ID)
 	if err != nil {
 		t.Fatalf("ApproveFollow returned error: %v", err)
@@ -464,11 +464,11 @@ func TestApproveFollowEnqueuesAccept(t *testing.T) {
 	if object["id"] != "https://remote.example/activities/follow" || object["actor"] != remote.URI || object["object"] != local.URI {
 		t.Fatalf("unexpected accepted follow object: %+v", object)
 	}
-	if bffPublisher.completed == nil {
+	if connectorPublisher.completed == nil {
 		t.Fatalf("follow approval completed event was not published")
 	}
-	if bffPublisher.completed.FollowerID != remote.ID || bffPublisher.completed.FolloweeID != local.ID {
-		t.Fatalf("unexpected approval completed payload: %+v", bffPublisher.completed)
+	if connectorPublisher.completed.FollowerID != remote.ID || connectorPublisher.completed.FolloweeID != local.ID {
+		t.Fatalf("unexpected approval completed payload: %+v", connectorPublisher.completed)
 	}
 }
 
