@@ -131,14 +131,14 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	var connectorPublisher *connector.Publisher
 	if cfg.AblyAPIKey != "" {
-		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyAPIKey, cfg.BFFChannel)
+		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyAPIKey, cfg.ConnectorChannel)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector publisher: %w", err)
 		}
-		logger.Printf("connector: ably publisher ready channel=%s", cfg.BFFChannel)
+		logger.Printf("connector: ably publisher ready channel=%s", cfg.ConnectorChannel)
 	}
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)

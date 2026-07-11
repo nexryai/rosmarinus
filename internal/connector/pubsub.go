@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DefaultChannel = "rosmarinus:bff"
+	DefaultChannel = "rosmarinus:connector"
 
 	EventPostCreated             = "post.created"
 	EventNotificationCreated     = "notification.created"
@@ -90,7 +90,7 @@ func (p *Publisher) Publish(ctx context.Context, eventType string, data any) err
 	}
 	eventType = strings.TrimSpace(eventType)
 	if eventType == "" {
-		return fmt.Errorf("bff event type is required")
+		return fmt.Errorf("connector event type is required")
 	}
 	envelope := Envelope{
 		Version:    1,

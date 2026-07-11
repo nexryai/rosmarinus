@@ -31,8 +31,8 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	AblyAPIKey string
-	BFFChannel string
+	AblyAPIKey       string
+	ConnectorChannel string
 
 	RunHTTP      bool
 	RunWorkers   bool
@@ -69,7 +69,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		RedisAddr:             get(lookup, "REDIS_ADDR", "localhost:6379"),
 		RedisPassword:         get(lookup, "REDIS_PASSWORD", ""),
 		AblyAPIKey:            get(lookup, "ABLY_API_KEY", ""),
-		BFFChannel:            get(lookup, "BFF_CHANNEL", "rosmarinus:bff"),
+		ConnectorChannel:      get(lookup, "CONNECTOR_CHANNEL", "rosmarinus:connector"),
 		UserAgent:             get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
 		WorkerQueues:          splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
@@ -129,8 +129,8 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.RedisAddr) == "" {
 		return fmt.Errorf("REDIS_ADDR must not be empty")
 	}
-	if strings.TrimSpace(c.BFFChannel) == "" {
-		return fmt.Errorf("BFF_CHANNEL must not be empty")
+	if strings.TrimSpace(c.ConnectorChannel) == "" {
+		return fmt.Errorf("CONNECTOR_CHANNEL must not be empty")
 	}
 	if c.InboxQueue.MaxRetry < 0 || c.DeliverQueue.MaxRetry < 0 {
 		return fmt.Errorf("queue retry counts must not be negative")

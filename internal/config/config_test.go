@@ -25,8 +25,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InboxQueue.Timeout != 5*time.Minute || cfg.DeliverQueue.Timeout != time.Minute {
 		t.Fatalf("unexpected timeout defaults")
 	}
-	if cfg.BFFChannel != "rosmarinus:bff" {
-		t.Fatalf("BFFChannel = %q", cfg.BFFChannel)
+	if cfg.ConnectorChannel != "rosmarinus:connector" {
+		t.Fatalf("ConnectorChannel = %q", cfg.ConnectorChannel)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestLoadAblyConfig(t *testing.T) {
 		switch key {
 		case "ABLY_API_KEY":
 			return "app.key:secret", true
-		case "BFF_CHANNEL":
-			return "test:bff", true
+		case "CONNECTOR_CHANNEL":
+			return "test:connector", true
 		default:
 			return "", false
 		}
@@ -87,7 +87,7 @@ func TestLoadAblyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.AblyAPIKey != "app.key:secret" || cfg.BFFChannel != "test:bff" {
+	if cfg.AblyAPIKey != "app.key:secret" || cfg.ConnectorChannel != "test:connector" {
 		t.Fatalf("unexpected Ably config: %+v", cfg)
 	}
 }

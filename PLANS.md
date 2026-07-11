@@ -13,7 +13,8 @@ Rosmarinus implementation semantics.
 - Implement ActivityPub federation in Go.
 - Use MongoDB as the primary database.
 - Use Redis for job queues, delayed retries, rate limiting, and distributed AP locks.
-- Use Ably Pub/Sub for communication with the frontend/BFF layer, including
+- Use Ably Pub/Sub for communication with the Connector layer that talks to
+  the Next.js frontend, including
   post events, notifications, follow approval requests, and follow approval
   completion events.
 - Keep dependencies injectable through interfaces.
@@ -297,28 +298,28 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Suspended host cache.
 - [ ] Optional WebFinger cache with short TTL.
 
-## BFF Pub/Sub Design
+## Connector Pub/Sub Design
 
 Rosmarinus does not include a frontend or public Misskey-compatible API. UI and
-operator workflows are expected to live in a separate frontend/BFF layer.
-Communication between Rosmarinus and that BFF should use Ably Pub/Sub rather
-than direct frontend coupling.
+operator workflows are expected to live in a separate Next.js application.
+The Connector is Rosmarinus's Ably Pub/Sub boundary for communicating with that
+Next.js app, rather than direct frontend coupling.
 
 - [x] Add `github.com/ably/ably-go/ably` as the Ably SDK dependency.
 - [x] Add an injectable connector publisher abstraction with an Ably adapter in
       `internal/connector`.
 - [x] Configure Ably publishing through environment variables:
-      `ABLY_API_KEY` and `BFF_CHANNEL`.
-- [x] Test BFF publishing with a dummy injected channel instead of a real Ably
+- [x] Configure the Connector channel through `CONNECTOR_CHANNEL`.
+- [x] Test Connector publishing with a dummy injected channel instead of a real Ably
       network connection.
 - [x] Publish follow approval request events when inbound `Follow` is stored as
       pending.
 - [x] Publish follow approval completion events when Rosmarinus accepts a
       pending follow and sends `Accept(Follow)`.
-- [ ] Publish post events for BFF-owned compose/post workflows.
+- [ ] Publish post events for Next.js-owned compose/post workflows.
 - [ ] Publish notification events for local user-facing notifications.
-- [ ] Define BFF-to-Rosmarinus command handling for post creation, follow
-      approval/rejection, and notification read state.
+- [ ] Define Connector-to-Rosmarinus command handling for Next.js-driven post
+      creation, follow approval/rejection, and notification read state.
 
 ## MongoDB Collections
 
@@ -685,9 +686,9 @@ federation peer and to inspect its official local federation test topology.
 - [x] Choose the Redis queue implementation: use Asynq by default, hidden behind
       `internal/queue` interfaces.
 - [x] Decide whether Rosmarinus owns notifications/webhooks or only writes
-      federation-visible state to MongoDB: Rosmarinus publishes BFF-facing
-      events through Ably Pub/Sub while MongoDB remains the federation state
-      store.
+      federation-visible state to MongoDB: Rosmarinus publishes Connector
+      events for Next.js through Ably Pub/Sub while MongoDB remains the
+      federation state store.
 - [ ] Decide media ownership: store remote files, proxy URLs only, or delegate
       media storage to another service.
 - [ ] Decide how much of Concorde's antenna/word-mute/timeline side effects
