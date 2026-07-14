@@ -24,6 +24,12 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetUnique(true).
 				SetSparse(true),
 		},
+		{
+			Keys: bson.D{{Key: "ownerAccountId", Value: 1}, {Key: "isSuspended", Value: 1}},
+			Options: options.Index().
+				SetName("idx_actors_owner_suspended").
+				SetSparse(true),
+		},
 	})
 	if err != nil {
 		return err

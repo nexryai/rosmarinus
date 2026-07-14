@@ -23,23 +23,25 @@ type ActorRepository struct {
 }
 
 type actorDocument struct {
-	ID            string     `bson:"_id,omitempty"`
-	Username      string     `bson:"username"`
-	UsernameLower string     `bson:"usernameLower"`
-	Name          string     `bson:"name,omitempty"`
-	Type          string     `bson:"type"`
-	Host          *string    `bson:"host"`
-	URI           string     `bson:"uri"`
-	Inbox         string     `bson:"inbox"`
-	SharedInbox   string     `bson:"sharedInbox"`
-	FollowersURI  string     `bson:"followersUri,omitempty"`
-	FollowingURI  string     `bson:"followingUri,omitempty"`
-	FeaturedURI   string     `bson:"featuredUri,omitempty"`
-	PublicKeyID   string     `bson:"publicKeyId"`
-	PublicKeyPEM  string     `bson:"publicKeyPem"`
-	PrivateKeyPEM string     `bson:"privateKeyPem,omitempty"`
-	IsSuspended   bool       `bson:"isSuspended"`
-	DeletedAt     *time.Time `bson:"deletedAt,omitempty"`
+	ID             string     `bson:"_id,omitempty"`
+	OwnerAccountID string     `bson:"ownerAccountId,omitempty"`
+	IsSystemActor  bool       `bson:"isSystemActor,omitempty"`
+	Username       string     `bson:"username"`
+	UsernameLower  string     `bson:"usernameLower"`
+	Name           string     `bson:"name,omitempty"`
+	Type           string     `bson:"type"`
+	Host           *string    `bson:"host"`
+	URI            string     `bson:"uri"`
+	Inbox          string     `bson:"inbox"`
+	SharedInbox    string     `bson:"sharedInbox"`
+	FollowersURI   string     `bson:"followersUri,omitempty"`
+	FollowingURI   string     `bson:"followingUri,omitempty"`
+	FeaturedURI    string     `bson:"featuredUri,omitempty"`
+	PublicKeyID    string     `bson:"publicKeyId"`
+	PublicKeyPEM   string     `bson:"publicKeyPem"`
+	PrivateKeyPEM  string     `bson:"privateKeyPem,omitempty"`
+	IsSuspended    bool       `bson:"isSuspended"`
+	DeletedAt      *time.Time `bson:"deletedAt,omitempty"`
 }
 
 func NewActorRepository(db *mongo.Database) *ActorRepository {
@@ -55,6 +57,17 @@ func (r *ActorRepository) EnsureLocalActor(ctx context.Context, actor actors.Act
 		return nil, err
 	}
 	if existing != nil {
+		if actor.IsSystemActor && !existing.IsSystemActor {
+			_, err := r.collection.UpdateOne(ctx, bson.M{
+				"_id":            existing.ID,
+				"host":           nil,
+				"ownerAccountId": bson.M{"$in": bson.A{nil, ""}},
+			}, bson.M{"$set": bson.M{"isSystemActor": true}})
+			if err != nil {
+				return nil, err
+			}
+			return r.FindLocalByID(ctx, existing.ID)
+		}
 		return existing, nil
 	}
 	if actor.PublicKeyPEM == "" || actor.PrivateKeyPEM == "" {
@@ -71,6 +84,20 @@ func (r *ActorRepository) EnsureLocalActor(ctx context.Context, actor actors.Act
 		return nil, err
 	}
 	return r.FindLocalByID(ctx, actor.ID)
+}
+
+func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	actorID = strings.TrimSpace(actorID)
+	if accountID == "" || actorID == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{
+		"_id":            actorID,
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSuspended":    false,
+	})
 }
 
 func (r *ActorRepository) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
@@ -162,43 +189,47 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		return nil, err
 	}
 	return &actors.Actor{
-		ID:            doc.ID,
-		Username:      doc.Username,
-		UsernameLower: doc.UsernameLower,
-		Name:          doc.Name,
-		Type:          doc.Type,
-		Host:          doc.Host,
-		URI:           doc.URI,
-		Inbox:         doc.Inbox,
-		SharedInbox:   doc.SharedInbox,
-		FollowersURI:  doc.FollowersURI,
-		FollowingURI:  doc.FollowingURI,
-		FeaturedURI:   doc.FeaturedURI,
-		PublicKeyID:   doc.PublicKeyID,
-		PublicKeyPEM:  doc.PublicKeyPEM,
-		PrivateKeyPEM: doc.PrivateKeyPEM,
-		IsSuspended:   doc.IsSuspended,
+		ID:             doc.ID,
+		OwnerAccountID: doc.OwnerAccountID,
+		IsSystemActor:  doc.IsSystemActor,
+		Username:       doc.Username,
+		UsernameLower:  doc.UsernameLower,
+		Name:           doc.Name,
+		Type:           doc.Type,
+		Host:           doc.Host,
+		URI:            doc.URI,
+		Inbox:          doc.Inbox,
+		SharedInbox:    doc.SharedInbox,
+		FollowersURI:   doc.FollowersURI,
+		FollowingURI:   doc.FollowingURI,
+		FeaturedURI:    doc.FeaturedURI,
+		PublicKeyID:    doc.PublicKeyID,
+		PublicKeyPEM:   doc.PublicKeyPEM,
+		PrivateKeyPEM:  doc.PrivateKeyPEM,
+		IsSuspended:    doc.IsSuspended,
 	}, nil
 }
 
 func fromActor(actor actors.Actor) actorDocument {
 	return actorDocument{
-		ID:            actor.ID,
-		Username:      actor.Username,
-		UsernameLower: actor.UsernameLower,
-		Name:          actor.Name,
-		Type:          actor.Type,
-		Host:          actor.Host,
-		URI:           actor.URI,
-		Inbox:         actor.Inbox,
-		SharedInbox:   actor.SharedInbox,
-		FollowersURI:  actor.FollowersURI,
-		FollowingURI:  actor.FollowingURI,
-		FeaturedURI:   actor.FeaturedURI,
-		PublicKeyID:   actor.PublicKeyID,
-		PublicKeyPEM:  actor.PublicKeyPEM,
-		PrivateKeyPEM: actor.PrivateKeyPEM,
-		IsSuspended:   actor.IsSuspended,
+		ID:             actor.ID,
+		OwnerAccountID: actor.OwnerAccountID,
+		IsSystemActor:  actor.IsSystemActor,
+		Username:       actor.Username,
+		UsernameLower:  actor.UsernameLower,
+		Name:           actor.Name,
+		Type:           actor.Type,
+		Host:           actor.Host,
+		URI:            actor.URI,
+		Inbox:          actor.Inbox,
+		SharedInbox:    actor.SharedInbox,
+		FollowersURI:   actor.FollowersURI,
+		FollowingURI:   actor.FollowingURI,
+		FeaturedURI:    actor.FeaturedURI,
+		PublicKeyID:    actor.PublicKeyID,
+		PublicKeyPEM:   actor.PublicKeyPEM,
+		PrivateKeyPEM:  actor.PrivateKeyPEM,
+		IsSuspended:    actor.IsSuspended,
 	}
 }
 

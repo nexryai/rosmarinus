@@ -43,6 +43,13 @@ func (f *fakeRepo) FindLocalByUsername(ctx context.Context, username string) (*a
 	return nil, nil
 }
 
+func (f *fakeRepo) FindOwnedLocalByID(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	if f.local != nil && f.local.ID == actorID && f.local.OwnerAccountID == accountID && !f.local.IsSuspended {
+		return f.local, nil
+	}
+	return nil, nil
+}
+
 func (f *fakeRepo) FindByURI(ctx context.Context, uri string) (*actors.Actor, error) {
 	if f.local != nil && f.local.URI == uri {
 		return f.local, nil

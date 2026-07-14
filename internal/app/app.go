@@ -264,6 +264,7 @@ func localActorFromConfig(cfg config.Config) actors.Actor {
 	}
 	return actors.Actor{
 		ID:            id,
+		IsSystemActor: true,
 		Username:      cfg.LocalActorUsername,
 		UsernameLower: strings.ToLower(cfg.LocalActorUsername),
 		Name:          name,
