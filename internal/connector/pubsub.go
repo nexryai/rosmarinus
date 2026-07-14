@@ -19,6 +19,7 @@ const (
 	EventFollowApprovalRejected  = "follow.approval.rejected"
 	EventCommandSucceeded        = "command.succeeded"
 	EventCommandFailed           = "command.failed"
+	EventActorCreated            = "actor.created"
 )
 
 type Channel interface {
@@ -246,4 +247,8 @@ func (p *Publisher) PublishCommandFailed(ctx context.Context, accountID, request
 		Command: command,
 		Code:    code,
 	})
+}
+
+func (p *Publisher) PublishActorCreated(ctx context.Context, accountID, requestID string, payload ActorCreated) error {
+	return p.PublishAccount(ctx, accountID, EventActorCreated, requestID, payload.ActorID, payload)
 }

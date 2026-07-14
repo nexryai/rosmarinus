@@ -50,6 +50,26 @@ func (f *fakeRepo) FindOwnedLocalByID(ctx context.Context, accountID, actorID st
 	return nil, nil
 }
 
+func (f *fakeRepo) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
+	f.local = &actor
+	return f.local, nil
+}
+
+func (f *fakeRepo) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
+	if f.local != nil && f.local.OwnerAccountID == accountID && !f.local.IsSystemActor && !f.local.IsSuspended {
+		f.local.IsSuspended = true
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func (f *fakeRepo) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {
+	if f.local != nil && f.local.OwnerAccountID != "" {
+		return []string{f.local.OwnerAccountID}, nil
+	}
+	return nil, nil
+}
+
 func (f *fakeRepo) FindByURI(ctx context.Context, uri string) (*actors.Actor, error) {
 	if f.local != nil && f.local.URI == uri {
 		return f.local, nil
@@ -690,6 +710,32 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	}
 	if *connectorPublisher.post != post {
 		t.Fatalf("published post = %+v", connectorPublisher.post)
+	}
+}
+
+func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
+	repo := &fakeRepo{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	created, err := h.CreateActor(context.Background(), "account-1", connector.ActorCreateCommand{
+		Username: "alice-work",
+		Name:     "Alice Work",
+		Type:     "Person",
+	})
+	if err != nil {
+		t.Fatalf("CreateActor returned error: %v", err)
+	}
+	if created.ActorID == "" || created.Username != "alice-work" || created.URI != "https://rosmarinus.example/users/"+created.ActorID {
+		t.Fatalf("unexpected result: %+v", created)
+	}
+	if repo.local == nil || repo.local.OwnerAccountID != "account-1" || repo.local.IsSystemActor || repo.local.PublicKeyID != created.URI+"#main-key" {
+		t.Fatalf("unexpected stored actor: %+v", repo.local)
+	}
+}
+
+func TestCreateActorRejectsInvalidUsername(t *testing.T) {
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	if _, err := h.CreateActor(context.Background(), "account-1", connector.ActorCreateCommand{Username: ".bad"}); err == nil {
+		t.Fatal("expected invalid username to fail")
 	}
 }
 

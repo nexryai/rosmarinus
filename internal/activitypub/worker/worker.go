@@ -2,7 +2,9 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -505,6 +507,83 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) CreateActor(ctx context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {
+	accountID = strings.TrimSpace(accountID)
+	username := strings.TrimSpace(command.Username)
+	if accountID == "" {
+		return connector.ActorCreated{}, fmt.Errorf("owner account id is required")
+	}
+	if !validLocalActorUsername(username) {
+		return connector.ActorCreated{}, fmt.Errorf("invalid local actor username")
+	}
+	actorType := strings.TrimSpace(command.Type)
+	if actorType == "" {
+		actorType = "Person"
+	}
+	if !validLocalActorType(actorType) {
+		return connector.ActorCreated{}, fmt.Errorf("invalid local actor type")
+	}
+	id, err := newLocalActorID()
+	if err != nil {
+		return connector.ActorCreated{}, err
+	}
+	base := strings.TrimRight(h.cfg.PublicURL, "/")
+	uri := base + "/users/" + url.PathEscape(id)
+	name := strings.TrimSpace(command.Name)
+	if name == "" {
+		name = username
+	}
+	actor, err := h.repo.CreateOwnedLocalActor(ctx, actors.Actor{
+		ID:             id,
+		OwnerAccountID: accountID,
+		Username:       username,
+		UsernameLower:  strings.ToLower(username),
+		Name:           name,
+		Type:           actorType,
+		URI:            uri,
+		Inbox:          uri + "/inbox",
+		SharedInbox:    base + "/inbox",
+		FollowersURI:   uri + "/followers",
+		FollowingURI:   uri + "/following",
+		FeaturedURI:    uri + "/collections/featured",
+		PublicKeyID:    uri + "#main-key",
+	})
+	if err != nil {
+		return connector.ActorCreated{}, err
+	}
+	return connector.ActorCreated{ActorID: actor.ID, URI: actor.URI, Username: actor.Username}, nil
+}
+
+func newLocalActorID() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate local actor id: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func validLocalActorType(value string) bool {
+	switch value {
+	case "Person", "Service", "Application", "Group", "Organization":
+		return true
+	default:
+		return false
+	}
+}
+
+func validLocalActorUsername(username string) bool {
+	if username == "" || len(username) > 128 {
+		return false
+	}
+	for i, r := range username {
+		ok := r == '_' || r == '-' || r == '.' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')
+		if !ok || ((i == 0 || i == len(username)-1) && (r == '-' || r == '.')) {
+			return false
+		}
+	}
+	return true
 }
 
 func postVisibility(value string) (domainnotes.Visibility, error) {

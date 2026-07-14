@@ -16,6 +16,7 @@ const (
 	CommandFollowApprove        = "follow.approve"
 	CommandFollowReject         = "follow.reject"
 	CommandPostCreate           = "post.create"
+	CommandActorCreate          = "actor.create"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
 
@@ -49,11 +50,13 @@ type CommandExecutor interface {
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
+	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
 }
 
 type CommandResultPublisher interface {
 	PublishCommandSucceeded(context.Context, string, string, string, string, any) error
 	PublishCommandFailed(context.Context, string, string, string, string, string) error
+	PublishActorCreated(context.Context, string, string, ActorCreated) error
 }
 
 type CommandHandler struct {
@@ -101,6 +104,24 @@ type PostCreateCommand struct {
 	Hashtags       []string
 }
 
+type ActorCreateData struct {
+	Username string `json:"username"`
+	Name     string `json:"name,omitempty"`
+	Type     string `json:"type,omitempty"`
+}
+
+type ActorCreateCommand struct {
+	Username string
+	Name     string
+	Type     string
+}
+
+type ActorCreated struct {
+	ActorID  string `json:"actor_id" bson:"actor_id"`
+	URI      string `json:"uri" bson:"uri"`
+	Username string `json:"username" bson:"username"`
+}
+
 func NewCommandHandler(source CommandSource, accounts AccountLookup, actorLookup ActorOwnershipLookup, executor CommandExecutor, publisher CommandResultPublisher, receipts CommandReceiptStore, logger *log.Logger, receiptTTL time.Duration) *CommandHandler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
@@ -122,7 +143,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowApprove, CommandFollowReject, CommandPostCreate}
+	names := []string{CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -160,9 +181,17 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 	if err != nil {
 		return err
 	}
-	accountRecord, actor, err := h.authorize(ctx, message.ClientID, envelope.ActorID)
+	accountRecord, err := h.authorizeAccount(ctx, message.ClientID)
 	if err != nil {
 		return err
+	}
+	actorID := envelope.ActorID
+	if name != CommandActorCreate {
+		actor, err := h.authorizeActor(ctx, accountRecord.ID, envelope.ActorID)
+		if err != nil {
+			return err
+		}
+		actorID = actor.ID
 	}
 
 	receipt := CommandReceipt{
@@ -170,7 +199,7 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 		ClientID:  message.ClientID,
 		RequestID: envelope.RequestID,
 		Command:   name,
-		ActorID:   actor.ID,
+		ActorID:   actorID,
 		Status:    CommandReceiptPending,
 		CreatedAt: h.now(),
 		UpdatedAt: h.now(),
@@ -186,96 +215,114 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 		}
 	}
 
-	result, err := h.execute(ctx, name, actor.ID, envelope.Data)
+	result, resultActorID, err := h.execute(ctx, name, accountRecord.ID, actorID, envelope.Data)
 	if err != nil {
 		code := "command_failed"
+		if h.logger != nil {
+			h.logger.Printf("connector: command execution failed account_id=%s client_id=%s actor_id=%s name=%s request_id=%s message_id=%s err=%v", accountRecord.ID, message.ClientID, actorID, name, envelope.RequestID, message.ID, err)
+		}
 		if h.receipts != nil {
 			if receiptErr := h.receipts.Fail(ctx, accountRecord.ID, envelope.RequestID, code, h.now()); receiptErr != nil {
 				return fmt.Errorf("record connector command failure after %v: %w", err, receiptErr)
 			}
 		}
-		if publishErr := h.publishFailed(ctx, accountRecord.ID, envelope.RequestID, actor.ID, name, code); publishErr != nil {
+		if publishErr := h.publishFailed(ctx, accountRecord.ID, envelope.RequestID, actorID, name, code); publishErr != nil {
 			return fmt.Errorf("publish connector command failure after %v: %w", err, publishErr)
 		}
 		return err
 	}
 	if h.receipts != nil {
-		if err := h.receipts.Complete(ctx, accountRecord.ID, envelope.RequestID, result, h.now()); err != nil {
+		if err := h.receipts.Complete(ctx, accountRecord.ID, envelope.RequestID, resultActorID, result, h.now()); err != nil {
 			return fmt.Errorf("complete connector command receipt: %w", err)
 		}
 	}
 	if h.publisher != nil {
-		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, actor.ID, name, result); err != nil {
+		if name == CommandActorCreate {
+			created, ok := result.(ActorCreated)
+			if !ok {
+				return fmt.Errorf("actor.create returned unexpected result type %T", result)
+			}
+			if err := h.publisher.PublishActorCreated(ctx, accountRecord.ID, envelope.RequestID, created); err != nil {
+				return fmt.Errorf("publish actor.created event: %w", err)
+			}
+		}
+		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, resultActorID, name, result); err != nil {
 			return fmt.Errorf("publish connector command result: %w", err)
 		}
 	}
 	return nil
 }
 
-func (h *CommandHandler) authorize(ctx context.Context, clientID, actorID string) (*account.Account, *actors.Actor, error) {
+func (h *CommandHandler) authorizeAccount(ctx context.Context, clientID string) (*account.Account, error) {
 	clientID = strings.TrimSpace(clientID)
 	if clientID == "" {
-		return nil, nil, fmt.Errorf("connector command clientId is required")
+		return nil, fmt.Errorf("connector command clientId is required")
 	}
 	if h.accounts == nil {
-		return nil, nil, fmt.Errorf("Salvia account lookup is not configured")
+		return nil, fmt.Errorf("Salvia account lookup is not configured")
 	}
 	accountRecord, err := h.accounts.FindActiveByAblyClientID(ctx, clientID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("resolve connector account: %w", err)
+		return nil, fmt.Errorf("resolve connector account: %w", err)
 	}
 	if !accountRecord.IsActive() {
-		return nil, nil, fmt.Errorf("connector account is not active")
+		return nil, fmt.Errorf("connector account is not active")
 	}
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, nil, fmt.Errorf("connector command actor_id is required")
-	}
-	if h.actors == nil {
-		return nil, nil, fmt.Errorf("actor ownership lookup is not configured")
-	}
-	actor, err := h.actors.FindOwnedLocalByID(ctx, accountRecord.ID, actorID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("authorize connector actor: %w", err)
-	}
-	if actor == nil {
-		return nil, nil, fmt.Errorf("connector actor is not owned by account")
-	}
-	return accountRecord, actor, nil
+	return accountRecord, nil
 }
 
-func (h *CommandHandler) execute(ctx context.Context, name, actorID string, data any) (any, error) {
+func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, fmt.Errorf("connector command actor_id is required")
+	}
+	if h.actors == nil {
+		return nil, fmt.Errorf("actor ownership lookup is not configured")
+	}
+	actor, err := h.actors.FindOwnedLocalByID(ctx, accountID, actorID)
+	if err != nil {
+		return nil, fmt.Errorf("authorize connector actor: %w", err)
+	}
+	if actor == nil {
+		return nil, fmt.Errorf("connector actor is not owned by account")
+	}
+	return actor, nil
+}
+
+func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID string, data any) (any, string, error) {
 	if h.executor == nil {
-		return nil, fmt.Errorf("connector command executor is not configured")
+		return nil, actorID, fmt.Errorf("connector command executor is not configured")
 	}
 	switch name {
 	case CommandFollowApprove:
 		var command FollowApproveData
 		if err := decodeCommandData(data, &command); err != nil {
-			return nil, err
+			return nil, actorID, err
 		}
 		if strings.TrimSpace(command.FollowerID) == "" {
-			return nil, fmt.Errorf("follower_id is required")
+			return nil, actorID, fmt.Errorf("follower_id is required")
 		}
-		return h.executor.ApproveFollow(ctx, command.FollowerID, actorID)
+		result, err := h.executor.ApproveFollow(ctx, command.FollowerID, actorID)
+		return result, actorID, err
 	case CommandFollowReject:
 		var command FollowRejectData
 		if err := decodeCommandData(data, &command); err != nil {
-			return nil, err
+			return nil, actorID, err
 		}
 		if strings.TrimSpace(command.FollowerID) == "" {
-			return nil, fmt.Errorf("follower_id is required")
+			return nil, actorID, fmt.Errorf("follower_id is required")
 		}
-		return h.executor.RejectFollow(ctx, command.FollowerID, actorID)
+		result, err := h.executor.RejectFollow(ctx, command.FollowerID, actorID)
+		return result, actorID, err
 	case CommandPostCreate:
 		var command PostCreateData
 		if err := decodeCommandData(data, &command); err != nil {
-			return nil, err
+			return nil, actorID, err
 		}
 		if strings.TrimSpace(command.NoteID) == "" || strings.TrimSpace(command.Text) == "" {
-			return nil, fmt.Errorf("note_id and text are required")
+			return nil, actorID, fmt.Errorf("note_id and text are required")
 		}
-		return h.executor.CreatePost(ctx, PostCreateCommand{
+		result, err := h.executor.CreatePost(ctx, PostCreateCommand{
 			ActorID:        actorID,
 			NoteID:         command.NoteID,
 			Text:           command.Text,
@@ -287,8 +334,23 @@ func (h *CommandHandler) execute(ctx context.Context, name, actorID string, data
 			MentionURIs:    command.MentionURIs,
 			Hashtags:       command.Hashtags,
 		})
+		return result, actorID, err
+	case CommandActorCreate:
+		var command ActorCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, "", err
+		}
+		if strings.TrimSpace(command.Username) == "" {
+			return nil, "", fmt.Errorf("username is required")
+		}
+		result, err := h.executor.CreateActor(ctx, accountID, ActorCreateCommand{
+			Username: command.Username,
+			Name:     command.Name,
+			Type:     command.Type,
+		})
+		return result, result.ActorID, err
 	default:
-		return nil, fmt.Errorf("unknown connector command: %s", name)
+		return nil, actorID, fmt.Errorf("unknown connector command: %s", name)
 	}
 }
 
@@ -320,7 +382,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowApprove, CommandFollowReject, CommandPostCreate:
+	case CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate:
 		return true
 	default:
 		return false

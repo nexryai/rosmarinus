@@ -32,28 +32,32 @@ type App struct {
 	cfg    config.Config
 	logger *log.Logger
 
-	mongoClient            *mongo.Client
-	mongoDB                *mongo.Database
-	redisClient            *redis.Client
-	apLocker               *cache.Locker
-	actors                 *mongostore.ActorRepository
-	notes                  *mongostore.NoteRepository
-	follows                *mongostore.FollowRepository
-	blocks                 *mongostore.BlockRepository
-	reactions              *mongostore.ReactionRepository
-	reports                *mongostore.ReportRepository
-	salviaAccounts         *mongostore.SalviaAccountRepository
-	connectorReceipts      *mongostore.ConnectorReceiptRepository
-	localActor             *actors.Actor
-	apClient               *apclient.Client
-	apWorker               *apworker.Handler
-	connectorPublisher     *connector.Publisher
-	connectorCommandSource *connector.AblyCommandSource
-	connectorCommands      *connector.CommandHandler
-	connectorUnsubscribe   func()
-	queueClient            *queue.AsynqClient
-	queueServer            *queue.AsynqServer
-	httpServer             *http.Server
+	mongoClient                 *mongo.Client
+	mongoDB                     *mongo.Database
+	redisClient                 *redis.Client
+	apLocker                    *cache.Locker
+	actors                      *mongostore.ActorRepository
+	notes                       *mongostore.NoteRepository
+	follows                     *mongostore.FollowRepository
+	blocks                      *mongostore.BlockRepository
+	reactions                   *mongostore.ReactionRepository
+	reports                     *mongostore.ReportRepository
+	salviaAccounts              *mongostore.SalviaAccountRepository
+	connectorReceipts           *mongostore.ConnectorReceiptRepository
+	localActor                  *actors.Actor
+	apClient                    *apclient.Client
+	apWorker                    *apworker.Handler
+	connectorPublisher          *connector.Publisher
+	connectorCommandSource      *connector.AblyCommandSource
+	connectorCommands           *connector.CommandHandler
+	connectorUnsubscribe        func()
+	connectorControlSource      *connector.AblyCommandSource
+	connectorControl            *connector.AccountControlHandler
+	connectorControlUnsubscribe func()
+	connectorAccountReconciler  *connector.AccountReconciler
+	queueClient                 *queue.AsynqClient
+	queueServer                 *queue.AsynqServer
+	httpServer                  *http.Server
 }
 
 func Run(ctx context.Context, logger *log.Logger) error {
@@ -139,6 +143,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
 	var connectorCommands *connector.CommandHandler
+	var connectorControlSource *connector.AblyCommandSource
+	var connectorControl *connector.AccountControlHandler
+	var connectorAccountReconciler *connector.AccountReconciler
 	if cfg.AblyServiceAPIKey != "" {
 		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyServiceAPIKey, cfg.ConnectorAccountEventNamespace)
 		if err != nil {
@@ -152,10 +159,19 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
-			connectorCommandSource.Close()
 			return nil, fmt.Errorf("create ably connector command source: %w", err)
 		}
+		connectorControlSource, err = connector.NewAblyCommandSource(cfg.AblyServiceAPIKey, cfg.ConnectorAccountControlChannel)
+		if err != nil {
+			_ = mongoClient.Disconnect(context.Background())
+			_ = redisClient.Close()
+			_ = queueClient.Close()
+			connectorCommandSource.Close()
+			return nil, fmt.Errorf("create ably connector account control source: %w", err)
+		}
 		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, actorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
+		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, actorRepo, logger)
+		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, actorRepo, actorRepo, logger)
 		logger.Printf("connector: ably account publisher ready namespace=%s", cfg.ConnectorAccountEventNamespace)
 	}
 	if connectorPublisher != nil {
@@ -163,28 +179,31 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 
 	return &App{
-		cfg:                    cfg,
-		logger:                 logger,
-		mongoClient:            mongoClient,
-		mongoDB:                mongoDB,
-		redisClient:            redisClient,
-		apLocker:               cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
-		actors:                 actorRepo,
-		notes:                  noteRepo,
-		follows:                followRepo,
-		blocks:                 blockRepo,
-		reactions:              reactionRepo,
-		reports:                reportRepo,
-		salviaAccounts:         salviaAccountRepo,
-		connectorReceipts:      connectorReceiptRepo,
-		localActor:             localActor,
-		apClient:               apClient,
-		apWorker:               apWorker,
-		connectorPublisher:     connectorPublisher,
-		connectorCommandSource: connectorCommandSource,
-		connectorCommands:      connectorCommands,
-		queueClient:            queueClient,
-		queueServer:            queueServer,
+		cfg:                        cfg,
+		logger:                     logger,
+		mongoClient:                mongoClient,
+		mongoDB:                    mongoDB,
+		redisClient:                redisClient,
+		apLocker:                   cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
+		actors:                     actorRepo,
+		notes:                      noteRepo,
+		follows:                    followRepo,
+		blocks:                     blockRepo,
+		reactions:                  reactionRepo,
+		reports:                    reportRepo,
+		salviaAccounts:             salviaAccountRepo,
+		connectorReceipts:          connectorReceiptRepo,
+		localActor:                 localActor,
+		apClient:                   apClient,
+		apWorker:                   apWorker,
+		connectorPublisher:         connectorPublisher,
+		connectorCommandSource:     connectorCommandSource,
+		connectorCommands:          connectorCommands,
+		connectorControlSource:     connectorControlSource,
+		connectorControl:           connectorControl,
+		connectorAccountReconciler: connectorAccountReconciler,
+		queueClient:                queueClient,
+		queueServer:                queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, followRepo, queueClient),
@@ -201,6 +220,21 @@ func (a *App) Start(ctx context.Context) error {
 		}
 		a.connectorUnsubscribe = unsubscribe
 		a.logger.Printf("connector: command subscription ready channel=%s", a.cfg.ConnectorCommandChannel)
+	}
+	if a.connectorControl != nil {
+		unsubscribe, err := a.connectorControl.Subscribe(ctx)
+		if err != nil {
+			if a.connectorUnsubscribe != nil {
+				a.connectorUnsubscribe()
+				a.connectorUnsubscribe = nil
+			}
+			return fmt.Errorf("subscribe connector account control: %w", err)
+		}
+		a.connectorControlUnsubscribe = unsubscribe
+		a.logger.Printf("connector: account control subscription ready channel=%s", a.cfg.ConnectorAccountControlChannel)
+	}
+	if a.connectorAccountReconciler != nil {
+		go a.connectorAccountReconciler.Run(ctx, a.cfg.ConnectorAccountReconcileInterval)
 	}
 	if a.cfg.RunWorkers {
 		a.apWorker.Register(a.queueServer)
@@ -228,6 +262,10 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.connectorUnsubscribe()
 		a.connectorUnsubscribe = nil
 	}
+	if a.connectorControlUnsubscribe != nil {
+		a.connectorControlUnsubscribe()
+		a.connectorControlUnsubscribe = nil
+	}
 	if a.httpServer != nil {
 		if err := a.httpServer.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs = append(errs, err)
@@ -243,6 +281,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.connectorCommandSource != nil {
 		a.connectorCommandSource.Close()
+	}
+	if a.connectorControlSource != nil {
+		a.connectorControlSource.Close()
 	}
 	if a.redisClient != nil {
 		if err := a.redisClient.Close(); err != nil {

@@ -315,7 +315,7 @@ when an Ably notification is missed.
 
 ### Trust And Identity Model
 
-- [ ] Keep authentication entirely in Salvia. Salvia validates its session and
+- [x] Keep authentication entirely in Salvia. Salvia validates its session and
       issues a short-lived Ably JWT; Rosmarinus must not validate Salvia
       cookies, passwords, or application JWTs.
 - [ ] Set an explicit non-wildcard `x-ably-clientId` in every browser JWT. The
@@ -325,12 +325,12 @@ when an Ably notification is missed.
       authzRevision }` mapping in the Salvia-owned `salvia_accounts`
       collection. Salvia is its only writer and index owner; Rosmarinus has
       read-only access for command authorization.
-- [ ] Reject Connector commands with a missing `message.ClientID`, an unknown
+- [x] Reject Connector commands with a missing `message.ClientID`, an unknown
       `ablyClientId`, or a Salvia account whose status is not `active`.
-- [ ] Preserve Ably `Message.ClientID` and `Message.ID` in `CommandMessage`.
+- [x] Preserve Ably `Message.ClientID` and `Message.ID` in `CommandMessage`.
       Never accept `account_id`, `user_id`, or `client_id` in command data as
       proof of identity.
-- [ ] Add an injectable read-only Salvia account repository with
+- [x] Add an injectable read-only Salvia account repository with
       `FindActiveByAblyClientID` and `FindByID` operations. Project only the
       fields Rosmarinus needs; do not couple Rosmarinus to Salvia session or UI
       document schemas.
@@ -342,7 +342,7 @@ when an Ably notification is missed.
       `internal/connector`.
 - [x] Configure the initial implementation through one `ABLY_API_KEY` and one
       `CONNECTOR_CHANNEL`.
-- [ ] Replace the initial single-channel topology with these explicit channels:
+- [x] Replace the initial single-channel topology with these explicit channels:
       `rosmarinus:commands` for browser-to-Rosmarinus commands,
       `rosmarinus:accounts:{accountId}:events` for account-scoped results and
       notifications, and `rosmarinus:control:accounts` for trusted Salvia
@@ -352,7 +352,7 @@ when an Ably notification is missed.
       authenticated account's exact event channel. A separate Salvia control
       key may only publish account-control events. The Rosmarinus service key
       may only subscribe to commands/control and publish account events.
-- [ ] Replace `ABLY_API_KEY`/`CONNECTOR_CHANNEL` runtime assumptions with
+- [x] Replace `ABLY_API_KEY`/`CONNECTOR_CHANNEL` runtime assumptions with
       environment-backed command channel, account-event namespace, control
       channel, and Rosmarinus service-key configuration.
 - [ ] Never give browser tokens wildcard capabilities, command-channel
@@ -364,27 +364,30 @@ when an Ably notification is missed.
 
 ### Command Authorization And Multiple Actors
 
-- [ ] Treat a Salvia account and a local ActivityPub Actor as distinct domain
+- [x] Treat a Salvia account and a local ActivityPub Actor as distinct domain
       concepts. One active Salvia account may own any number of local Actors;
       each local user-managed Actor has exactly one `ownerAccountId`.
-- [ ] Add `ownerAccountId` to local Actor documents. Remote Actors never have
+- [x] Add `ownerAccountId` to local Actor documents. Remote Actors never have
       it. Keep the environment-provisioned local Actor as an explicitly marked
       system Actor rather than treating it as the only local Actor.
-- [ ] Add `FindOwnedLocalByID(ctx, accountID, actorID)` using one MongoDB filter
+- [x] Add `FindOwnedLocalByID(ctx, accountID, actorID)` using one MongoDB filter
       over `_id`, `ownerAccountId`, `host: null`, and `isSuspended: false`.
       Actor-bound handlers must use this operation instead of first loading an
       Actor and checking ownership later.
-- [ ] Require every Actor-bound command to name the acting/target local Actor,
+- [x] Require the implemented Actor-bound commands to name the acting/target
+      local Actor,
       then authorize it against the account resolved from
-      `message.ClientID`. This includes `post.create`, `follow.approve`,
-      `follow.reject`, future follow/reaction commands, and Actor update/delete.
-- [ ] Add `actor.create`. Rosmarinus generates the Actor ID, URI, and key pair,
+      `message.ClientID`. This includes `post.create`, `follow.approve`, and
+      `follow.reject`.
+- [ ] Apply the same owned-Actor authorization to future follow/reaction
+      commands and Actor update/delete when those commands are implemented.
+- [x] Add `actor.create`. Rosmarinus generates the Actor ID, URI, and key pair,
       and derives `ownerAccountId` from the authenticated account; the browser
       cannot supply or override the owner.
 - [ ] Keep ownership transfer out of ordinary browser commands. If needed,
       implement it later as a separately authorized administrative command
       whose only writer remains Rosmarinus.
-- [ ] Route command results and spontaneous federation events through
+- [x] Route command results and spontaneous federation events through
       `rosmarinus:accounts:{ownerAccountId}:events`; include `actor_id` in the
       envelope so one browser subscription can represent all owned Actors.
 
@@ -392,22 +395,22 @@ when an Ably notification is missed.
 
 - [x] Define the initial Connector-to-Rosmarinus command envelope and Ably
       command source.
-- [ ] Standardize commands on `{ version, request_id, actor_id, data }`. Keep
+- [x] Standardize commands on `{ version, request_id, actor_id, data }`. Keep
       the Ably message name as the command type and require a client-generated
       stable `request_id` for retries.
-- [ ] Add Rosmarinus-owned `connector_command_receipts` records keyed uniquely
+- [x] Add Rosmarinus-owned `connector_command_receipts` records keyed uniquely
       by `{ accountId, requestId }`, storing command type, Actor ID, status,
       result/error, timestamps, and expiry.
-- [ ] Claim a receipt before applying a state change. On a duplicate command,
+- [x] Claim a receipt before applying a state change. On a duplicate command,
       do not repeat the mutation; re-publish the stored result when available.
       This must also prevent duplicate execution when multiple Rosmarinus
       replicas receive the same Pub/Sub message.
-- [ ] Stop discarding command-handler errors. Log the account/client, Actor,
+- [x] Stop discarding command-handler errors. Log the account/client, Actor,
       command type, request ID, and failure, then publish a versioned
       `command.failed` result without exposing internal errors.
-- [ ] Publish versioned success results containing the original `request_id`,
+- [x] Publish versioned success results containing the original `request_id`,
       `actor_id`, `occurred_at`, and command-specific data.
-- [ ] Add focused tests for unknown/disabled clients, cross-account Actor
+- [x] Add focused tests for unknown/disabled clients, cross-account Actor
       access, missing ownership, duplicate request IDs, multiple Actors owned
       by one account, and result-channel routing.
 
@@ -417,16 +420,16 @@ when an Ably notification is missed.
       `{ account_id, authz_revision }` invalidation on
       `rosmarinus:control:accounts`. Rosmarinus re-reads the authoritative
       Salvia document instead of treating the event payload as account state.
-- [ ] Re-check the Salvia account status from MongoDB for every state-changing
+- [x] Re-check the Salvia account status from MongoDB for every state-changing
       browser command, even when an account mapping cache is present.
-- [ ] Add a MongoDB change-stream consumer or periodic reconciler so missed
-      Ably control events are eventually observed. Store any resume/reconcile
-      state in a Rosmarinus-owned collection.
+- [x] Add a periodic full reconciler so missed Ably control events are
+      eventually observed. It lists distinct Actor owner accounts and therefore
+      does not require persisted resume/checkpoint state.
 - [ ] Define account suspension/deletion policy: immediately reject new
       commands, stop publishing sensitive account events, and have Rosmarinus
       mark or retain its owned Actors according to federation retention rules.
       Salvia must never update Actor documents directly.
-- [ ] Treat Ably account events as notifications, not the only copy of state.
+- [x] Treat Ably account events as notifications, not the only copy of state.
       After reconnecting, Salvia reads Rosmarinus-owned collections to rebuild
       UI state.
 
@@ -468,13 +471,13 @@ workflow may require both services to update the same document or collection.
 
 ### Rosmarinus-Owned Collections
 
-- [ ] `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`, and
+- [x] `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`, and
       all other federation collections: Rosmarinus writes; Salvia reads for UI
       queries.
-- [ ] `connector_command_receipts`: Rosmarinus-owned command deduplication and
+- [x] `connector_command_receipts`: Rosmarinus-owned command deduplication and
       result records.
-- [ ] Connector reconciliation/checkpoint state: Rosmarinus-owned even when it
-      tracks changes observed from a Salvia collection.
+- [x] The periodic reconciliation implementation is a full scan of distinct
+      Actor owner accounts and requires no checkpoint collection.
 
 ### Database Enforcement And Contracts
 
@@ -487,11 +490,11 @@ workflow may require both services to update the same document or collection.
       Rosmarinus must not create indexes on `salvia_accounts`, and Salvia must
       not create indexes on `actors`, `follows`, or other federation
       collections.
-- [ ] Document the cross-service read schemas as versioned contracts. Readers
+- [x] Document the cross-service read schemas as versioned contracts. Readers
       should project known fields and tolerate additive fields from the owner.
 - [ ] Use soft deletion for Salvia accounts referenced by Rosmarinus Actors so
       historical ownership and audit records do not become dangling references.
-- [ ] Do not use cross-service MongoDB transactions. Actor creation and
+- [x] Do not use cross-service MongoDB transactions. Actor creation and
       federation mutations commit only Rosmarinus-owned documents; Salvia UI
       settings are created or cleaned independently in Salvia-owned documents.
 
@@ -512,15 +515,15 @@ workflow may require both services to update the same document or collection.
 - [ ] `media`
 - [ ] `instances`
 - [x] `abuse_reports`
-- [ ] `connector_command_receipts`
-- [ ] Connector account-reconciliation checkpoints if polling or change
-      streams require persisted progress.
+- [x] `connector_command_receipts`
+- [x] No account-reconciliation checkpoint collection is required by the
+      current periodic full-scan implementation.
 
 ### Required Indexes
 
 - [x] `actors`: unique `uri`
 - [x] `actors`: unique sparse `{ usernameLower, host }`
-- [ ] `actors`: basic `{ ownerAccountId, isSuspended }` for listing and
+- [x] `actors`: basic `{ ownerAccountId, isSuspended }` for listing and
       reconciling account-owned local Actors.
 - [ ] `actor_public_keys`: unique `keyId`
 - [x] `notes`: unique sparse `uri`
@@ -542,8 +545,8 @@ workflow may require both services to update the same document or collection.
 - [ ] `emojis`: unique `{ name, host }`
 - [ ] `instances`: unique `host`
 - [ ] `media`: unique sparse `uri`, and content hash if available
-- [ ] `connector_command_receipts`: unique `{ accountId, requestId }`
-- [ ] `connector_command_receipts`: TTL `expiresAt`
+- [x] `connector_command_receipts`: unique `{ accountId, requestId }`
+- [x] `connector_command_receipts`: TTL `expiresAt`
 
 ## Go Package Plan
 
@@ -564,9 +567,9 @@ workflow may require both services to update the same document or collection.
 - [ ] `internal/domain`: actor, note, follow, reaction, emoji, media, instance
       domain services.
 - [ ] `internal/store/mongo`: MongoDB repositories and index setup.
-- [ ] `internal/account`: minimal read-only Salvia account projection and
+- [x] `internal/account`: minimal read-only Salvia account projection and
       repository interface used by Connector authorization.
-- [ ] `internal/connector`: separated command/control subscribers,
+- [x] `internal/connector`: separated command/control subscribers,
       account-scoped event routing, identity-aware command dispatch, and
       receipt-backed idempotency.
 - [x] `internal/queue`: Redis queue interfaces and implementation.
@@ -629,42 +632,42 @@ workflow may require both services to update the same document or collection.
 
 Implement this phase before exposing additional browser-driven mutations.
 
-- [ ] Freeze and document the shared read contracts for `salvia_accounts` and
+- [x] Freeze and document the shared read contracts for `salvia_accounts` and
       Rosmarinus `actors`, including field names, BSON types, status values,
       soft-deletion behavior, and which service owns each migration/index.
 - [ ] Add separate MongoDB credentials and deployment documentation that
       enforce collection-level read/write ownership for Salvia and
       Rosmarinus.
-- [ ] Add the read-only Salvia account projection/repository and tests for
+- [x] Add the read-only Salvia account projection/repository and tests for
       active, suspended, deleted, missing, and rotated `ablyClientId` values.
-- [ ] Add `ownerAccountId` and explicit system-Actor semantics to the Actor
+- [x] Add `ownerAccountId` and explicit system-Actor semantics to the Actor
       domain/document model. Add the owner index and migrate existing local
       configuration-provisioned Actor records as system Actors.
-- [ ] Add owned-Actor repository queries and tests proving one account can own
+- [x] Add owned-Actor repository queries and tests proving one account can own
       multiple Actors while another account cannot operate any of them.
 - [ ] Split Connector configuration and Ably adapters into command, account
       event, and account-control paths with least-privilege service keys.
-- [ ] Preserve and validate Ably message identity, resolve the active Salvia
+- [x] Preserve and validate Ably message identity, resolve the active Salvia
       account for every mutation, and require owned-Actor lookup before
       entering existing worker methods.
-- [ ] Add the versioned request/result envelopes and
+- [x] Add the versioned request/result envelopes and
       `connector_command_receipts` repository. Make receipt claiming atomic
       and verify duplicate delivery across two handlers performs one mutation.
-- [ ] Change `post.create`, `follow.approve`, and `follow.reject` to use the
+- [x] Change `post.create`, `follow.approve`, and `follow.reject` to use the
       authenticated account plus owned Actor rather than trusting Actor IDs in
       command data by themselves.
-- [ ] Add `actor.create` with Rosmarinus-generated identifiers/key material and
+- [x] Add `actor.create` with Rosmarinus-generated identifiers/key material and
       server-derived ownership, plus `actor.created` account event routing.
-- [ ] Route pending-follow and other spontaneous federation notifications by
+- [x] Route pending-follow and other spontaneous federation notifications by
       the local Actor's `ownerAccountId`; system Actors follow an explicitly
       documented non-user notification policy.
 - [ ] Add logged/versioned command failures and re-publishable stored success
       results. Verify browser recovery by reading MongoDB after an event is
       missed.
-- [ ] Add Salvia account-control invalidation handling and a DB-backed
+- [x] Add Salvia account-control invalidation handling and a DB-backed
       reconciliation fallback. Verify a suspended account is rejected even if
       its previously issued Ably token has not expired.
-- [ ] Remove the legacy single-channel runtime path after migration tests and
+- [x] Remove the legacy single-channel runtime path after migration tests and
       deployment configuration use the separated topology.
 
 ### Phase 3: Inbox MVP

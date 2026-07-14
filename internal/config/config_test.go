@@ -31,7 +31,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ConnectorAccountEventNamespace != "rosmarinus:accounts" || cfg.ConnectorAccountControlChannel != "rosmarinus:control:accounts" {
 		t.Fatalf("unexpected Connector channels: %+v", cfg)
 	}
-	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour {
+	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour || cfg.ConnectorAccountReconcileInterval != 5*time.Minute {
 		t.Fatalf("unexpected Salvia/receipt config: %+v", cfg)
 	}
 }
@@ -94,6 +94,8 @@ func TestLoadAblyConfig(t *testing.T) {
 			return "test_salvia_accounts", true
 		case "CONNECTOR_RECEIPT_TTL":
 			return "24h", true
+		case "CONNECTOR_ACCOUNT_RECONCILE_INTERVAL":
+			return "10m", true
 		default:
 			return "", false
 		}
@@ -101,7 +103,7 @@ func TestLoadAblyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.AblyServiceAPIKey != "app.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour {
+	if cfg.AblyServiceAPIKey != "app.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour || cfg.ConnectorAccountReconcileInterval != 10*time.Minute {
 		t.Fatalf("unexpected Ably config: %+v", cfg)
 	}
 }

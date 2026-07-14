@@ -29,6 +29,6 @@ type CommandReceipt struct {
 
 type CommandReceiptStore interface {
 	Claim(context.Context, CommandReceipt) (*CommandReceipt, bool, error)
-	Complete(context.Context, string, string, any, time.Time) error
+	Complete(context.Context, string, string, string, any, time.Time) error
 	Fail(context.Context, string, string, string, time.Time) error
 }

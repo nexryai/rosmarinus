@@ -31,6 +31,9 @@ type Lookup interface {
 type Repository interface {
 	Lookup
 	FindOwnedLocalByID(context.Context, string, string) (*Actor, error)
+	CreateOwnedLocalActor(context.Context, Actor) (*Actor, error)
+	SuspendOwnedLocalActors(context.Context, string) (int64, error)
+	ListOwnedAccountIDs(context.Context) ([]string, error)
 	FindByURI(context.Context, string) (*Actor, error)
 	FindByPublicKeyID(context.Context, string) (*Actor, error)
 	UpsertRemoteActor(context.Context, Actor) (*Actor, error)

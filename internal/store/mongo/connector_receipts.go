@@ -62,9 +62,10 @@ func (r *ConnectorReceiptRepository) Claim(ctx context.Context, receipt connecto
 	return &claimed, true, nil
 }
 
-func (r *ConnectorReceiptRepository) Complete(ctx context.Context, accountID, requestID string, result any, now time.Time) error {
+func (r *ConnectorReceiptRepository) Complete(ctx context.Context, accountID, requestID, actorID string, result any, now time.Time) error {
 	return r.transition(ctx, accountID, requestID, bson.M{
 		"status":    connector.CommandReceiptCompleted,
+		"actorId":   actorID,
 		"result":    result,
 		"errorCode": "",
 		"updatedAt": now,

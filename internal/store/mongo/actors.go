@@ -100,6 +100,69 @@ func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, act
 	})
 }
 
+func (r *ActorRepository) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
+	actor.ID = strings.TrimSpace(actor.ID)
+	actor.OwnerAccountID = strings.TrimSpace(actor.OwnerAccountID)
+	actor.Username = strings.TrimSpace(actor.Username)
+	actor.URI = strings.TrimSpace(actor.URI)
+	if actor.ID == "" || actor.OwnerAccountID == "" || actor.Username == "" || actor.URI == "" {
+		return nil, fmt.Errorf("owned local actor id, owner, username, and uri are required")
+	}
+	if actor.Host != nil {
+		return nil, fmt.Errorf("owned actor must be local")
+	}
+	if actor.IsSystemActor {
+		return nil, fmt.Errorf("owned actor must not be a system actor")
+	}
+	actor.UsernameLower = strings.ToLower(actor.Username)
+	if actor.PublicKeyPEM == "" || actor.PrivateKeyPEM == "" {
+		publicKey, privateKey, err := generateRSAKeyPair()
+		if err != nil {
+			return nil, err
+		}
+		actor.PublicKeyPEM = publicKey
+		actor.PrivateKeyPEM = privateKey
+	}
+	if _, err := r.collection.InsertOne(ctx, fromActor(actor)); err != nil {
+		return nil, err
+	}
+	return r.FindOwnedLocalByID(ctx, actor.OwnerAccountID, actor.ID)
+}
+
+func (r *ActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, fmt.Errorf("owner account id is required")
+	}
+	now := time.Now().UTC()
+	result, err := r.collection.UpdateMany(ctx, bson.M{
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  false,
+		"isSuspended":    false,
+	}, bson.M{"$set": bson.M{
+		"isSuspended": true,
+		"suspendedAt": now,
+	}})
+	if err != nil {
+		return 0, err
+	}
+	return result.ModifiedCount, nil
+}
+
+func (r *ActorRepository) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {
+	var accountIDs []string
+	err := r.collection.Distinct(ctx, "ownerAccountId", bson.M{
+		"ownerAccountId": bson.M{"$exists": true, "$ne": ""},
+		"host":           nil,
+		"isSystemActor":  false,
+	}).Decode(&accountIDs)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	return accountIDs, err
+}
+
 func (r *ActorRepository) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
 	return r.findOne(ctx, bson.M{
 		"_id":         id,

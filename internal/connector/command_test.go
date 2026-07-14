@@ -74,6 +74,11 @@ func (f *fakeCommandExecutor) CreatePost(ctx context.Context, command PostCreate
 	return PostCreated{AccountID: "account-1", ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, f.err
 }
 
+func (f *fakeCommandExecutor) CreateActor(ctx context.Context, accountID string, command ActorCreateCommand) (ActorCreated, error) {
+	_ = ctx
+	return ActorCreated{ActorID: "actor-created", URI: "https://example.test/users/actor-created", Username: command.Username}, f.err
+}
+
 type publishedCommandResult struct {
 	accountID string
 	requestID string
@@ -86,6 +91,13 @@ type publishedCommandResult struct {
 type fakeCommandResultPublisher struct {
 	succeeded []publishedCommandResult
 	failed    []publishedCommandResult
+	actors    []ActorCreated
+}
+
+func (f *fakeCommandResultPublisher) PublishActorCreated(ctx context.Context, accountID, requestID string, created ActorCreated) error {
+	_ = ctx
+	f.actors = append(f.actors, created)
+	return nil
 }
 
 func (f *fakeCommandResultPublisher) PublishCommandSucceeded(ctx context.Context, accountID, requestID, actorID, command string, result any) error {
@@ -119,10 +131,11 @@ func (f *fakeReceiptStore) Claim(ctx context.Context, receipt CommandReceipt) (*
 	return &copy, true, nil
 }
 
-func (f *fakeReceiptStore) Complete(ctx context.Context, accountID, requestID string, result any, now time.Time) error {
+func (f *fakeReceiptStore) Complete(ctx context.Context, accountID, requestID, actorID string, result any, now time.Time) error {
 	_ = ctx
 	receipt := f.receipts[accountID+"\x00"+requestID]
 	receipt.Status = CommandReceiptCompleted
+	receipt.ActorID = actorID
 	receipt.Result = result
 	receipt.UpdatedAt = now
 	return nil
@@ -172,7 +185,7 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 3 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject || source.names[2] != CommandPostCreate {
+	if len(source.names) != 4 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject || source.names[2] != CommandPostCreate || source.names[3] != CommandActorCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
@@ -231,6 +244,27 @@ func TestCommandHandlerUsesActorAsFollowee(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerCreatesActorForAuthenticatedAccount(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	receipts := &fakeReceiptStore{}
+	handler := newAuthorizedCommandHandler(executor, publisher, receipts)
+	message := commandMessage(CommandActorCreate, "request-create", "", ActorCreateData{Username: "alice-work", Type: "Person"})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].actorID != "actor-created" {
+		t.Fatalf("unexpected success: %+v", publisher.succeeded)
+	}
+	if len(publisher.actors) != 1 || publisher.actors[0].ActorID != "actor-created" {
+		t.Fatalf("unexpected actor.created events: %+v", publisher.actors)
+	}
+	receipt := receipts.receipts["account-1\x00request-create"]
+	if receipt == nil || receipt.ActorID != "actor-created" || receipt.Status != CommandReceiptCompleted {
+		t.Fatalf("unexpected receipt: %+v", receipt)
+	}
+}
+
 func TestCommandHandlerDeduplicatesRequestAndRepublishesResult(t *testing.T) {
 	executor := &fakeCommandExecutor{}
 	publisher := &fakeCommandResultPublisher{}
@@ -247,6 +281,54 @@ func TestCommandHandlerDeduplicatesRequestAndRepublishesResult(t *testing.T) {
 	}
 	if len(publisher.succeeded) != 2 {
 		t.Fatalf("success publications = %d", len(publisher.succeeded))
+	}
+}
+
+func TestCommandReceiptDeduplicatesAcrossHandlers(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	receipts := &fakeReceiptStore{}
+	first := newAuthorizedCommandHandler(executor, publisher, receipts)
+	second := newAuthorizedCommandHandler(executor, publisher, receipts)
+	message := commandMessage(CommandPostCreate, "shared-request", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	if err := first.Handle(context.Background(), message); err != nil {
+		t.Fatalf("first handler returned error: %v", err)
+	}
+	if err := second.Handle(context.Background(), message); err != nil {
+		t.Fatalf("second handler returned error: %v", err)
+	}
+	if executor.postCalls != 1 {
+		t.Fatalf("post calls = %d", executor.postCalls)
+	}
+}
+
+func TestCommandHandlerRejectsSuspendedAccount(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	lookup := handler.accounts.(*fakeAccountLookup)
+	lookup.accounts["client-1"].Status = account.StatusSuspended
+	message := commandMessage(CommandPostCreate, "request-1", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("expected suspended account to fail")
+	}
+}
+
+func TestCommandHandlerRejectsDeletedMissingAndRotatedClients(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	lookup := handler.accounts.(*fakeAccountLookup)
+	lookup.accounts["deleted-client"] = &account.Account{ID: "deleted", AblyClientID: "deleted-client", Status: account.StatusDeleted}
+	lookup.accounts["new-client"] = &account.Account{ID: "account-1", AblyClientID: "new-client", Status: account.StatusActive}
+
+	for _, clientID := range []string{"deleted-client", "missing-client", "old-client"} {
+		message := commandMessage(CommandPostCreate, "request-"+clientID, "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+		message.ClientID = clientID
+		if err := handler.Handle(context.Background(), message); err == nil {
+			t.Fatalf("expected client %q to fail", clientID)
+		}
+	}
+	message := commandMessage(CommandPostCreate, "request-new-client", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	message.ClientID = "new-client"
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("rotated client returned error: %v", err)
 	}
 }
 
