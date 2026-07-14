@@ -329,6 +329,7 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	}
 	if h.connector != nil {
 		if err := h.connector.PublishFollowApprovalRequested(ctx, connector.FollowApproval{
+			AccountID:   followee.OwnerAccountID,
 			FollowerID:  follow.FollowerID,
 			FolloweeID:  follow.FolloweeID,
 			FollowerURI: follow.FollowerURI,
@@ -383,6 +384,7 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	}
 	if h.connector != nil {
 		if err := h.connector.PublishFollowApprovalCompleted(ctx, connector.FollowApproval{
+			AccountID:   followee.OwnerAccountID,
 			FollowerID:  follow.FollowerID,
 			FolloweeID:  follow.FolloweeID,
 			FollowerURI: follow.FollowerURI,
@@ -443,6 +445,7 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 	}
 	if h.connector != nil {
 		if err := h.connector.PublishFollowApprovalRejected(ctx, connector.FollowApproval{
+			AccountID:   followee.OwnerAccountID,
 			FollowerID:  follow.FollowerID,
 			FolloweeID:  follow.FolloweeID,
 			FollowerURI: follow.FollowerURI,
@@ -491,9 +494,10 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		return connector.PostCreated{}, err
 	}
 	payload := connector.PostCreated{
-		ActorID: actor.ID,
-		NoteID:  note.ID,
-		URI:     note.URI,
+		AccountID: actor.OwnerAccountID,
+		ActorID:   actor.ID,
+		NoteID:    note.ID,
+		URI:       note.URI,
 	}
 	if h.connector != nil {
 		if err := h.connector.PublishPostCreated(ctx, payload); err != nil {

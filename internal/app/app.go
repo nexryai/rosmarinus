@@ -42,6 +42,8 @@ type App struct {
 	blocks                 *mongostore.BlockRepository
 	reactions              *mongostore.ReactionRepository
 	reports                *mongostore.ReportRepository
+	salviaAccounts         *mongostore.SalviaAccountRepository
+	connectorReceipts      *mongostore.ConnectorReceiptRepository
 	localActor             *actors.Actor
 	apClient               *apclient.Client
 	apWorker               *apworker.Handler
@@ -102,6 +104,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
+	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
+	connectorReceiptRepo := mongostore.NewConnectorReceiptRepository(mongoDB)
 	var localActor *actors.Actor
 	if cfg.LocalActorUsername != "" {
 		localActor, err = actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg))
@@ -135,15 +139,15 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
 	var connectorCommands *connector.CommandHandler
-	if cfg.AblyAPIKey != "" {
-		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyAPIKey, cfg.ConnectorChannel)
+	if cfg.AblyServiceAPIKey != "" {
+		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyServiceAPIKey, cfg.ConnectorAccountEventNamespace)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector publisher: %w", err)
 		}
-		connectorCommandSource, err = connector.NewAblyCommandSource(cfg.AblyAPIKey, cfg.ConnectorChannel)
+		connectorCommandSource, err = connector.NewAblyCommandSource(cfg.AblyServiceAPIKey, cfg.ConnectorCommandChannel)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
@@ -151,8 +155,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			connectorCommandSource.Close()
 			return nil, fmt.Errorf("create ably connector command source: %w", err)
 		}
-		connectorCommands = connector.NewCommandHandler(connectorCommandSource, apWorker)
-		logger.Printf("connector: ably publisher ready channel=%s", cfg.ConnectorChannel)
+		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, actorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
+		logger.Printf("connector: ably account publisher ready namespace=%s", cfg.ConnectorAccountEventNamespace)
 	}
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)
@@ -171,6 +175,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		blocks:                 blockRepo,
 		reactions:              reactionRepo,
 		reports:                reportRepo,
+		salviaAccounts:         salviaAccountRepo,
+		connectorReceipts:      connectorReceiptRepo,
 		localActor:             localActor,
 		apClient:               apClient,
 		apWorker:               apWorker,
@@ -194,7 +200,7 @@ func (a *App) Start(ctx context.Context) error {
 			return fmt.Errorf("subscribe connector commands: %w", err)
 		}
 		a.connectorUnsubscribe = unsubscribe
-		a.logger.Printf("connector: command subscription ready channel=%s", a.cfg.ConnectorChannel)
+		a.logger.Printf("connector: command subscription ready channel=%s", a.cfg.ConnectorCommandChannel)
 	}
 	if a.cfg.RunWorkers {
 		a.apWorker.Register(a.queueServer)

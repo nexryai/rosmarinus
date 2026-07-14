@@ -31,8 +31,12 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	AblyAPIKey       string
-	ConnectorChannel string
+	AblyServiceAPIKey              string
+	ConnectorCommandChannel        string
+	ConnectorAccountEventNamespace string
+	ConnectorAccountControlChannel string
+	SalviaAccountCollection        string
+	ConnectorReceiptTTL            time.Duration
 
 	RunHTTP      bool
 	RunWorkers   bool
@@ -57,21 +61,25 @@ func LoadFromEnv() (Config, error) {
 
 func Load(lookup LookupFunc) (Config, error) {
 	cfg := Config{
-		Host:                  get(lookup, "HOST", "localhost:3000"),
-		PublicURL:             get(lookup, "PUBLIC_URL", "http://localhost:3000"),
-		HTTPAddr:              get(lookup, "HTTP_ADDR", ":3000"),
-		LocalActorUsername:    get(lookup, "LOCAL_ACTOR_USERNAME", ""),
-		LocalActorID:          get(lookup, "LOCAL_ACTOR_ID", ""),
-		LocalActorDisplayName: get(lookup, "LOCAL_ACTOR_DISPLAY_NAME", ""),
-		LocalActorType:        get(lookup, "LOCAL_ACTOR_TYPE", "Service"),
-		MongoURI:              get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
-		MongoDatabase:         get(lookup, "MONGO_DATABASE", "rosmarinus"),
-		RedisAddr:             get(lookup, "REDIS_ADDR", "localhost:6379"),
-		RedisPassword:         get(lookup, "REDIS_PASSWORD", ""),
-		AblyAPIKey:            get(lookup, "ABLY_API_KEY", ""),
-		ConnectorChannel:      get(lookup, "CONNECTOR_CHANNEL", "rosmarinus:connector"),
-		UserAgent:             get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
-		WorkerQueues:          splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
+		Host:                           get(lookup, "HOST", "localhost:3000"),
+		PublicURL:                      get(lookup, "PUBLIC_URL", "http://localhost:3000"),
+		HTTPAddr:                       get(lookup, "HTTP_ADDR", ":3000"),
+		LocalActorUsername:             get(lookup, "LOCAL_ACTOR_USERNAME", ""),
+		LocalActorID:                   get(lookup, "LOCAL_ACTOR_ID", ""),
+		LocalActorDisplayName:          get(lookup, "LOCAL_ACTOR_DISPLAY_NAME", ""),
+		LocalActorType:                 get(lookup, "LOCAL_ACTOR_TYPE", "Service"),
+		MongoURI:                       get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
+		MongoDatabase:                  get(lookup, "MONGO_DATABASE", "rosmarinus"),
+		RedisAddr:                      get(lookup, "REDIS_ADDR", "localhost:6379"),
+		RedisPassword:                  get(lookup, "REDIS_PASSWORD", ""),
+		AblyServiceAPIKey:              get(lookup, "ABLY_ROSMARINUS_API_KEY", ""),
+		ConnectorCommandChannel:        get(lookup, "CONNECTOR_COMMAND_CHANNEL", "rosmarinus:commands"),
+		ConnectorAccountEventNamespace: get(lookup, "CONNECTOR_ACCOUNT_EVENT_NAMESPACE", "rosmarinus:accounts"),
+		ConnectorAccountControlChannel: get(lookup, "CONNECTOR_ACCOUNT_CONTROL_CHANNEL", "rosmarinus:control:accounts"),
+		SalviaAccountCollection:        get(lookup, "SALVIA_ACCOUNT_COLLECTION", "salvia_accounts"),
+		ConnectorReceiptTTL:            getDuration(lookup, "CONNECTOR_RECEIPT_TTL", 7*24*time.Hour),
+		UserAgent:                      get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
+		WorkerQueues:                   splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
 			MaxRetry:      getInt(lookup, "INBOX_MAX_RETRY", 10),
@@ -129,8 +137,20 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.RedisAddr) == "" {
 		return fmt.Errorf("REDIS_ADDR must not be empty")
 	}
-	if strings.TrimSpace(c.ConnectorChannel) == "" {
-		return fmt.Errorf("CONNECTOR_CHANNEL must not be empty")
+	if strings.TrimSpace(c.ConnectorCommandChannel) == "" {
+		return fmt.Errorf("CONNECTOR_COMMAND_CHANNEL must not be empty")
+	}
+	if strings.TrimSpace(c.ConnectorAccountEventNamespace) == "" {
+		return fmt.Errorf("CONNECTOR_ACCOUNT_EVENT_NAMESPACE must not be empty")
+	}
+	if strings.TrimSpace(c.ConnectorAccountControlChannel) == "" {
+		return fmt.Errorf("CONNECTOR_ACCOUNT_CONTROL_CHANNEL must not be empty")
+	}
+	if strings.TrimSpace(c.SalviaAccountCollection) == "" {
+		return fmt.Errorf("SALVIA_ACCOUNT_COLLECTION must not be empty")
+	}
+	if c.ConnectorReceiptTTL <= 0 {
+		return fmt.Errorf("CONNECTOR_RECEIPT_TTL must be positive")
 	}
 	if c.InboxQueue.MaxRetry < 0 || c.DeliverQueue.MaxRetry < 0 {
 		return fmt.Errorf("queue retry counts must not be negative")

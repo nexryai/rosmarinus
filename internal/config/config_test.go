@@ -25,8 +25,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InboxQueue.Timeout != 5*time.Minute || cfg.DeliverQueue.Timeout != time.Minute {
 		t.Fatalf("unexpected timeout defaults")
 	}
-	if cfg.ConnectorChannel != "rosmarinus:connector" {
-		t.Fatalf("ConnectorChannel = %q", cfg.ConnectorChannel)
+	if cfg.ConnectorCommandChannel != "rosmarinus:commands" {
+		t.Fatalf("ConnectorCommandChannel = %q", cfg.ConnectorCommandChannel)
+	}
+	if cfg.ConnectorAccountEventNamespace != "rosmarinus:accounts" || cfg.ConnectorAccountControlChannel != "rosmarinus:control:accounts" {
+		t.Fatalf("unexpected Connector channels: %+v", cfg)
+	}
+	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour {
+		t.Fatalf("unexpected Salvia/receipt config: %+v", cfg)
 	}
 }
 
@@ -76,10 +82,18 @@ func TestLoadLocalActorConfig(t *testing.T) {
 func TestLoadAblyConfig(t *testing.T) {
 	cfg, err := Load(func(key string) (string, bool) {
 		switch key {
-		case "ABLY_API_KEY":
+		case "ABLY_ROSMARINUS_API_KEY":
 			return "app.key:secret", true
-		case "CONNECTOR_CHANNEL":
-			return "test:connector", true
+		case "CONNECTOR_COMMAND_CHANNEL":
+			return "test:commands", true
+		case "CONNECTOR_ACCOUNT_EVENT_NAMESPACE":
+			return "test:accounts", true
+		case "CONNECTOR_ACCOUNT_CONTROL_CHANNEL":
+			return "test:control", true
+		case "SALVIA_ACCOUNT_COLLECTION":
+			return "test_salvia_accounts", true
+		case "CONNECTOR_RECEIPT_TTL":
+			return "24h", true
 		default:
 			return "", false
 		}
@@ -87,7 +101,7 @@ func TestLoadAblyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.AblyAPIKey != "app.key:secret" || cfg.ConnectorChannel != "test:connector" {
+	if cfg.AblyServiceAPIKey != "app.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour {
 		t.Fatalf("unexpected Ably config: %+v", cfg)
 	}
 }

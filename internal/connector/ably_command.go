@@ -8,6 +8,8 @@ import (
 	"github.com/ably/ably-go/ably"
 )
 
+const DefaultCommandChannel = "rosmarinus:commands"
+
 type AblyCommandSource struct {
 	client  *ably.Realtime
 	channel *ably.RealtimeChannel
@@ -18,7 +20,7 @@ func NewAblyCommandSource(apiKey, channelName string) (*AblyCommandSource, error
 		return nil, fmt.Errorf("ably api key is required")
 	}
 	if strings.TrimSpace(channelName) == "" {
-		channelName = DefaultChannel
+		channelName = DefaultCommandChannel
 	}
 	client, err := ably.NewRealtime(ably.WithKey(apiKey))
 	if err != nil {
@@ -35,7 +37,12 @@ func (s *AblyCommandSource) Subscribe(ctx context.Context, name string, handle f
 		return func() {}, nil
 	}
 	unsubscribe, err := s.channel.Subscribe(ctx, name, func(message *ably.Message) {
-		handle(CommandMessage{Name: message.Name, Data: message.Data})
+		handle(CommandMessage{
+			ID:       message.ID,
+			ClientID: message.ClientID,
+			Name:     message.Name,
+			Data:     message.Data,
+		})
 	})
 	if err != nil {
 		return nil, err

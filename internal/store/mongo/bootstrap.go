@@ -144,5 +144,22 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetName("idx_follows_followee_status_created_at"),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("connector_command_receipts").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "accountId", Value: 1}, {Key: "requestId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_connector_receipts_account_request").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "expiresAt", Value: 1}},
+			Options: options.Index().
+				SetName("ttl_connector_receipts_expires_at").
+				SetExpireAfterSeconds(0),
+		},
+	})
 	return err
 }

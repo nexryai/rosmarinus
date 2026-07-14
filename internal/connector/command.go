@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"time"
+
+	"github.com/nexryai/rosmarinus/internal/account"
+	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
 
 const (
@@ -15,37 +20,63 @@ const (
 )
 
 type CommandMessage struct {
-	Name string
-	Data any
+	ID       string
+	ClientID string
+	Name     string
+	Data     any
+}
+
+type CommandEnvelope struct {
+	Version   int    `json:"version"`
+	RequestID string `json:"request_id"`
+	ActorID   string `json:"actor_id"`
+	Data      any    `json:"data"`
 }
 
 type CommandSource interface {
 	Subscribe(context.Context, string, func(CommandMessage)) (func(), error)
 }
 
-type FollowApprover interface {
+type AccountLookup interface {
+	FindActiveByAblyClientID(context.Context, string) (*account.Account, error)
+}
+
+type ActorOwnershipLookup interface {
+	FindOwnedLocalByID(context.Context, string, string) (*actors.Actor, error)
+}
+
+type CommandExecutor interface {
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
 }
 
+type CommandResultPublisher interface {
+	PublishCommandSucceeded(context.Context, string, string, string, string, any) error
+	PublishCommandFailed(context.Context, string, string, string, string, string) error
+}
+
 type CommandHandler struct {
-	source         CommandSource
-	followApprover FollowApprover
+	source     CommandSource
+	accounts   AccountLookup
+	actors     ActorOwnershipLookup
+	executor   CommandExecutor
+	publisher  CommandResultPublisher
+	receipts   CommandReceiptStore
+	logger     *log.Logger
+	now        func() time.Time
+	receiptTTL time.Duration
 }
 
-type FollowApproveCommand struct {
+type FollowApproveData struct {
 	FollowerID string `json:"follower_id"`
-	FolloweeID string `json:"followee_id"`
 }
 
-type FollowRejectCommand struct {
+type FollowRejectData struct {
 	FollowerID string `json:"follower_id"`
-	FolloweeID string `json:"followee_id"`
 }
 
-type PostCreateCommand struct {
-	ActorID        string   `json:"actor_id"`
+type PostCreateData struct {
 	NoteID         string   `json:"note_id"`
 	Text           string   `json:"text"`
 	Visibility     string   `json:"visibility,omitempty"`
@@ -57,106 +88,259 @@ type PostCreateCommand struct {
 	Hashtags       []string `json:"hashtags,omitempty"`
 }
 
-func NewCommandHandler(source CommandSource, followApprover FollowApprover) *CommandHandler {
-	return &CommandHandler{source: source, followApprover: followApprover}
+type PostCreateCommand struct {
+	ActorID        string
+	NoteID         string
+	Text           string
+	Visibility     string
+	ContentWarning *string
+	Sensitive      bool
+	InReplyToURI   string
+	QuoteURI       string
+	MentionURIs    []string
+	Hashtags       []string
+}
+
+func NewCommandHandler(source CommandSource, accounts AccountLookup, actorLookup ActorOwnershipLookup, executor CommandExecutor, publisher CommandResultPublisher, receipts CommandReceiptStore, logger *log.Logger, receiptTTL time.Duration) *CommandHandler {
+	if receiptTTL <= 0 {
+		receiptTTL = 7 * 24 * time.Hour
+	}
+	return &CommandHandler{
+		source:     source,
+		accounts:   accounts,
+		actors:     actorLookup,
+		executor:   executor,
+		publisher:  publisher,
+		receipts:   receipts,
+		logger:     logger,
+		now:        func() time.Time { return time.Now().UTC() },
+		receiptTTL: receiptTTL,
+	}
 }
 
 func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	unsubscribeApprove, err := h.source.Subscribe(ctx, CommandFollowApprove, func(message CommandMessage) {
-		_ = h.Handle(ctx, message)
-	})
-	if err != nil {
-		return nil, err
-	}
-	unsubscribeReject, err := h.source.Subscribe(ctx, CommandFollowReject, func(message CommandMessage) {
-		_ = h.Handle(ctx, message)
-	})
-	if err != nil {
-		unsubscribeApprove()
-		return nil, err
-	}
-	unsubscribePostCreate, err := h.source.Subscribe(ctx, CommandPostCreate, func(message CommandMessage) {
-		_ = h.Handle(ctx, message)
-	})
-	if err != nil {
-		unsubscribeReject()
-		unsubscribeApprove()
-		return nil, err
+	names := []string{CommandFollowApprove, CommandFollowReject, CommandPostCreate}
+	unsubscribes := make([]func(), 0, len(names))
+	for _, name := range names {
+		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
+			if err := h.Handle(ctx, message); err != nil && h.logger != nil {
+				h.logger.Printf("connector: command failed name=%s message_id=%s client_id=%s err=%v", message.Name, message.ID, message.ClientID, err)
+			}
+		})
+		if err != nil {
+			for i := len(unsubscribes) - 1; i >= 0; i-- {
+				unsubscribes[i]()
+			}
+			return nil, err
+		}
+		unsubscribes = append(unsubscribes, unsubscribe)
 	}
 	return func() {
-		unsubscribePostCreate()
-		unsubscribeReject()
-		unsubscribeApprove()
+		for i := len(unsubscribes) - 1; i >= 0; i-- {
+			unsubscribes[i]()
+		}
 	}, nil
 }
 
 func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) error {
+	if h == nil {
+		return fmt.Errorf("connector command handler is not configured")
+	}
 	name := strings.TrimSpace(message.Name)
-	switch name {
-	case CommandFollowApprove:
-		return h.handleFollowApprove(ctx, message.Data)
-	case CommandFollowReject:
-		return h.handleFollowReject(ctx, message.Data)
-	case CommandPostCreate:
-		return h.handlePostCreate(ctx, message.Data)
-	case CommandNotificationMarkRead:
-		return fmt.Errorf("connector command %s is not implemented", name)
-	case "":
-		return fmt.Errorf("connector command name is required")
-	default:
+	if !supportedCommand(name) {
+		if name == "" {
+			return fmt.Errorf("connector command name is required")
+		}
 		return fmt.Errorf("unknown connector command: %s", name)
 	}
-}
-
-func (h *CommandHandler) handlePostCreate(ctx context.Context, data any) error {
-	if h.followApprover == nil {
-		return fmt.Errorf("post creator is not configured")
-	}
-	var command PostCreateCommand
-	if err := decodeCommandData(data, &command); err != nil {
+	envelope, err := decodeEnvelope(message.Data)
+	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(command.ActorID) == "" || strings.TrimSpace(command.NoteID) == "" {
-		return fmt.Errorf("actor_id and note_id are required")
-	}
-	if strings.TrimSpace(command.Text) == "" {
-		return fmt.Errorf("text is required")
-	}
-	_, err := h.followApprover.CreatePost(ctx, command)
-	return err
-}
-
-func (h *CommandHandler) handleFollowReject(ctx context.Context, data any) error {
-	if h.followApprover == nil {
-		return fmt.Errorf("follow approver is not configured")
-	}
-	var command FollowRejectCommand
-	if err := decodeCommandData(data, &command); err != nil {
+	accountRecord, actor, err := h.authorize(ctx, message.ClientID, envelope.ActorID)
+	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(command.FollowerID) == "" || strings.TrimSpace(command.FolloweeID) == "" {
-		return fmt.Errorf("follower_id and followee_id are required")
-	}
-	_, err := h.followApprover.RejectFollow(ctx, command.FollowerID, command.FolloweeID)
-	return err
-}
 
-func (h *CommandHandler) handleFollowApprove(ctx context.Context, data any) error {
-	if h.followApprover == nil {
-		return fmt.Errorf("follow approver is not configured")
+	receipt := CommandReceipt{
+		AccountID: accountRecord.ID,
+		ClientID:  message.ClientID,
+		RequestID: envelope.RequestID,
+		Command:   name,
+		ActorID:   actor.ID,
+		Status:    CommandReceiptPending,
+		CreatedAt: h.now(),
+		UpdatedAt: h.now(),
+		ExpiresAt: h.now().Add(h.receiptTTL),
 	}
-	var command FollowApproveCommand
-	if err := decodeCommandData(data, &command); err != nil {
+	if h.receipts != nil {
+		existing, claimed, err := h.receipts.Claim(ctx, receipt)
+		if err != nil {
+			return fmt.Errorf("claim connector command receipt: %w", err)
+		}
+		if !claimed {
+			return h.republishReceipt(ctx, existing)
+		}
+	}
+
+	result, err := h.execute(ctx, name, actor.ID, envelope.Data)
+	if err != nil {
+		code := "command_failed"
+		if h.receipts != nil {
+			if receiptErr := h.receipts.Fail(ctx, accountRecord.ID, envelope.RequestID, code, h.now()); receiptErr != nil {
+				return fmt.Errorf("record connector command failure after %v: %w", err, receiptErr)
+			}
+		}
+		if publishErr := h.publishFailed(ctx, accountRecord.ID, envelope.RequestID, actor.ID, name, code); publishErr != nil {
+			return fmt.Errorf("publish connector command failure after %v: %w", err, publishErr)
+		}
 		return err
 	}
-	if strings.TrimSpace(command.FollowerID) == "" || strings.TrimSpace(command.FolloweeID) == "" {
-		return fmt.Errorf("follower_id and followee_id are required")
+	if h.receipts != nil {
+		if err := h.receipts.Complete(ctx, accountRecord.ID, envelope.RequestID, result, h.now()); err != nil {
+			return fmt.Errorf("complete connector command receipt: %w", err)
+		}
 	}
-	_, err := h.followApprover.ApproveFollow(ctx, command.FollowerID, command.FolloweeID)
-	return err
+	if h.publisher != nil {
+		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, actor.ID, name, result); err != nil {
+			return fmt.Errorf("publish connector command result: %w", err)
+		}
+	}
+	return nil
+}
+
+func (h *CommandHandler) authorize(ctx context.Context, clientID, actorID string) (*account.Account, *actors.Actor, error) {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return nil, nil, fmt.Errorf("connector command clientId is required")
+	}
+	if h.accounts == nil {
+		return nil, nil, fmt.Errorf("Salvia account lookup is not configured")
+	}
+	accountRecord, err := h.accounts.FindActiveByAblyClientID(ctx, clientID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve connector account: %w", err)
+	}
+	if !accountRecord.IsActive() {
+		return nil, nil, fmt.Errorf("connector account is not active")
+	}
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, nil, fmt.Errorf("connector command actor_id is required")
+	}
+	if h.actors == nil {
+		return nil, nil, fmt.Errorf("actor ownership lookup is not configured")
+	}
+	actor, err := h.actors.FindOwnedLocalByID(ctx, accountRecord.ID, actorID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("authorize connector actor: %w", err)
+	}
+	if actor == nil {
+		return nil, nil, fmt.Errorf("connector actor is not owned by account")
+	}
+	return accountRecord, actor, nil
+}
+
+func (h *CommandHandler) execute(ctx context.Context, name, actorID string, data any) (any, error) {
+	if h.executor == nil {
+		return nil, fmt.Errorf("connector command executor is not configured")
+	}
+	switch name {
+	case CommandFollowApprove:
+		var command FollowApproveData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(command.FollowerID) == "" {
+			return nil, fmt.Errorf("follower_id is required")
+		}
+		return h.executor.ApproveFollow(ctx, command.FollowerID, actorID)
+	case CommandFollowReject:
+		var command FollowRejectData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(command.FollowerID) == "" {
+			return nil, fmt.Errorf("follower_id is required")
+		}
+		return h.executor.RejectFollow(ctx, command.FollowerID, actorID)
+	case CommandPostCreate:
+		var command PostCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(command.NoteID) == "" || strings.TrimSpace(command.Text) == "" {
+			return nil, fmt.Errorf("note_id and text are required")
+		}
+		return h.executor.CreatePost(ctx, PostCreateCommand{
+			ActorID:        actorID,
+			NoteID:         command.NoteID,
+			Text:           command.Text,
+			Visibility:     command.Visibility,
+			ContentWarning: command.ContentWarning,
+			Sensitive:      command.Sensitive,
+			InReplyToURI:   command.InReplyToURI,
+			QuoteURI:       command.QuoteURI,
+			MentionURIs:    command.MentionURIs,
+			Hashtags:       command.Hashtags,
+		})
+	default:
+		return nil, fmt.Errorf("unknown connector command: %s", name)
+	}
+}
+
+func (h *CommandHandler) republishReceipt(ctx context.Context, receipt *CommandReceipt) error {
+	if receipt == nil {
+		return fmt.Errorf("connector command receipt conflict without existing receipt")
+	}
+	switch receipt.Status {
+	case CommandReceiptCompleted:
+		if h.publisher == nil {
+			return nil
+		}
+		return h.publisher.PublishCommandSucceeded(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, receipt.Result)
+	case CommandReceiptFailed:
+		return h.publishFailed(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, receipt.ErrorCode)
+	case CommandReceiptPending:
+		return h.publishFailed(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, "command_in_progress")
+	default:
+		return fmt.Errorf("unsupported connector command receipt status: %s", receipt.Status)
+	}
+}
+
+func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID, actorID, command, code string) error {
+	if h.publisher == nil {
+		return nil
+	}
+	return h.publisher.PublishCommandFailed(ctx, accountID, requestID, actorID, command, code)
+}
+
+func supportedCommand(name string) bool {
+	switch name {
+	case CommandFollowApprove, CommandFollowReject, CommandPostCreate:
+		return true
+	default:
+		return false
+	}
+}
+
+func decodeEnvelope(data any) (CommandEnvelope, error) {
+	var envelope CommandEnvelope
+	if err := decodeCommandData(data, &envelope); err != nil {
+		return CommandEnvelope{}, err
+	}
+	if envelope.Version != 1 {
+		return CommandEnvelope{}, fmt.Errorf("unsupported connector command version: %d", envelope.Version)
+	}
+	envelope.RequestID = strings.TrimSpace(envelope.RequestID)
+	envelope.ActorID = strings.TrimSpace(envelope.ActorID)
+	if envelope.RequestID == "" {
+		return CommandEnvelope{}, fmt.Errorf("connector command request_id is required")
+	}
+	return envelope, nil
 }
 
 func decodeCommandData(data any, out any) error {

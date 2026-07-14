@@ -2,7 +2,12 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
+
+	"github.com/nexryai/rosmarinus/internal/account"
+	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
 
 type fakeCommandSource struct {
@@ -20,78 +25,155 @@ func (f *fakeCommandSource) Subscribe(ctx context.Context, name string, handle f
 	return func() { delete(f.handles, name) }, nil
 }
 
-type fakeFollowApprover struct {
+type fakeAccountLookup struct {
+	accounts map[string]*account.Account
+}
+
+func (f *fakeAccountLookup) FindActiveByAblyClientID(ctx context.Context, clientID string) (*account.Account, error) {
+	_ = ctx
+	return f.accounts[clientID], nil
+}
+
+type fakeActorOwnershipLookup struct {
+	actors map[string]*actors.Actor
+}
+
+func (f *fakeActorOwnershipLookup) FindOwnedLocalByID(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	_ = ctx
+	return f.actors[accountID+"\x00"+actorID], nil
+}
+
+type fakeCommandExecutor struct {
 	approvedFollowerID string
 	approvedFolloweeID string
 	rejectedFollowerID string
 	rejectedFolloweeID string
 	postCommand        PostCreateCommand
+	postCalls          int
+	err                error
 }
 
-func (f *fakeFollowApprover) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
+func (f *fakeCommandExecutor) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
 	_ = ctx
 	f.approvedFollowerID = followerID
 	f.approvedFolloweeID = followeeID
-	return "ok: follow accepted delivery enqueued", nil
+	return "approved", f.err
 }
 
-func (f *fakeFollowApprover) RejectFollow(ctx context.Context, followerID, followeeID string) (string, error) {
+func (f *fakeCommandExecutor) RejectFollow(ctx context.Context, followerID, followeeID string) (string, error) {
 	_ = ctx
 	f.rejectedFollowerID = followerID
 	f.rejectedFolloweeID = followeeID
-	return "ok: follow rejected delivery enqueued", nil
+	return "rejected", f.err
 }
 
-func (f *fakeFollowApprover) CreatePost(ctx context.Context, command PostCreateCommand) (PostCreated, error) {
+func (f *fakeCommandExecutor) CreatePost(ctx context.Context, command PostCreateCommand) (PostCreated, error) {
 	_ = ctx
+	f.postCalls++
 	f.postCommand = command
-	return PostCreated{ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, nil
+	return PostCreated{AccountID: "account-1", ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, f.err
+}
+
+type publishedCommandResult struct {
+	accountID string
+	requestID string
+	actorID   string
+	command   string
+	result    any
+	code      string
+}
+
+type fakeCommandResultPublisher struct {
+	succeeded []publishedCommandResult
+	failed    []publishedCommandResult
+}
+
+func (f *fakeCommandResultPublisher) PublishCommandSucceeded(ctx context.Context, accountID, requestID, actorID, command string, result any) error {
+	_ = ctx
+	f.succeeded = append(f.succeeded, publishedCommandResult{accountID: accountID, requestID: requestID, actorID: actorID, command: command, result: result})
+	return nil
+}
+
+func (f *fakeCommandResultPublisher) PublishCommandFailed(ctx context.Context, accountID, requestID, actorID, command, code string) error {
+	_ = ctx
+	f.failed = append(f.failed, publishedCommandResult{accountID: accountID, requestID: requestID, actorID: actorID, command: command, code: code})
+	return nil
+}
+
+type fakeReceiptStore struct {
+	receipts map[string]*CommandReceipt
+}
+
+func (f *fakeReceiptStore) Claim(ctx context.Context, receipt CommandReceipt) (*CommandReceipt, bool, error) {
+	_ = ctx
+	if f.receipts == nil {
+		f.receipts = map[string]*CommandReceipt{}
+	}
+	key := receipt.AccountID + "\x00" + receipt.RequestID
+	if existing := f.receipts[key]; existing != nil {
+		copy := *existing
+		return &copy, false, nil
+	}
+	copy := receipt
+	f.receipts[key] = &copy
+	return &copy, true, nil
+}
+
+func (f *fakeReceiptStore) Complete(ctx context.Context, accountID, requestID string, result any, now time.Time) error {
+	_ = ctx
+	receipt := f.receipts[accountID+"\x00"+requestID]
+	receipt.Status = CommandReceiptCompleted
+	receipt.Result = result
+	receipt.UpdatedAt = now
+	return nil
+}
+
+func (f *fakeReceiptStore) Fail(ctx context.Context, accountID, requestID, code string, now time.Time) error {
+	_ = ctx
+	receipt := f.receipts[accountID+"\x00"+requestID]
+	receipt.Status = CommandReceiptFailed
+	receipt.ErrorCode = code
+	receipt.UpdatedAt = now
+	return nil
+}
+
+func newAuthorizedCommandHandler(executor *fakeCommandExecutor, publisher *fakeCommandResultPublisher, receipts CommandReceiptStore) *CommandHandler {
+	return NewCommandHandler(nil,
+		&fakeAccountLookup{accounts: map[string]*account.Account{
+			"client-1": {ID: "account-1", AblyClientID: "client-1", Status: account.StatusActive},
+		}},
+		&fakeActorOwnershipLookup{actors: map[string]*actors.Actor{
+			"account-1\x00actor-1": {ID: "actor-1", OwnerAccountID: "account-1"},
+			"account-1\x00actor-2": {ID: "actor-2", OwnerAccountID: "account-1"},
+		}},
+		executor, publisher, receipts, nil, time.Hour,
+	)
+}
+
+func commandMessage(name, requestID, actorID string, data any) CommandMessage {
+	return CommandMessage{
+		ID:       "ably-message-1",
+		ClientID: "client-1",
+		Name:     name,
+		Data: CommandEnvelope{
+			Version:   1,
+			RequestID: requestID,
+			ActorID:   actorID,
+			Data:      data,
+		},
+	}
 }
 
 func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	source := &fakeCommandSource{}
-	approver := &fakeFollowApprover{}
-	unsubscribe, err := NewCommandHandler(source, approver).Subscribe(context.Background())
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	handler.source = source
+	unsubscribe, err := handler.Subscribe(context.Background())
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
 	if len(source.names) != 3 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject || source.names[2] != CommandPostCreate {
 		t.Fatalf("subscription names = %+v", source.names)
-	}
-	if source.handles[CommandFollowApprove] == nil || source.handles[CommandFollowReject] == nil || source.handles[CommandPostCreate] == nil {
-		t.Fatalf("subscription handler was not stored")
-	}
-	source.handles[CommandFollowApprove](CommandMessage{
-		Name: CommandFollowApprove,
-		Data: map[string]any{
-			"follower_id": "remote-alice",
-			"followee_id": "relay",
-		},
-	})
-	if approver.approvedFollowerID != "remote-alice" || approver.approvedFolloweeID != "relay" {
-		t.Fatalf("approval call = follower:%q followee:%q", approver.approvedFollowerID, approver.approvedFolloweeID)
-	}
-	source.handles[CommandFollowReject](CommandMessage{
-		Name: CommandFollowReject,
-		Data: map[string]any{
-			"follower_id": "remote-bob",
-			"followee_id": "relay",
-		},
-	})
-	if approver.rejectedFollowerID != "remote-bob" || approver.rejectedFolloweeID != "relay" {
-		t.Fatalf("rejection call = follower:%q followee:%q", approver.rejectedFollowerID, approver.rejectedFolloweeID)
-	}
-	source.handles[CommandPostCreate](CommandMessage{
-		Name: CommandPostCreate,
-		Data: map[string]any{
-			"actor_id":   "relay",
-			"note_id":    "note-1",
-			"text":       "hello",
-			"visibility": "followers",
-		},
-	})
-	if approver.postCommand.ActorID != "relay" || approver.postCommand.NoteID != "note-1" || approver.postCommand.Text != "hello" {
-		t.Fatalf("post command = %+v", approver.postCommand)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
@@ -99,19 +181,100 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	}
 }
 
-func TestCommandHandlerRejectsUnknownCommand(t *testing.T) {
-	err := NewCommandHandler(nil, &fakeFollowApprover{}).Handle(context.Background(), CommandMessage{Name: "unknown.command"})
-	if err == nil {
-		t.Fatalf("expected unknown command to fail")
+func TestCommandHandlerAuthorizesMultipleOwnedActors(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+
+	for i, actorID := range []string{"actor-1", "actor-2"} {
+		err := handler.Handle(context.Background(), commandMessage(CommandPostCreate, "request-"+actorID, actorID, PostCreateData{
+			NoteID: "note-" + actorID,
+			Text:   "hello",
+		}))
+		if err != nil {
+			t.Fatalf("Handle actor %d returned error: %v", i, err)
+		}
+	}
+	if executor.postCalls != 2 {
+		t.Fatalf("post calls = %d", executor.postCalls)
+	}
+	if len(publisher.succeeded) != 2 || publisher.succeeded[1].actorID != "actor-2" {
+		t.Fatalf("unexpected results: %+v", publisher.succeeded)
 	}
 }
 
-func TestCommandHandlerRequiresFollowIDs(t *testing.T) {
-	err := NewCommandHandler(nil, &fakeFollowApprover{}).Handle(context.Background(), CommandMessage{
-		Name: CommandFollowApprove,
-		Data: map[string]any{"follower_id": "remote-alice"},
-	})
-	if err == nil {
-		t.Fatalf("expected missing followee_id to fail")
+func TestCommandHandlerRejectsCrossAccountActor(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	message := commandMessage(CommandPostCreate, "request-1", "other-actor", PostCreateData{NoteID: "note-1", Text: "hello"})
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("expected cross-account actor to fail")
+	}
+}
+
+func TestCommandHandlerRequiresIdentifiedClient(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	message := commandMessage(CommandPostCreate, "request-1", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	message.ClientID = ""
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("expected missing clientId to fail")
+	}
+}
+
+func TestCommandHandlerUsesActorAsFollowee(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	if err := handler.Handle(context.Background(), commandMessage(CommandFollowApprove, "request-1", "actor-2", FollowApproveData{FollowerID: "remote-1"})); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.approvedFollowerID != "remote-1" || executor.approvedFolloweeID != "actor-2" {
+		t.Fatalf("approval = follower:%q followee:%q", executor.approvedFollowerID, executor.approvedFolloweeID)
+	}
+}
+
+func TestCommandHandlerDeduplicatesRequestAndRepublishesResult(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandPostCreate, "request-1", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("first Handle returned error: %v", err)
+	}
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("second Handle returned error: %v", err)
+	}
+	if executor.postCalls != 1 {
+		t.Fatalf("post calls = %d", executor.postCalls)
+	}
+	if len(publisher.succeeded) != 2 {
+		t.Fatalf("success publications = %d", len(publisher.succeeded))
+	}
+}
+
+func TestCommandHandlerRecordsAndPublishesFailure(t *testing.T) {
+	executor := &fakeCommandExecutor{err: errors.New("boom")}
+	publisher := &fakeCommandResultPublisher{}
+	receipts := &fakeReceiptStore{}
+	handler := newAuthorizedCommandHandler(executor, publisher, receipts)
+	message := commandMessage(CommandPostCreate, "request-1", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("expected execution error")
+	}
+	receipt := receipts.receipts["account-1\x00request-1"]
+	if receipt == nil || receipt.Status != CommandReceiptFailed || receipt.ErrorCode != "command_failed" {
+		t.Fatalf("unexpected receipt: %+v", receipt)
+	}
+	if len(publisher.failed) != 1 || publisher.failed[0].code != "command_failed" {
+		t.Fatalf("unexpected failure publications: %+v", publisher.failed)
+	}
+}
+
+func TestCommandHandlerRejectsUnsupportedEnvelopeVersion(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	message := commandMessage(CommandPostCreate, "request-1", "actor-1", PostCreateData{NoteID: "note-1", Text: "hello"})
+	envelope := message.Data.(CommandEnvelope)
+	envelope.Version = 2
+	message.Data = envelope
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("expected unsupported version to fail")
 	}
 }

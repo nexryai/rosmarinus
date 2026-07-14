@@ -11,6 +11,19 @@ type dummyChannel struct {
 	data any
 }
 
+type dummyChannelProvider struct {
+	name    string
+	channel *dummyChannel
+}
+
+func (d *dummyChannelProvider) Channel(name string) Channel {
+	d.name = name
+	if d.channel == nil {
+		d.channel = &dummyChannel{}
+	}
+	return d.channel
+}
+
 func (d *dummyChannel) Publish(ctx context.Context, name string, data interface{}) error {
 	_ = ctx
 	d.name = name
@@ -63,5 +76,35 @@ func TestPublisherRejectsEmptyEventType(t *testing.T) {
 	err := NewPublisher(&dummyChannel{}).Publish(context.Background(), "", map[string]any{})
 	if err == nil {
 		t.Fatalf("expected empty event type to fail")
+	}
+}
+
+func TestPublisherRoutesAccountEvent(t *testing.T) {
+	channels := &dummyChannelProvider{}
+	publisher := NewAccountPublisher(channels, "test:accounts")
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	publisher.now = func() time.Time { return now }
+	if err := publisher.PublishCommandSucceeded(context.Background(), "account-1", "request-1", "actor-1", CommandPostCreate, map[string]any{"note_id": "note-1"}); err != nil {
+		t.Fatalf("PublishCommandSucceeded returned error: %v", err)
+	}
+	if channels.name != "test:accounts:account-1:events" {
+		t.Fatalf("channel name = %q", channels.name)
+	}
+	if channels.channel.name != EventCommandSucceeded {
+		t.Fatalf("event name = %q", channels.channel.name)
+	}
+	envelope, ok := channels.channel.data.(Envelope)
+	if !ok {
+		t.Fatalf("data type = %T", channels.channel.data)
+	}
+	if envelope.RequestID != "request-1" || envelope.ActorID != "actor-1" || !envelope.OccurredAt.Equal(now) {
+		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+}
+
+func TestPublisherRejectsUnsafeAccountChannelSegment(t *testing.T) {
+	publisher := NewAccountPublisher(&dummyChannelProvider{}, "test:accounts")
+	if err := publisher.PublishCommandFailed(context.Background(), "account:*", "request-1", "actor-1", CommandPostCreate, "failed"); err == nil {
+		t.Fatal("expected unsafe account id to fail")
 	}
 }
