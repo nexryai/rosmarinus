@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,12 +160,50 @@ func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[s
 	if err != nil {
 		m.t.Fatalf("read Misskey %s response: %v", endpoint, err)
 	}
+	logBody := loggableMisskeyResponse(responseBody)
+	m.t.Logf("Misskey API response endpoint=%s status=%s body=%s", endpoint, res.Status, logBody)
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		m.t.Fatalf("Misskey %s status=%d body=%s", endpoint, res.StatusCode, responseBody)
+		m.t.Fatalf("Misskey %s status=%d body=%s", endpoint, res.StatusCode, logBody)
 	}
 	if result != nil && len(responseBody) > 0 {
 		if err := json.Unmarshal(responseBody, result); err != nil {
-			m.t.Fatalf("decode Misskey %s response: %v body=%s", endpoint, err, responseBody)
+			m.t.Fatalf("decode Misskey %s response: %v body=%s", endpoint, err, logBody)
+		}
+	}
+}
+
+func loggableMisskeyResponse(body []byte) string {
+	if len(body) == 0 {
+		return "<empty>"
+	}
+	var value any
+	if err := json.Unmarshal(body, &value); err != nil {
+		return string(body)
+	}
+	redactMisskeySecrets(value)
+	var redacted bytes.Buffer
+	encoder := json.NewEncoder(&redacted)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return "<unavailable>"
+	}
+	return strings.TrimSpace(redacted.String())
+}
+
+func redactMisskeySecrets(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			switch strings.ToLower(key) {
+			case "token", "accesstoken", "secret", "password", "i":
+				typed[key] = "<redacted>"
+			default:
+				redactMisskeySecrets(child)
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			redactMisskeySecrets(child)
 		}
 	}
 }
