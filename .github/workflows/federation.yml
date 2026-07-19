@@ -123,6 +123,7 @@ jobs:
             run --rm rosmarinus-federation-test
 
       - name: Print federation logs
+        if: always()
         run: |
           docker compose \
             -f misskey/packages/backend/test-federation/compose.yml \
