@@ -80,18 +80,26 @@ jobs:
         working-directory: misskey/packages/backend/test-federation
         run: |
           bash ./setup.sh
-          openssl req -new -newkey rsa:2048 -sha256 -nodes \
-            -keyout certificates/rosmarinus.test.key \
-            -subj "/CN=rosmarinus.test/emailAddress=admin@rosmarinus.test/C=JP/ST=/L=/O=Rosmarinus Federation Test/OU=CI" \
-            -out certificates/rosmarinus.test.csr
-          openssl x509 -req -sha256 \
-            -in certificates/rosmarinus.test.csr \
-            -CA certificates/rootCA.crt \
-            -CAkey certificates/rootCA.key \
-            -CAcreateserial \
-            -passin pass:rootCA \
-            -out certificates/rosmarinus.test.crt \
-            -days 500
+          issue_certificate() {
+            host="$1"
+            openssl req -new -newkey rsa:2048 -sha256 -nodes \
+              -keyout "certificates/${host}.key" \
+              -subj "/CN=${host}/emailAddress=admin@${host}/C=JP/ST=/L=/O=Rosmarinus Federation Test/OU=CI" \
+              -addext "subjectAltName=DNS:${host}" \
+              -out "certificates/${host}.csr"
+            openssl x509 -req -sha256 \
+              -in "certificates/${host}.csr" \
+              -CA certificates/rootCA.crt \
+              -CAkey certificates/rootCA.key \
+              -CAcreateserial \
+              -passin pass:rootCA \
+              -copy_extensions copy \
+              -out "certificates/${host}.crt" \
+              -days 500
+          }
+          issue_certificate a.test
+          issue_certificate b.test
+          issue_certificate rosmarinus.test
           chmod 644 certificates/*.test.key
 
       - name: Export Misskey Node.js version
