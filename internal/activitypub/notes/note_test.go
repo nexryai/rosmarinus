@@ -48,6 +48,42 @@ func TestConcordeNoteTextPrefersMisskeyMarkdownSource(t *testing.T) {
 	}
 }
 
+func TestCurrentMisskeyNoteTextConvertsHTMLToMFM(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           PublicAudience,
+		"content":      `<p>Hello <strong>world</strong> <a href="https://host2.test/@bob">@bob</a> <a href="https://host1.test/tags/Go">#Go</a></p>`,
+		"tag": []any{
+			map[string]any{"type": "Hashtag", "name": "#Go"},
+		},
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.Text != "Hello **world** @bob@host2.test #Go" {
+		t.Fatalf("Text = %q", note.Text)
+	}
+}
+
+func TestCurrentMisskeyNoteTextPrefersLegacyMFMOverHTML(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":               "https://host1.test/notes/1",
+		"type":             "Note",
+		"attributedTo":     "https://host1.test/users/alice",
+		"to":               PublicAudience,
+		"content":          "<p>html</p>",
+		"_misskey_content": "$[tada legacy]",
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.Text != "$[tada legacy]" {
+		t.Fatalf("Text = %q", note.Text)
+	}
+}
+
 func TestConcordeNoteExtractsCWSensitiveReplyAndQuote(t *testing.T) {
 	note, err := ParseRemoteNote(map[string]any{
 		"id":             "https://host1.test/notes/1",

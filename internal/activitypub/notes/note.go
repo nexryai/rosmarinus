@@ -8,6 +8,7 @@ import (
 
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
 const PublicAudience = "https://www.w3.org/ns/activitystreams#Public"
@@ -117,9 +118,29 @@ func noteText(object map[string]any) string {
 		return content
 	}
 	if content, ok := object["content"].(string); ok {
+		converted, err := mfm.FromHTML(content, hashtagNames(object["tag"]))
+		if err == nil {
+			return converted
+		}
 		return content
 	}
 	return ""
+}
+
+func hashtagNames(tags any) []string {
+	items := aptypes.ToArray(tags)
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		tag, ok := item.(map[string]any)
+		if !ok || !aptypes.IsType(tag, "Hashtag") {
+			continue
+		}
+		name, ok := tag["name"].(string)
+		if ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func contentWarning(object map[string]any) *string {

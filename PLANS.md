@@ -155,6 +155,11 @@ same style as Concorde.
 
 ### Note Resolution And Creation
 
+For MFM behavior, use the current `./misskey` backend and the matching
+`./mfm.js` checkout (currently MFM.js 0.26.0) as the compatibility references.
+Concorde remains the reference for other federation behavior, but its older MFM
+behavior must not constrain Salvia-authored notes.
+
 - [x] Resolve by AP URI with remote signed GET for Create object references.
 - [ ] Resolve by AP URI with local URI parsing and full note resolver cache.
 - [ ] Use Redis AP locks to deduplicate concurrent resolution by URI.
@@ -174,7 +179,15 @@ same style as Concorde.
 - [ ] Preserve full Misskey compatibility fields:
       `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`,
       `quoteUrl`, and `_misskey_talk`.
-- [ ] Convert remote HTML to MFM-compatible text.
+- [x] Convert remote HTML to MFM-compatible text matching the observed behavior of
+      current Misskey's `MfmService.fromHtml` (MFM.js 0.26 compatibility),
+      including links, mentions, hashtags, formatting, code, quotes, and ruby.
+- [ ] Parse Salvia-authored MFM with current MFM.js-compatible syntax and render
+      its AST to safe ActivityPub HTML matching current Misskey behavior.
+- [ ] Omit `_misskey_content` and `source` for simple MFM ASTs, and include them
+      for advanced MFM, matching current Misskey `ApMfmService.getNoteHtml`.
+- [ ] Port focused MFM.js 0.26 parser fixtures for functions, nesting limits,
+      mentions, URLs, emoji codes, code, math, plain blocks, and malformed input.
 - [x] Store basic URI, attributedTo, author, text, content warning, sensitive,
       reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP
       object, createdAt, and publishedAt for remote notes.
@@ -574,7 +587,7 @@ workflow may require both services to update the same document or collection.
       receipt-backed idempotency.
 - [x] `internal/queue`: Redis queue interfaces and implementation.
 - [ ] `internal/cache`: Redis-backed caches and locks.
-- [ ] `internal/mfm`: MFM/HTML conversion compatibility layer.
+- [x] `internal/mfm`: current-Misskey-compatible HTML-to-MFM conversion layer.
 
 ## Development Workflow Notes
 
@@ -683,7 +696,7 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Extract AP note mentions, hashtags, and emoji tags.
 - [x] Store and render note CW, sensitive, inReplyTo, and quote URLs.
 - [x] Store and render basic note attachments.
-- [ ] Implement HTML to MFM conversion.
+- [x] Implement HTML to MFM conversion against current Misskey fixtures.
 - [ ] Add golden tests for incoming Mastodon/Misskey-style notes.
 
 ### Phase 4: Outbound Delivery MVP
