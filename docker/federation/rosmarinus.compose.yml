@@ -13,7 +13,7 @@ services:
       HOST: ${ROSMARINUS_HOST:-127.0.0.1:8080}
       PUBLIC_URL: ${ROSMARINUS_PUBLIC_URL:-http://127.0.0.1:8080}
       HTTP_ADDR: :3000
-      MONGO_URI: mongodb://rosmarinus-mongo:27017
+      MONGO_URI: mongodb://rosmarinus:rosmarinus-fixture-only@rosmarinus-mongo:27017/rosmarinus_federation?authSource=rosmarinus_federation
       MONGO_DATABASE: rosmarinus_federation
       REDIS_ADDR: rosmarinus-redis:6379
       RUN_HTTP: "true"
@@ -26,8 +26,18 @@ services:
   rosmarinus-mongo:
     image: mongo:8
     command: ["mongod", "--quiet", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root-fixture-only
+      ROSMARINUS_MONGO_DATABASE: rosmarinus_federation
+      ROSMARINUS_MONGO_USERNAME: rosmarinus
+      ROSMARINUS_MONGO_PASSWORD: rosmarinus-fixture-only
+      SALVIA_MONGO_USERNAME: salvia
+      SALVIA_MONGO_PASSWORD: salvia-fixture-only
+    volumes:
+      - ../mongo/init-users.js:/docker-entrypoint-initdb.d/10-users.js:ro
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD", "mongosh", "--quiet", "--username", "root", "--password", "root-fixture-only", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
       retries: 20

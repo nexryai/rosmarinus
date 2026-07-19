@@ -24,6 +24,37 @@ read/write and index privileges only on Rosmarinus-owned collections and
 Rosmarinus never creates an index on `salvia_accounts`. Salvia must provide a
 unique index on `ablyClientId`.
 
+### MongoDB role bootstrap
+
+[`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom
+roles and service users on a new MongoDB deployment:
+
+- `rosmarinusService` can write and manage indexes only on Rosmarinus-owned
+  collections, and can only `find` documents in `salvia_accounts`.
+- `salviaService` can write and manage indexes only on the four documented
+  `salvia_*` collections, and can only `find` documents in Rosmarinus-owned
+  federation collections.
+
+The script requires `ROSMARINUS_MONGO_USERNAME`,
+`ROSMARINUS_MONGO_PASSWORD`, `SALVIA_MONGO_USERNAME`, and
+`SALVIA_MONGO_PASSWORD`. `ROSMARINUS_MONGO_DATABASE` defaults to
+`rosmarinus_federation`. Mount it into `/docker-entrypoint-initdb.d` for the
+official MongoDB image. MongoDB runs these scripts only when initializing an
+empty data directory; apply equivalent role changes explicitly to an existing
+deployment.
+
+Each service should use its own authenticated URI with the application database
+as `authSource`, for example:
+
+```text
+mongodb://<service-user>:<percent-encoded-password>@mongo:27017/rosmarinus_federation?authSource=rosmarinus_federation
+```
+
+Generate independent, high-entropy root and service passwords through the
+deployment secret manager. The literal credentials in the Docker federation
+compose files are disposable fixture values and must not be reused outside
+those fixtures.
+
 ## Salvia account projection
 
 Salvia writes one document per local account:

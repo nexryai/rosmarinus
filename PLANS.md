@@ -481,12 +481,12 @@ workflow may require both services to update the same document or collection.
 
 ### Database Enforcement And Contracts
 
-- [ ] Create separate MongoDB users/custom roles. Salvia receives read/write
+- [x] Create separate MongoDB users/custom roles. Salvia receives read/write
       only for `salvia_*` collections and read-only access to explicitly needed
       Rosmarinus collections. Rosmarinus receives read/write only for its
       collections and read-only access to `salvia_accounts`; it receives no
       access to Salvia sessions or unrelated UI data.
-- [ ] Ensure only the owning service bootstraps indexes and schema migrations.
+- [x] Ensure only the owning service bootstraps indexes and schema migrations.
       Rosmarinus must not create indexes on `salvia_accounts`, and Salvia must
       not create indexes on `actors`, `follows`, or other federation
       collections.
@@ -635,7 +635,7 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Freeze and document the shared read contracts for `salvia_accounts` and
       Rosmarinus `actors`, including field names, BSON types, status values,
       soft-deletion behavior, and which service owns each migration/index.
-- [ ] Add separate MongoDB credentials and deployment documentation that
+- [x] Add separate MongoDB credentials and deployment documentation that
       enforce collection-level read/write ownership for Salvia and
       Rosmarinus.
 - [x] Add the read-only Salvia account projection/repository and tests for
