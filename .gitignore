@@ -33,5 +33,6 @@ go.work.sum
 
 /concorde
 /misskey
+/mfm.js
 
 /.gocache
