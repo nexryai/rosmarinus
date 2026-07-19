@@ -101,11 +101,13 @@ func (f *fakeRepo) MarkRemoteActorDeleted(ctx context.Context, uri string) error
 }
 
 type fakeQueue struct {
-	task queue.Task
+	task  queue.Task
+	tasks []queue.Task
 }
 
 func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 	f.task = task
+	f.tasks = append(f.tasks, task)
 	return nil
 }
 
@@ -150,6 +152,16 @@ func (f *fakeFollowRepo) Find(ctx context.Context, followerID, followeeID string
 		return nil, nil
 	}
 	return f.follows[followerID+"\x00"+followeeID], nil
+}
+
+func (f *fakeFollowRepo) ListFollowers(ctx context.Context, followeeID string, limit int) ([]follows.Follow, error) {
+	result := make([]follows.Follow, 0)
+	for _, follow := range f.follows {
+		if follow.FolloweeID == followeeID && follow.Status == follows.StatusAccepted {
+			result = append(result, *follow)
+		}
+	}
+	return result, nil
 }
 
 func (f *fakeFollowRepo) Upsert(ctx context.Context, follow follows.Follow) (*follows.Follow, error) {
@@ -825,10 +837,40 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 		URI:      "https://rosmarinus.example/users/relay",
 	}
 	noteRepo := &fakeNoteRepo{}
+	followRepo := &fakeFollowRepo{}
+	remoteHost := "remote.example"
+	_, err := followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:          "remote-follower",
+		FolloweeID:          local.ID,
+		FollowerURI:         "https://remote.example/users/alice",
+		FolloweeURI:         local.URI,
+		FollowerHost:        &remoteHost,
+		FollowerInbox:       "https://remote.example/users/alice/inbox",
+		FollowerSharedInbox: "https://remote.example/inbox",
+		Status:              follows.StatusAccepted,
+	})
+	if err != nil {
+		t.Fatalf("Upsert follow returned error: %v", err)
+	}
+	_, err = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:          "remote-follower-2",
+		FolloweeID:          local.ID,
+		FollowerURI:         "https://remote.example/users/bob",
+		FolloweeURI:         local.URI,
+		FollowerHost:        &remoteHost,
+		FollowerInbox:       "https://remote.example/users/bob/inbox",
+		FollowerSharedInbox: "https://remote.example/inbox",
+		Status:              follows.StatusAccepted,
+	})
+	if err != nil {
+		t.Fatalf("Upsert second follow returned error: %v", err)
+	}
+	q := &fakeQueue{}
 	connectorPublisher := &fakeConnectorPublisher{}
 	h := New(config.Config{
-		PublicURL: "https://rosmarinus.example",
-	}, nil, &fakeRepo{local: local}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	h.SetConnectorPublisher(connectorPublisher)
 	post, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID:    "relay",
@@ -861,6 +903,23 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	}
 	if *connectorPublisher.post != post {
 		t.Fatalf("published post = %+v", connectorPublisher.post)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d, want 1", len(q.tasks))
+	}
+	delivery, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok {
+		t.Fatalf("delivery payload type = %T", q.tasks[0].Payload)
+	}
+	if delivery.ActorID != local.ID || delivery.To != "https://remote.example/inbox" {
+		t.Fatalf("unexpected delivery target: %+v", delivery)
+	}
+	if delivery.Object["type"] != "Create" || delivery.Object["id"] != note.URI+"/activity" || delivery.Object["actor"] != local.URI {
+		t.Fatalf("unexpected Create activity: %#v", delivery.Object)
+	}
+	object, ok := delivery.Object["object"].(map[string]any)
+	if !ok || object["type"] != "Note" || object["id"] != note.URI || object["content"] != note.Text {
+		t.Fatalf("unexpected Note object: %#v", delivery.Object["object"])
 	}
 }
 

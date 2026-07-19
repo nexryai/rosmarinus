@@ -18,7 +18,9 @@ import (
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
 	"github.com/nexryai/rosmarinus/internal/config"
+	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -114,6 +116,74 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 		note, findErr := noteRepo.FindByURI(ctx, noteURI)
 		t.Logf("[DEBUG] noteRepo.FindByURI: %s: note=%+v err=%v", noteURI, note, findErr)
 		return findErr == nil && note != nil && note.Text == "Hello from latest Misskey federation test"
+	})
+
+	var relayOnMisskey struct {
+		ID          string `json:"id"`
+		IsFollowing bool   `json:"isFollowing"`
+	}
+	misskey.call(ctx, "users/show", map[string]any{
+		"i":        admin.Token,
+		"username": "relay",
+		"host":     "rosmarinus.test",
+	}, &relayOnMisskey)
+	if relayOnMisskey.ID == "" {
+		t.Fatal("Misskey users/show returned an empty Rosmarinus actor id")
+	}
+	misskey.call(ctx, "following/create", map[string]any{
+		"i":      admin.Token,
+		"userId": relayOnMisskey.ID,
+	}, nil)
+
+	remoteActor, err := actorRepo.FindByURI(ctx, remoteActorURI)
+	if err != nil || remoteActor == nil {
+		t.Fatalf("find Misskey actor before inbound follow approval: actor=%+v err=%v", remoteActor, err)
+	}
+	waitFor(t, ctx, "inbound Misskey Follow stored as pending", func() bool {
+		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
+		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
+	})
+	if result, err := worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID); err != nil {
+		t.Fatalf("approve inbound Misskey Follow: result=%q err=%v", result, err)
+	}
+	waitFor(t, ctx, "Misskey applies Accept(Follow)", func() bool {
+		var shown struct {
+			IsFollowing bool `json:"isFollowing"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i":      admin.Token,
+			"userId": relayOnMisskey.ID,
+		}, &shown)
+		return shown.IsFollowing
+	})
+
+	const localNoteID = "latest-misskey-outbound-note"
+	const localNoteText = "Hello from Rosmarinus federation delivery"
+	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
+		ActorID:    localActor.ID,
+		NoteID:     localNoteID,
+		Text:       localNoteText,
+		Visibility: string(domainnotes.VisibilityPublic),
+	})
+	if err != nil {
+		t.Fatalf("create local Rosmarinus post: %v", err)
+	}
+	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
+		var notes []struct {
+			Text string `json:"text"`
+			URI  string `json:"uri"`
+		}
+		misskey.call(ctx, "users/notes", map[string]any{
+			"i":      admin.Token,
+			"userId": relayOnMisskey.ID,
+			"limit":  10,
+		}, &notes)
+		for _, note := range notes {
+			if note.Text == localNoteText && note.URI == createdLocal.URI {
+				return true
+			}
+		}
+		return false
 	})
 }
 

@@ -26,6 +26,11 @@ Rosmarinus implementation semantics.
 - Keep dependencies injectable through interfaces.
 - Use Go's `log` package through injected `*log.Logger` values.
 - Add focused tests for parsing, signing, resolving, rendering, and queue behavior.
+- Extend the latest-Misskey federation test whenever an implementation
+  checkpoint adds or materially changes externally observable federation
+  behavior. Unit tests remain required for edge cases; the Docker federation
+  test verifies the corresponding end-to-end interoperability path when the
+  behavior can be exercised through Misskey's public API.
 
 ## Concorde Behavior To Preserve
 
@@ -464,6 +469,11 @@ when an Ably notification is missed.
       `Follow` from the account-owned local Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
+- [x] Deliver basic local public/home/followers `Create(Note)` activities from
+      `post.create` to accepted remote followers, preferring and deduplicating
+      shared inboxes.
+- [ ] Paginate local post fan-out beyond the initial follower batch and deliver
+      specified-visibility posts only to their resolved remote recipients.
 - [ ] Handle Next.js-driven notification read state commands.
 
 ## Shared MongoDB Ownership Boundary
@@ -818,6 +828,12 @@ Implementation compatibility should be checked against `./concorde`. The
 latest Misskey checkout in `./misskey` is used only to run a real Docker-based
 federation peer and to inspect its official local federation test topology.
 
+Treat this suite as incremental acceptance coverage, not a one-time smoke test.
+Each completed federation capability should add the smallest stable Misskey
+scenario that proves it when Misskey exposes a suitable public API. If a
+capability cannot yet be exercised end to end, record that gap here and add
+focused unit/integration coverage until the fixture can cover it.
+
 ### CI Shape
 
 - [x] Build Rosmarinus with a distroless runtime image:
@@ -902,22 +918,24 @@ federation peer and to inspect its official local federation test topology.
 
 ### Inbound Federation Checks
 
-- [ ] From Misskey, follow the Rosmarinus actor.
-- [ ] Confirm Rosmarinus receives `Follow` at `/inbox` or `/users/{id}/inbox`.
-- [ ] Confirm digest, HTTP Signature parsing, host validation, and queue enqueue
+- [x] From Misskey, follow the Rosmarinus actor.
+- [x] Confirm Rosmarinus receives `Follow` at `/inbox` or `/users/{id}/inbox`.
+- [x] Confirm digest, HTTP Signature parsing, host validation, and queue enqueue
       succeed.
-- [ ] After signer resolution is implemented, confirm signature verification
+- [x] After signer resolution is implemented, confirm signature verification
       succeeds against the Misskey actor public key.
-- [ ] Post a public Misskey note mentioning the Rosmarinus actor.
-- [ ] Confirm Rosmarinus receives `Create` and stores the remote actor/note.
+- [x] Post a public Misskey note from an actor followed by Rosmarinus.
+- [x] Confirm Rosmarinus receives `Create` and stores the remote actor/note.
 
 ### Outbound Federation Checks
 
-- [ ] Approve a pending Misskey follow request in Rosmarinus.
-- [ ] Confirm Rosmarinus sends `Accept(Follow)` back to Misskey only after
+- [x] Approve a pending Misskey follow request in Rosmarinus.
+- [x] Confirm Rosmarinus sends `Accept(Follow)` back to Misskey only after
       approval and Misskey marks the follow request accepted.
-- [ ] Have Rosmarinus send a public `Create(Note)` to Misskey followers.
-- [ ] Confirm Misskey displays or at least stores the note.
+- [x] Have Rosmarinus send a public `Create(Note)` to an accepted Misskey
+      follower through the delivery queue.
+- [x] Confirm through Misskey's public API that Misskey stores the delivered
+      remote note.
 - [ ] Have Rosmarinus send `Like` or `Announce` for a Misskey note.
 - [ ] Confirm Misskey accepts the activity and no retry loop remains in Asynq.
 

@@ -35,6 +35,8 @@ type APClient interface {
 	Deliver(context.Context, string, actors.Actor, map[string]any) error
 }
 
+const postDeliveryFollowerLimit = 100
+
 type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
 }
@@ -626,6 +628,11 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
+	if note.Visibility != domainnotes.VisibilitySpecified {
+		if err := h.enqueueCreateNoteDeliveries(ctx, actor, note); err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
 	payload := connector.PostCreated{
 		AccountID: actor.OwnerAccountID,
 		ActorID:   actor.ID,
@@ -638,6 +645,56 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) error {
+	if h.follows == nil || h.queue == nil {
+		return fmt.Errorf("follow repository and queue are required for post delivery")
+	}
+	followers, err := h.follows.ListFollowers(ctx, actor.ID, postDeliveryFollowerLimit)
+	if err != nil {
+		return fmt.Errorf("list followers for post delivery: %w", err)
+	}
+	activity := renderCreateNote(actor, note)
+	destinations := make(map[string]struct{}, len(followers))
+	for _, follow := range followers {
+		inbox := strings.TrimSpace(follow.FollowerSharedInbox)
+		if inbox == "" {
+			inbox = strings.TrimSpace(follow.FollowerInbox)
+		}
+		if inbox == "" {
+			continue
+		}
+		if _, exists := destinations[inbox]; exists {
+			continue
+		}
+		destinations[inbox] = struct{}{}
+		task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		if err := h.queue.Enqueue(ctx, task); err != nil {
+			return fmt.Errorf("enqueue Create(Note) delivery to %s: %w", inbox, err)
+		}
+	}
+	return nil
+}
+
+func renderCreateNote(actor *actors.Actor, note *domainnotes.Note) map[string]any {
+	object := apnotes.Render(note)
+	contextValue := object["@context"]
+	delete(object, "@context")
+	published := note.CreatedAt
+	if note.PublishedAt != nil {
+		published = *note.PublishedAt
+	}
+	return map[string]any{
+		"@context":  contextValue,
+		"id":        note.URI + "/activity",
+		"type":      "Create",
+		"actor":     actor.URI,
+		"published": published.UTC().Format(time.RFC3339),
+		"to":        object["to"],
+		"cc":        object["cc"],
+		"object":    object,
+	}
 }
 
 func (h *Handler) CreateActor(ctx context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {
