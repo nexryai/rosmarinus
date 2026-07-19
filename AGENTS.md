@@ -6,6 +6,10 @@
 - Use dependency injection for services, repositories, queues, clients, and loggers.
 - Prefer Go's standard `log` package and log meaningful runtime events.
 - Write focused tests whenever practical.
+- Avoid comments that narrate self-evident code line by line. Add concise
+  comments where the rationale is not apparent from the code, especially at
+  security boundaries, across data-ownership boundaries, and for intentional
+  compatibility exceptions.
 - Keep source files using LF line endings.
 - Load all runtime configuration from environment variables.
 
