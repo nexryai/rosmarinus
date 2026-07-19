@@ -1,0 +1,137 @@
+name: Federation compatibility
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/activitypub/**"
+      - "internal/domain/**"
+      - "internal/http/**"
+      - "internal/queue/**"
+      - "internal/store/mongo/**"
+      - "test/federation/**"
+      - "docker/federation/**"
+      - ".github/workflows/federation.yml"
+  pull_request:
+    paths:
+      - "internal/activitypub/**"
+      - "internal/domain/**"
+      - "internal/http/**"
+      - "internal/queue/**"
+      - "internal/store/mongo/**"
+      - "test/federation/**"
+      - "docker/federation/**"
+      - ".github/workflows/federation.yml"
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      misskey_ref:
+        description: Misskey branch, tag, or commit to test
+        required: false
+        default: develop
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: federation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  latest-misskey:
+    name: Latest Misskey follow and note delivery
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out Rosmarinus
+        uses: actions/checkout@v6
+
+      - name: Check out latest Misskey
+        uses: actions/checkout@v6
+        with:
+          repository: misskey-dev/misskey
+          ref: ${{ inputs.misskey_ref || 'develop' }}
+          path: misskey
+          submodules: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6.0.9
+        with:
+          package_json_file: misskey/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: misskey/.node-version
+          cache: pnpm
+          cache-dependency-path: misskey/pnpm-lock.yaml
+
+      - name: Build Rosmarinus image
+        run: docker build -t rosmarinus:test .
+
+      - name: Install Misskey build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install and build latest Misskey
+        working-directory: misskey
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Prepare federation certificates
+        working-directory: misskey/packages/backend/test-federation
+        run: |
+          bash ./setup.sh
+          openssl req -new -newkey rsa:2048 -sha256 -nodes \
+            -keyout certificates/rosmarinus.test.key \
+            -subj "/CN=rosmarinus.test/emailAddress=admin@rosmarinus.test/C=JP/ST=/L=/O=Rosmarinus Federation Test/OU=CI" \
+            -out certificates/rosmarinus.test.csr
+          openssl x509 -req -sha256 \
+            -in certificates/rosmarinus.test.csr \
+            -CA certificates/rootCA.crt \
+            -CAkey certificates/rootCA.key \
+            -CAcreateserial \
+            -passin pass:rootCA \
+            -out certificates/rosmarinus.test.crt \
+            -days 500
+          chmod 644 certificates/*.test.key
+
+      - name: Export Misskey Node.js version
+        run: echo "NODE_VERSION=$(cat misskey/.node-version)" >> "$GITHUB_ENV"
+
+      - name: Start latest Misskey and Rosmarinus
+        run: |
+          docker compose \
+            -f misskey/packages/backend/test-federation/compose.yml \
+            -f misskey/packages/backend/test-federation/compose.override.yaml \
+            -f docker/federation/misskey-rosmarinus.compose.yml \
+            up -d --wait --scale tester=0
+
+      - name: Test Follow, Accept, and Create Note delivery
+        run: |
+          docker compose \
+            -f misskey/packages/backend/test-federation/compose.yml \
+            -f misskey/packages/backend/test-federation/compose.override.yaml \
+            -f docker/federation/misskey-rosmarinus.compose.yml \
+            --profile rosmarinus-test \
+            run --rm rosmarinus-federation-test
+
+      - name: Print federation logs
+        if: failure()
+        run: |
+          docker compose \
+            -f misskey/packages/backend/test-federation/compose.yml \
+            -f misskey/packages/backend/test-federation/compose.override.yaml \
+            -f docker/federation/misskey-rosmarinus.compose.yml \
+            logs --no-color --tail=500
+
+      - name: Stop federation stack
+        if: always()
+        run: |
+          docker compose \
+            -f misskey/packages/backend/test-federation/compose.yml \
+            -f misskey/packages/backend/test-federation/compose.override.yaml \
+            -f docker/federation/misskey-rosmarinus.compose.yml \
+            down -v --remove-orphans

@@ -88,5 +88,40 @@ services:
     networks:
       - internal_network
 
+  rosmarinus-federation-test:
+    image: golang:1.26-bookworm
+    profiles: ["rosmarinus-test"]
+    depends_on:
+      rosmarinus.test:
+        condition: service_healthy
+      a.test:
+        condition: service_healthy
+      rosmarinus.mongo:
+        condition: service_healthy
+      rosmarinus.redis:
+        condition: service_healthy
+    environment:
+      ROSMARINUS_FEDERATION_TEST: "1"
+      SSL_CERT_FILE: /certificates/rootCA.crt
+      MONGO_URI: mongodb://rosmarinus:rosmarinus-fixture-only@rosmarinus.mongo:27017/rosmarinus_federation?authSource=rosmarinus_federation
+      MONGO_DATABASE: rosmarinus_federation
+      REDIS_ADDR: rosmarinus.redis:6379
+      GOCACHE: /tmp/go-cache
+      GOMODCACHE: /tmp/go-mod-cache
+    volumes:
+      - type: bind
+        source: ../../../../
+        target: /workspace
+        read_only: true
+      - type: bind
+        source: ./certificates/rootCA.crt
+        target: /certificates/rootCA.crt
+        read_only: true
+    working_dir: /workspace
+    command: go test -v -count=1 ./test/federation
+    networks:
+      - external_network
+      - internal_network
+
 networks:
   internal_network:

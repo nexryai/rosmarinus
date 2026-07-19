@@ -166,16 +166,18 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 		return fmt.Sprintf("skip: signer actor mismatch signer=%s actor=%s", authActor.URI, actorID), nil
 	}
 	activityID, ok := payload.Activity["id"].(string)
-	if !ok || activityID == "" {
+	if (!ok || activityID == "") && !aptypes.IsAccept(payload.Activity) && !aptypes.IsReject(payload.Activity) {
 		return "skip: activity.id is not a string", nil
 	}
-	signerHost, err := hostOf(authActor.URI)
-	if err != nil {
-		return "skip: signer uri host is invalid", nil
-	}
-	activityHost, err := hostOf(activityID)
-	if err != nil || signerHost != activityHost {
-		return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerHost, activityHost), nil
+	if activityID != "" {
+		signerHost, err := hostOf(authActor.URI)
+		if err != nil {
+			return "skip: signer uri host is invalid", nil
+		}
+		activityHost, err := hostOf(activityID)
+		if err != nil || signerHost != activityHost {
+			return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerHost, activityHost), nil
+		}
 	}
 	return h.performActivity(ctx, authActor, payload.Activity)
 }

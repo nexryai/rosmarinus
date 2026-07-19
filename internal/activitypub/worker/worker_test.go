@@ -589,6 +589,65 @@ func TestCreateFollowAndAcceptEstablishesOutgoingRelationship(t *testing.T) {
 	}
 }
 
+func TestProcessInboxAcceptWithoutIDMatchesLatestMisskey(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	local := &actors.Actor{ID: "local-alice", URI: "https://rosmarinus.example/users/local-alice"}
+	remote := &actors.Actor{
+		ID:           "remote-bob",
+		URI:          "https://remote.example/users/bob",
+		Host:         &host,
+		PublicKeyID:  "https://remote.example/users/bob#main-key",
+		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:       local.ID,
+		FolloweeID:       remote.ID,
+		FollowerURI:      local.URI,
+		FolloweeURI:      remote.URI,
+		Status:           follows.StatusPending,
+		RemoteActivityID: "https://rosmarinus.example/follows/local-alice/remote-bob",
+	})
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"type":  "Accept",
+			"actor": remote.URI,
+			"object": map[string]any{
+				"id":     "https://rosmarinus.example/follows/local-alice/remote-bob",
+				"type":   "Follow",
+				"actor":  local.URI,
+				"object": remote.URI,
+			},
+		},
+		Signature: map[string]any{
+			"keyId":         remote.PublicKeyID,
+			"algorithm":     "rsa-sha256",
+			"headers":       []string{"(request-target)", "host"},
+			"signature":     base64.StdEncoding.EncodeToString(rawSig),
+			"signingString": signingString,
+		},
+	})
+	if err != nil || result != "ok: outgoing follow accepted" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	follow, _ := followRepo.Find(context.Background(), local.ID, remote.ID)
+	if follow == nil || follow.Status != follows.StatusAccepted {
+		t.Fatalf("follow was not accepted: %+v", follow)
+	}
+}
+
 func TestRejectOutgoingFollowRemovesRequest(t *testing.T) {
 	host := "remote.example"
 	local := &actors.Actor{ID: "local-alice", URI: "https://rosmarinus.example/users/local-alice"}

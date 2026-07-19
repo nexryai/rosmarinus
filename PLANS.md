@@ -91,7 +91,8 @@ same style as Concorde.
 - [x] Reject old `acct:` key IDs.
 - [x] Verify signature using the actor public key.
 - [x] Require signer actor URI to match `activity.actor`.
-- [x] Require `activity.id` host to match signer host.
+- [x] Require `activity.id` host to match signer host when present; accept
+      current Misskey-compatible `Accept`/`Reject` activities without an ID.
 - [ ] Update instance communication stats after accepted requests.
 - [x] Enqueue the activity and return `202 Accepted`.
 
@@ -831,7 +832,7 @@ federation peer and to inspect its official local federation test topology.
 - [x] Add a workflow-dispatch-only Misskey fixture job that expects `./misskey`
       to be present, builds Misskey, starts its official federation harness, and
       adds Rosmarinus as `https://rosmarinus.test` through an overlay compose.
-- [ ] Add Rosmarinus-specific Misskey federation tests that drive follow,
+- [x] Add Rosmarinus-specific Misskey federation tests that drive follow,
       Accept(Follow), signed GET, and Create(Note) once the missing behavior is
       implemented.
 - [ ] Run `docker compose config` and the workflow on a Docker-enabled machine;

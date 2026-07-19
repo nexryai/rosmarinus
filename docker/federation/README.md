@@ -1,0 +1,39 @@
+# Latest Misskey federation test
+
+The `Federation compatibility` GitHub Actions workflow checks out Misskey's
+current `develop` branch independently of this repository, builds it, and uses
+Misskey's official two-server federation fixture as the network topology.
+Rosmarinus is attached as `https://rosmarinus.test` through the compose overlay.
+
+The Go integration test performs this real federation sequence:
+
+1. create a user on `a.test`;
+2. resolve that Actor from Rosmarinus with signed ActivityPub GET;
+3. enqueue and deliver `Follow` from the Rosmarinus `relay` Actor;
+4. wait for Misskey's signed `Accept(Follow)` to change MongoDB state to
+   `accepted`;
+5. create a public Misskey note; and
+6. wait for the delivered `Create(Note)` to be verified and stored by
+   Rosmarinus.
+
+The workflow runs on relevant pull requests and pushes, weekly against latest
+Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.
+
+To run it locally, first clone Misskey into `./misskey`, build it, and prepare
+its federation certificates as described in
+`misskey/packages/backend/test-federation/README.md`. Generate an additional
+certificate for `rosmarinus.test`, build `rosmarinus:test`, then run:
+
+```sh
+docker compose \
+  -f misskey/packages/backend/test-federation/compose.yml \
+  -f misskey/packages/backend/test-federation/compose.override.yaml \
+  -f docker/federation/misskey-rosmarinus.compose.yml \
+  up -d --wait --scale tester=0
+
+docker compose \
+  -f misskey/packages/backend/test-federation/compose.yml \
+  -f misskey/packages/backend/test-federation/compose.override.yaml \
+  -f docker/federation/misskey-rosmarinus.compose.yml \
+  --profile rosmarinus-test run --rm rosmarinus-federation-test
+```
