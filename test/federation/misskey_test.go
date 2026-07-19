@@ -92,7 +92,7 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 			return false
 		}
 		relationship, findErr = followRepo.Find(ctx, localActor.ID, remoteActor.ID)
-		t.Logf("[DEBUG] followRepo.Find: %s <= %s: %v", localActor.ID, remoteActor.ID, &relationship)
+		t.Logf("[DEBUG] followRepo.Find: %s <= %s: relationship=%+v err=%v", localActor.ID, remoteActor.ID, relationship, findErr)
 		return findErr == nil && relationship != nil && relationship.Status == follows.StatusAccepted
 	})
 
@@ -112,7 +112,7 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	noteURI := "https://a.test/notes/" + created.CreatedNote.ID
 	waitFor(t, ctx, "Create(Note) stored by Rosmarinus", func() bool {
 		note, findErr := noteRepo.FindByURI(ctx, noteURI)
-		t.Logf("[DEBUG] noteRepo.FindByURI: %s: %s", noteURI, note.Text)
+		t.Logf("[DEBUG] noteRepo.FindByURI: %s: note=%+v err=%v", noteURI, note, findErr)
 		return findErr == nil && note != nil && note.Text == "Hello from latest Misskey federation test"
 	})
 }
