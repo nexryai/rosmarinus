@@ -12,6 +12,7 @@ on:
       - "test/federation/**"
       - "docker/federation/**"
       - ".github/workflows/federation.yml"
+
   pull_request:
     paths:
       - "internal/activitypub/**"
@@ -22,8 +23,7 @@ on:
       - "test/federation/**"
       - "docker/federation/**"
       - ".github/workflows/federation.yml"
-  schedule:
-    - cron: "23 3 * * 1"
+
   workflow_dispatch:
     inputs:
       misskey_ref:
@@ -34,10 +34,6 @@ on:
 
 permissions:
   contents: read
-
-concurrency:
-  group: federation-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   latest-misskey:
