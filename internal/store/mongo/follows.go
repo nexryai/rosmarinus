@@ -112,6 +112,7 @@ func (r *FollowRepository) Approve(ctx context.Context, followerID, followeeID s
 		"followerId": followerID,
 		"followeeId": followeeID,
 		"deletedAt":  nil,
+		"status":     string(follows.StatusPending),
 	}, bson.M{"$set": bson.M{
 		"status":     string(follows.StatusAccepted),
 		"acceptedAt": now,

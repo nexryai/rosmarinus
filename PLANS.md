@@ -114,8 +114,8 @@ same style as Concorde.
       an accepted relationship and enqueues `Accept(Follow)`.
 - [x] `Follow`: expose a Connector command for user-facing approval via Next.js.
 - [ ] `Follow`: block/request persistence logic.
-- [ ] `Accept`: accept local outgoing follow requests.
-- [ ] `Reject`: reject local outgoing follow requests.
+- [x] `Accept`: accept local outgoing follow requests.
+- [x] `Reject`: reject local outgoing follow requests.
 - [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
       followee relationships.
 - [x] `Undo`: support remote `Undo(Like)`, `Undo(EmojiReaction)`, and
@@ -458,6 +458,9 @@ when an Ably notification is missed.
       follow approval path.
 - [x] Handle Next.js-driven `follow.reject` commands by deleting the pending
       request and delivering `Reject(Follow)`.
+- [x] Handle Next.js-driven `follow.create` commands by resolving a remote
+      handle or Actor URL, persisting an outgoing request, and delivering
+      `Follow` from the account-owned local Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
 - [ ] Handle Next.js-driven notification read state commands.
@@ -717,6 +720,9 @@ Implement this phase before exposing additional browser-driven mutations.
       pending follow request storage for every local actor.
 - [x] Implement basic explicit local approval for pending follow requests, then
       persist the accepted relationship and enqueue `Accept(Follow)`.
+- [x] Implement local outgoing `Follow` plus inbound remote `Accept(Follow)` and
+      `Reject(Follow)` state transitions so followed servers can begin
+      delivering notes to the local Actor inbox.
 - [x] Expose follow approval through a Connector command for Next.js.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
 - [ ] Implement full `Follow`, `Accept`, and `Reject`.

@@ -44,6 +44,8 @@ func (f *fakeActorOwnershipLookup) FindOwnedLocalByID(ctx context.Context, accou
 }
 
 type fakeCommandExecutor struct {
+	createdFollowerID  string
+	createdTarget      string
 	approvedFollowerID string
 	approvedFolloweeID string
 	rejectedFollowerID string
@@ -51,6 +53,13 @@ type fakeCommandExecutor struct {
 	postCommand        PostCreateCommand
 	postCalls          int
 	err                error
+}
+
+func (f *fakeCommandExecutor) CreateFollow(ctx context.Context, followerID, target string) (string, error) {
+	_ = ctx
+	f.createdFollowerID = followerID
+	f.createdTarget = target
+	return "created", f.err
 }
 
 func (f *fakeCommandExecutor) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
@@ -185,12 +194,24 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 4 || source.names[0] != CommandFollowApprove || source.names[1] != CommandFollowReject || source.names[2] != CommandPostCreate || source.names[3] != CommandActorCreate {
+	if len(source.names) != 5 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandActorCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
 		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
+	}
+}
+
+func TestCommandHandlerCreatesFollowAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	message := commandMessage(CommandFollowCreate, "request-follow", "actor-2", FollowCreateData{Target: "alice@remote.example"})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.createdFollowerID != "actor-2" || executor.createdTarget != "alice@remote.example" {
+		t.Fatalf("follow command = actor:%q target:%q", executor.createdFollowerID, executor.createdTarget)
 	}
 }
 

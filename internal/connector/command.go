@@ -15,6 +15,7 @@ import (
 const (
 	CommandFollowApprove        = "follow.approve"
 	CommandFollowReject         = "follow.reject"
+	CommandFollowCreate         = "follow.create"
 	CommandPostCreate           = "post.create"
 	CommandActorCreate          = "actor.create"
 	CommandNotificationMarkRead = "notification.mark_read"
@@ -47,6 +48,7 @@ type ActorOwnershipLookup interface {
 }
 
 type CommandExecutor interface {
+	CreateFollow(context.Context, string, string) (string, error)
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
@@ -77,6 +79,10 @@ type FollowApproveData struct {
 
 type FollowRejectData struct {
 	FollowerID string `json:"follower_id"`
+}
+
+type FollowCreateData struct {
+	Target string `json:"target"`
 }
 
 type PostCreateData struct {
@@ -143,7 +149,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate}
+	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -294,6 +300,16 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		return nil, actorID, fmt.Errorf("connector command executor is not configured")
 	}
 	switch name {
+	case CommandFollowCreate:
+		var command FollowCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := h.executor.CreateFollow(ctx, actorID, command.Target)
+		return result, actorID, err
 	case CommandFollowApprove:
 		var command FollowApproveData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -382,7 +398,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate:
+	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate:
 		return true
 	default:
 		return false

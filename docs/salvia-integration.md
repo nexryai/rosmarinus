@@ -135,6 +135,28 @@ command. Every command has an Ably message name and this versioned payload:
 the mutation; it republishes the stored result or reports that the original is
 still in progress.
 
+To follow a remote Actor, publish a `follow.create` command. `actor_id` is the
+owned local Actor that will follow the target. `target` accepts either a
+Fediverse handle or an absolute ActivityPub Actor URL:
+
+```json
+{
+  "version": 1,
+  "request_id": "request-01J...",
+  "actor_id": "actor-01J...",
+  "data": {
+    "target": "alice@remote.example"
+  }
+}
+```
+
+A `command.succeeded` result means the remote Actor was resolved, the outgoing
+request was stored as `pending`, and its signed `Follow` delivery was enqueued.
+It does not mean the remote server accepted it. Salvia reads the
+Rosmarinus-owned `follows` collection for authoritative status: the relationship
+changes to `accepted` only after Rosmarinus verifies and processes the remote
+`Accept(Follow)`. A remote `Reject(Follow)` removes the pending relationship.
+
 `actor.create` omits `actor_id` because the Actor does not exist yet:
 
 ```json

@@ -18,6 +18,7 @@ import (
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
+	apwebfinger "github.com/nexryai/rosmarinus/internal/activitypub/webfinger"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -73,7 +74,7 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 		reports:    reportRepo,
 		queue:      queueClient,
 		client:     apClient,
-		resolver:   apresolver.New(repo, apClient, localActor),
+		resolver:   apresolver.NewWithWebFinger(repo, apClient, localActor, apwebfinger.New(nil, cfg.UserAgent)),
 		localActor: localActor,
 	}
 }
@@ -203,11 +204,139 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return h.performBlock(ctx, actor, activity)
 	case aptypes.IsFlag(activity):
 		return h.performFlag(ctx, actor, activity)
-	case aptypes.IsAccept(activity), aptypes.IsReject(activity), aptypes.IsUpdate(activity):
+	case aptypes.IsAccept(activity):
+		return h.performAcceptFollow(ctx, actor, activity)
+	case aptypes.IsReject(activity):
+		return h.performRejectFollow(ctx, actor, activity)
+	case aptypes.IsUpdate(activity):
 		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
 	}
+}
+
+func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (string, error) {
+	if h.follows == nil || h.queue == nil {
+		return "", fmt.Errorf("follow repository and queue are required")
+	}
+	follower, err := h.repo.FindLocalByID(ctx, followerID)
+	if err != nil {
+		return "", err
+	}
+	if follower == nil {
+		return "", fmt.Errorf("local follower not found: %s", followerID)
+	}
+
+	var followee *actors.Actor
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		followee, err = h.resolver.ResolveActor(ctx, strings.TrimSpace(target))
+	} else {
+		followee, err = h.resolver.ResolveActorHandle(ctx, strings.TrimSpace(target))
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve follow target: %w", err)
+	}
+	if followee == nil || followee.Host == nil {
+		return "", fmt.Errorf("follow target must be a remote actor")
+	}
+	existing, err := h.follows.Find(ctx, follower.ID, followee.ID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil && existing.Status == follows.StatusAccepted {
+		return "ok: already following", nil
+	}
+
+	remoteInbox := followee.Inbox
+	if remoteInbox == "" {
+		remoteInbox = followee.SharedInbox
+	}
+	if remoteInbox == "" {
+		return "", fmt.Errorf("follow target inbox is empty")
+	}
+	activityID := strings.TrimRight(h.cfg.PublicURL, "/") + "/follows/" + url.PathEscape(follower.ID) + "/" + url.PathEscape(followee.ID)
+	followActivity := map[string]any{
+		"@context": "https://www.w3.org/ns/activitystreams",
+		"id":       activityID,
+		"type":     "Follow",
+		"actor":    follower.URI,
+		"object":   followee.URI,
+	}
+	if _, err := h.follows.Upsert(ctx, follows.Follow{
+		FollowerID:          follower.ID,
+		FolloweeID:          followee.ID,
+		FollowerURI:         follower.URI,
+		FolloweeURI:         followee.URI,
+		FollowerHost:        follower.Host,
+		FolloweeHost:        followee.Host,
+		FollowerInbox:       follower.Inbox,
+		FollowerSharedInbox: follower.SharedInbox,
+		FolloweeInbox:       followee.Inbox,
+		FolloweeSharedInbox: followee.SharedInbox,
+		CreatedAt:           time.Now().UTC(),
+		Status:              follows.StatusPending,
+		RemoteActivityID:    activityID,
+	}); err != nil {
+		return "", err
+	}
+	if err := h.queue.Enqueue(ctx, queue.NewDeliverTask(follower.ID, remoteInbox, followActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)); err != nil {
+		return "", err
+	}
+	return "ok: follow delivery enqueued", nil
+}
+
+func (h *Handler) performAcceptFollow(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	return h.finishOutgoingFollow(ctx, actor, activity, true)
+}
+
+func (h *Handler) performRejectFollow(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	return h.finishOutgoingFollow(ctx, actor, activity, false)
+}
+
+func (h *Handler) finishOutgoingFollow(ctx context.Context, actor *actors.Actor, activity map[string]any, accepted bool) (string, error) {
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	object, ok := activity["object"].(map[string]any)
+	if !ok || !aptypes.IsFollow(object) {
+		return "skip: accept/reject object is not an embedded Follow", nil
+	}
+	followerURI, err := aptypes.GetAPID(object["actor"])
+	if err != nil {
+		return "skip: follow actor is invalid", nil
+	}
+	followeeURI, err := aptypes.GetAPID(object["object"])
+	if err != nil || followeeURI != actor.URI {
+		return "skip: follow object does not match accepting actor", nil
+	}
+	follower, err := h.repo.FindByURI(ctx, followerURI)
+	if err != nil {
+		return "", err
+	}
+	if follower == nil || follower.Host != nil {
+		return "skip: follower is not a local actor", nil
+	}
+	follow, err := h.follows.Find(ctx, follower.ID, actor.ID)
+	if err != nil {
+		return "", err
+	}
+	if follow == nil || follow.Status != follows.StatusPending {
+		return "skip: outgoing follow request is not pending", nil
+	}
+	if objectID, _ := object["id"].(string); objectID != "" && follow.RemoteActivityID != "" && objectID != follow.RemoteActivityID {
+		return "skip: follow activity id mismatch", nil
+	}
+	if accepted {
+		if _, err := h.follows.Approve(ctx, follower.ID, actor.ID); err != nil {
+			return "", err
+		}
+		return "ok: outgoing follow accepted", nil
+	}
+	activityID, _ := activity["id"].(string)
+	if err := h.follows.Delete(ctx, follower.ID, actor.ID, activityID); err != nil {
+		return "", err
+	}
+	return "ok: outgoing follow rejected", nil
 }
 
 func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
@@ -364,9 +493,9 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	if followee == nil {
 		return "skip: followee is not a local user", nil
 	}
-	inbox := follow.FollowerSharedInbox
+	inbox := follow.FollowerInbox
 	if inbox == "" {
-		inbox = follow.FollowerInbox
+		inbox = follow.FollowerSharedInbox
 	}
 	if inbox == "" {
 		return "skip: follower inbox is empty", nil
@@ -422,9 +551,9 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 	if followee == nil {
 		return "skip: followee is not a local user", nil
 	}
-	inbox := follow.FollowerSharedInbox
+	inbox := follow.FollowerInbox
 	if inbox == "" {
-		inbox = follow.FollowerInbox
+		inbox = follow.FollowerSharedInbox
 	}
 	if inbox == "" {
 		return "skip: follower inbox is empty", nil
