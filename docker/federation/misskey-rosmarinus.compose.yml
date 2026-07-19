@@ -1,4 +1,18 @@
 services:
+  misskey.a.test:
+    healthcheck:
+      start_period: 5m
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
+  misskey.b.test:
+    healthcheck:
+      start_period: 5m
+      interval: 5s
+      timeout: 10s
+      retries: 60
+
   rosmarinus:
     image: ${ROSMARINUS_IMAGE:-rosmarinus:test}
     depends_on:

@@ -103,7 +103,7 @@ jobs:
             -f misskey/packages/backend/test-federation/compose.yml \
             -f misskey/packages/backend/test-federation/compose.override.yaml \
             -f docker/federation/misskey-rosmarinus.compose.yml \
-            up -d --wait --scale tester=0
+            up -d --wait --wait-timeout 600 --scale tester=0
 
       - name: Test Follow, Accept, and Create Note delivery
         run: |
@@ -117,6 +117,11 @@ jobs:
       - name: Print federation logs
         if: failure()
         run: |
+          docker compose \
+            -f misskey/packages/backend/test-federation/compose.yml \
+            -f misskey/packages/backend/test-federation/compose.override.yaml \
+            -f docker/federation/misskey-rosmarinus.compose.yml \
+            ps -a
           docker compose \
             -f misskey/packages/backend/test-federation/compose.yml \
             -f misskey/packages/backend/test-federation/compose.override.yaml \
