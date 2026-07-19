@@ -57,9 +57,11 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	if err != nil || localActor == nil {
 		t.Fatalf("find local relay actor: actor=%+v err=%v", localActor, err)
 	}
+	t.Logf("federation fixture ready local_actor_id=%s local_actor_uri=%s", localActor.ID, localActor.URI)
 
 	misskey := newMisskeyClient(t)
 	admin := misskey.createAdmin(ctx, "federationadmin", "federation-password")
+	t.Logf("Misskey test account created actor_id=%s", admin.ID)
 	misskey.call(ctx, "admin/update-meta", map[string]any{
 		"i":          admin.Token,
 		"federation": "all",
@@ -83,7 +85,9 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	)
 
 	remoteActorURI := "https://a.test/users/" + admin.ID
-	if result, err := worker.CreateFollow(ctx, localActor.ID, remoteActorURI); err != nil {
+	result, err := worker.CreateFollow(ctx, localActor.ID, remoteActorURI)
+	t.Logf("Rosmarinus outgoing Follow result=%q actor=%s target=%s err=%v", result, localActor.ID, remoteActorURI, err)
+	if err != nil {
 		t.Fatalf("create outgoing Follow: result=%q err=%v", result, err)
 	}
 
@@ -110,6 +114,7 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	if created.CreatedNote.ID == "" {
 		t.Fatal("Misskey notes/create returned an empty note id")
 	}
+	t.Logf("Misskey note created note_id=%s", created.CreatedNote.ID)
 
 	noteURI := "https://a.test/notes/" + created.CreatedNote.ID
 	waitFor(t, ctx, "Create(Note) stored by Rosmarinus", func() bool {
@@ -130,6 +135,7 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	if relayOnMisskey.ID == "" {
 		t.Fatal("Misskey users/show returned an empty Rosmarinus actor id")
 	}
+	t.Logf("Misskey resolved Rosmarinus actor misskey_user_id=%s", relayOnMisskey.ID)
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
 		"userId": relayOnMisskey.ID,
@@ -143,7 +149,9 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
 		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
 	})
-	if result, err := worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID); err != nil {
+	result, err = worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID)
+	t.Logf("Rosmarinus inbound Follow approval result=%q follower=%s followee=%s err=%v", result, remoteActor.ID, localActor.ID, err)
+	if err != nil {
 		t.Fatalf("approve inbound Misskey Follow: result=%q err=%v", result, err)
 	}
 	waitFor(t, ctx, "Misskey applies Accept(Follow)", func() bool {
@@ -168,6 +176,7 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create local Rosmarinus post: %v", err)
 	}
+	t.Logf("Rosmarinus local note created note_id=%s uri=%s", createdLocal.NoteID, createdLocal.URI)
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
 			Text string `json:"text"`
@@ -218,6 +227,7 @@ func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[s
 	if err != nil {
 		m.t.Fatalf("marshal Misskey %s request: %v", endpoint, err)
 	}
+	m.t.Logf("Misskey API request endpoint=%s body=%s", endpoint, loggableMisskeyResponse(body))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/api/"+endpoint, bytes.NewReader(body))
 	if err != nil {
 		m.t.Fatalf("create Misskey %s request: %v", endpoint, err)
@@ -282,10 +292,15 @@ func redactMisskeySecrets(value any) {
 
 func waitFor(t *testing.T, ctx context.Context, description string, ready func() bool) {
 	t.Helper()
+	startedAt := time.Now()
+	attempts := 0
+	t.Logf("waiting for %s", description)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		attempts++
 		if ready() {
+			t.Logf("wait completed description=%q attempts=%d elapsed=%s", description, attempts, time.Since(startedAt).Round(time.Millisecond))
 			return
 		}
 		select {

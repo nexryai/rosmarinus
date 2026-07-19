@@ -3,8 +3,8 @@ package federation_test
 import "testing"
 
 func TestLoggableMisskeyResponse(t *testing.T) {
-	body := []byte(`{"id":"user-id","token":"private-token","nested":{"accessToken":"private-access-token"}}`)
-	want := `{"id":"user-id","nested":{"accessToken":"<redacted>"},"token":"<redacted>"}`
+	body := []byte(`{"i":"api-token","id":"user-id","password":"private-password","token":"private-token","nested":{"accessToken":"private-access-token"}}`)
+	want := `{"i":"<redacted>","id":"user-id","nested":{"accessToken":"<redacted>"},"password":"<redacted>","token":"<redacted>"}`
 	if got := loggableMisskeyResponse(body); got != want {
 		t.Fatalf("loggableMisskeyResponse() = %q, want %q", got, want)
 	}
