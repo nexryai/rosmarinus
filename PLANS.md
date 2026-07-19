@@ -616,7 +616,7 @@ workflow may require both services to update the same document or collection.
 
 - [x] Implement WebFinger local responses.
 - [x] Implement NodeInfo responses.
-- [ ] Implement remote WebFinger client.
+- [x] Implement remote WebFinger client.
 - [x] Implement actor renderer and `/users/{id}`.
 - [x] Implement `/users/{id}/publickey`.
 - [x] Implement Concorde-shaped local actor `outbox`, `followers`,

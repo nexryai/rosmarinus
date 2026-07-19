@@ -1,9 +1,32 @@
 package resolver
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
+
+func TestResolveActorHandle(t *testing.T) {
+	repo := &resolverActorRepository{}
+	resolver := NewWithWebFinger(repo, resolverFetcher{}, nil, resolverWebFinger{uri: "https://remote.example/users/alice"})
+
+	actor, err := resolver.ResolveActorHandle(context.Background(), "alice@remote.example")
+	if err != nil {
+		t.Fatalf("ResolveActorHandle returned error: %v", err)
+	}
+	if actor.URI != "https://remote.example/users/alice" || repo.upserted == nil {
+		t.Fatalf("actor was not resolved and stored: %+v", actor)
+	}
+}
+
+func TestResolveActorHandleRequiresWebFinger(t *testing.T) {
+	resolver := New(&resolverActorRepository{}, resolverFetcher{}, nil)
+	if _, err := resolver.ResolveActorHandle(context.Background(), "alice@remote.example"); err == nil {
+		t.Fatal("ResolveActorHandle should require WebFinger")
+	}
+}
 
 func TestConcordeMinimumActor(t *testing.T) {
 	host := "https://host1.test"
@@ -125,4 +148,69 @@ func TestParseRemoteActorRejectsWrongCollectionHosts(t *testing.T) {
 			}
 		})
 	}
+}
+
+type resolverActorRepository struct {
+	upserted *actors.Actor
+}
+
+func (r *resolverActorRepository) FindLocalByID(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindLocalByUsername(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindOwnedLocalByID(context.Context, string, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) CreateOwnedLocalActor(context.Context, actors.Actor) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) SuspendOwnedLocalActors(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
+func (r *resolverActorRepository) ListOwnedAccountIDs(context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindByURI(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindByPublicKeyID(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) UpsertRemoteActor(_ context.Context, actor actors.Actor) (*actors.Actor, error) {
+	r.upserted = &actor
+	return &actor, nil
+}
+
+func (r *resolverActorRepository) MarkRemoteActorDeleted(context.Context, string) error {
+	return nil
+}
+
+type resolverFetcher struct{}
+
+func (resolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[string]any, error) {
+	return map[string]any{
+		"type":              "Person",
+		"id":                "https://remote.example/users/alice",
+		"inbox":             "https://remote.example/users/alice/inbox",
+		"outbox":            "https://remote.example/users/alice/outbox",
+		"preferredUsername": "alice",
+	}, nil
+}
+
+type resolverWebFinger struct {
+	uri string
+}
+
+func (w resolverWebFinger) ResolveActor(context.Context, string) (string, error) {
+	return w.uri, nil
 }

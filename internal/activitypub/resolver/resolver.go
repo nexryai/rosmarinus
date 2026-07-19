@@ -16,14 +16,34 @@ type Fetcher interface {
 	FetchObject(context.Context, string, *actors.Actor) (map[string]any, error)
 }
 
+type WebFinger interface {
+	ResolveActor(context.Context, string) (string, error)
+}
+
 type Resolver struct {
-	repo    actors.Repository
-	fetcher Fetcher
-	signer  *actors.Actor
+	repo      actors.Repository
+	fetcher   Fetcher
+	signer    *actors.Actor
+	webFinger WebFinger
 }
 
 func New(repo actors.Repository, fetcher Fetcher, signer *actors.Actor) *Resolver {
 	return &Resolver{repo: repo, fetcher: fetcher, signer: signer}
+}
+
+func NewWithWebFinger(repo actors.Repository, fetcher Fetcher, signer *actors.Actor, webFinger WebFinger) *Resolver {
+	return &Resolver{repo: repo, fetcher: fetcher, signer: signer, webFinger: webFinger}
+}
+
+func (r *Resolver) ResolveActorHandle(ctx context.Context, handle string) (*actors.Actor, error) {
+	if r.webFinger == nil {
+		return nil, fmt.Errorf("webfinger resolver is not configured")
+	}
+	uri, err := r.webFinger.ResolveActor(ctx, handle)
+	if err != nil {
+		return nil, fmt.Errorf("resolve actor handle: %w", err)
+	}
+	return r.ResolveActor(ctx, uri)
 }
 
 func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor, error) {
