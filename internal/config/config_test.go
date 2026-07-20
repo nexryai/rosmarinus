@@ -84,6 +84,12 @@ func TestLoadAblyConfig(t *testing.T) {
 		switch key {
 		case "ABLY_ROSMARINUS_API_KEY":
 			return "app.key:secret", true
+		case "ABLY_COMMAND_SUBSCRIBE_API_KEY":
+			return "command.key:secret", true
+		case "ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY":
+			return "event.key:secret", true
+		case "ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY":
+			return "control.key:secret", true
 		case "CONNECTOR_COMMAND_CHANNEL":
 			return "test:commands", true
 		case "CONNECTOR_ACCOUNT_EVENT_NAMESPACE":
@@ -103,8 +109,23 @@ func TestLoadAblyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.AblyServiceAPIKey != "app.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour || cfg.ConnectorAccountReconcileInterval != 10*time.Minute {
+	if cfg.CommandSubscribeAPIKey() != "command.key:secret" || cfg.AccountEventPublishAPIKey() != "event.key:secret" || cfg.AccountControlSubscribeAPIKey() != "control.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour || cfg.ConnectorAccountReconcileInterval != 10*time.Minute {
 		t.Fatalf("unexpected Ably config: %+v", cfg)
+	}
+}
+
+func TestLoadAblyConfigFallsBackToLegacyServiceKey(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		if key == "ABLY_ROSMARINUS_API_KEY" {
+			return "legacy.key:secret", true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.CommandSubscribeAPIKey() != "legacy.key:secret" || cfg.AccountEventPublishAPIKey() != "legacy.key:secret" || cfg.AccountControlSubscribeAPIKey() != "legacy.key:secret" {
+		t.Fatalf("legacy key fallback failed: %+v", cfg)
 	}
 }
 

@@ -672,7 +672,7 @@ Implement this phase before exposing additional browser-driven mutations.
       configuration-provisioned Actor records as system Actors.
 - [x] Add owned-Actor repository queries and tests proving one account can own
       multiple Actors while another account cannot operate any of them.
-- [ ] Split Connector configuration and Ably adapters into command, account
+- [x] Split Connector configuration and Ably adapters into command, account
       event, and account-control paths with least-privilege service keys.
 - [x] Preserve and validate Ably message identity, resolve the active Salvia
       account for every mutation, and require owned-Actor lookup before

@@ -32,6 +32,9 @@ type Config struct {
 	RedisDB       int
 
 	AblyServiceAPIKey                 string
+	AblyCommandSubscribeAPIKey        string
+	AblyAccountEventPublishAPIKey     string
+	AblyAccountControlSubscribeAPIKey string
 	ConnectorCommandChannel           string
 	ConnectorAccountEventNamespace    string
 	ConnectorAccountControlChannel    string
@@ -74,6 +77,9 @@ func Load(lookup LookupFunc) (Config, error) {
 		RedisAddr:                         get(lookup, "REDIS_ADDR", "localhost:6379"),
 		RedisPassword:                     get(lookup, "REDIS_PASSWORD", ""),
 		AblyServiceAPIKey:                 get(lookup, "ABLY_ROSMARINUS_API_KEY", ""),
+		AblyCommandSubscribeAPIKey:        get(lookup, "ABLY_COMMAND_SUBSCRIBE_API_KEY", ""),
+		AblyAccountEventPublishAPIKey:     get(lookup, "ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY", ""),
+		AblyAccountControlSubscribeAPIKey: get(lookup, "ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY", ""),
 		ConnectorCommandChannel:           get(lookup, "CONNECTOR_COMMAND_CHANNEL", "rosmarinus:commands"),
 		ConnectorAccountEventNamespace:    get(lookup, "CONNECTOR_ACCOUNT_EVENT_NAMESPACE", "rosmarinus:accounts"),
 		ConnectorAccountControlChannel:    get(lookup, "CONNECTOR_ACCOUNT_CONTROL_CHANNEL", "rosmarinus:control:accounts"),
@@ -114,6 +120,27 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func (c Config) CommandSubscribeAPIKey() string {
+	return firstNonEmpty(c.AblyCommandSubscribeAPIKey, c.AblyServiceAPIKey)
+}
+
+func (c Config) AccountEventPublishAPIKey() string {
+	return firstNonEmpty(c.AblyAccountEventPublishAPIKey, c.AblyServiceAPIKey)
+}
+
+func (c Config) AccountControlSubscribeAPIKey() string {
+	return firstNonEmpty(c.AblyAccountControlSubscribeAPIKey, c.AblyServiceAPIKey)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (c Config) Validate() error {

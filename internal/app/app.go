@@ -146,33 +146,41 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	var connectorControlSource *connector.AblyCommandSource
 	var connectorControl *connector.AccountControlHandler
 	var connectorAccountReconciler *connector.AccountReconciler
-	if cfg.AblyServiceAPIKey != "" {
-		connectorPublisher, err = connector.NewAblyPublisher(cfg.AblyServiceAPIKey, cfg.ConnectorAccountEventNamespace)
+	if key := cfg.AccountEventPublishAPIKey(); key != "" {
+		connectorPublisher, err = connector.NewAblyPublisher(key, cfg.ConnectorAccountEventNamespace)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector publisher: %w", err)
 		}
-		connectorCommandSource, err = connector.NewAblyCommandSource(cfg.AblyServiceAPIKey, cfg.ConnectorCommandChannel)
+		logger.Printf("connector: ably account publisher ready namespace=%s", cfg.ConnectorAccountEventNamespace)
+	}
+	if key := cfg.CommandSubscribeAPIKey(); key != "" {
+		connectorCommandSource, err = connector.NewAblyCommandSource(key, cfg.ConnectorCommandChannel)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector command source: %w", err)
 		}
-		connectorControlSource, err = connector.NewAblyCommandSource(cfg.AblyServiceAPIKey, cfg.ConnectorAccountControlChannel)
+		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, actorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
+	}
+	if key := cfg.AccountControlSubscribeAPIKey(); key != "" {
+		connectorControlSource, err = connector.NewAblyCommandSource(key, cfg.ConnectorAccountControlChannel)
 		if err != nil {
 			_ = mongoClient.Disconnect(context.Background())
 			_ = redisClient.Close()
 			_ = queueClient.Close()
-			connectorCommandSource.Close()
+			if connectorCommandSource != nil {
+				connectorCommandSource.Close()
+			}
 			return nil, fmt.Errorf("create ably connector account control source: %w", err)
 		}
-		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, actorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
 		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, actorRepo, logger)
+	}
+	if connectorCommandSource != nil || connectorControlSource != nil {
 		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, actorRepo, actorRepo, logger)
-		logger.Printf("connector: ably account publisher ready namespace=%s", cfg.ConnectorAccountEventNamespace)
 	}
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)

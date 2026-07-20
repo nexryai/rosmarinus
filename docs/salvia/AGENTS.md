@@ -153,7 +153,9 @@ Do not accept `clientId`, account ID, Actor ID, or channel names from the token
 request. Derive them from the authenticated session and database. Never expose
 an Ably API key or signing secret to browser code. Keep browser-token signing
 credentials separate from the server credential that publishes account
-authorization control messages.
+authorization control messages. Rosmarinus also uses separate least-privilege
+credentials for command subscription, account-event publishing, and
+account-control subscription.
 
 Use the Ably SDK's `authUrl` or `authCallback` renewal flow. Subscribe to the
 account event channel before publishing a command whenever the UI needs its

@@ -102,14 +102,17 @@ Default channels are:
 | `rosmarinus:accounts:{accountId}:events` | Rosmarinus | That account's browser clients |
 | `rosmarinus:control:accounts` | Salvia backend | Rosmarinus |
 
-Use three least-privilege Ably keys:
+Use five least-privilege Ably keys:
 
 1. Salvia browser-token issuer key: tokens may publish to
    `rosmarinus:commands` and subscribe only to the authenticated account's
    exact event channel.
 2. Salvia control key: publish only to `rosmarinus:control:accounts`.
-3. Rosmarinus service key: subscribe to command/control channels and publish
-   to account event channels.
+3. Rosmarinus command key: subscribe only to `rosmarinus:commands`.
+4. Rosmarinus account-event key: publish only to
+   `rosmarinus:accounts:*:events`.
+5. Rosmarinus account-control key: subscribe only to
+   `rosmarinus:control:accounts`.
 
 Salvia sets a non-wildcard `x-ably-clientId` and explicit capabilities in every
 short-lived browser JWT. The browser never receives an API key, wildcard
@@ -199,7 +202,10 @@ eventually repaired from MongoDB.
 
 | Variable | Default |
 | --- | --- |
-| `ABLY_ROSMARINUS_API_KEY` | empty; Connector disabled |
+| `ABLY_COMMAND_SUBSCRIBE_API_KEY` | empty; command subscription disabled |
+| `ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY` | empty; account-event publishing disabled |
+| `ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY` | empty; account-control subscription disabled |
+| `ABLY_ROSMARINUS_API_KEY` | empty; deprecated fallback for each unset role-specific key |
 | `CONNECTOR_COMMAND_CHANNEL` | `rosmarinus:commands` |
 | `CONNECTOR_ACCOUNT_EVENT_NAMESPACE` | `rosmarinus:accounts` |
 | `CONNECTOR_ACCOUNT_CONTROL_CHANNEL` | `rosmarinus:control:accounts` |
