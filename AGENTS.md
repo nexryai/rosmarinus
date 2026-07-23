@@ -38,8 +38,21 @@
 - Keep `test/federation/misskey_test.go` organized into clearly labeled phase
   comments. Each phase comment must state the federation behavior being
   exercised and the outcome it verifies.
-- Update the Misskey federation workflow when adding behavior that can be
-  verified through the existing real-server fixture.
+- For every implementation checkpoint, assess whether the behavior can be
+  verified through the existing real-Misskey fixture. When it can, update
+  `test/federation/misskey_test.go` and its workflow documentation in the same
+  checkpoint.
+
+## Salvia Integration Documentation
+
+- For every implementation checkpoint, assess whether it changes an Ably
+  command or event, a shared MongoDB read contract, account/Actor ownership,
+  authorization behavior, or federation state consumed by Salvia.
+- When it does, update the applicable handoff documents in the same checkpoint:
+  `docs/salvia-integration.md`, `docs/salvia/AGENTS.md`, and/or
+  `docs/salvia/PLANS.md`.
+- Do not change Salvia documents for internal-only implementation details that
+  leave the integration contract unchanged.
 
 ## Git Workflow
 

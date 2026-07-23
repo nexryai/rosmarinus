@@ -31,6 +31,23 @@ Rosmarinus implementation semantics.
   behavior. Unit tests remain required for edge cases; the Docker federation
   test verifies the corresponding end-to-end interoperability path when the
   behavior can be exercised through Misskey's public API.
+- Review every implementation checkpoint for Salvia integration impact. When a
+  change affects Ably commands/events, shared MongoDB projections, ownership or
+  authorization rules, or federation state consumed by Salvia, update the
+  applicable `docs/salvia-integration.md`, `docs/salvia/AGENTS.md`, and
+  `docs/salvia/PLANS.md` handoff documents in the same checkpoint.
+
+## Implementation Checkpoint Definition Of Done
+
+- [ ] Focused unit/integration tests cover the changed behavior.
+- [ ] If the behavior is observable through the existing real-Misskey fixture,
+      `test/federation/misskey_test.go` includes or updates a clearly commented
+      phase and the federation workflow documentation remains accurate.
+- [ ] If the Salvia integration contract changes, the applicable Salvia
+      handoff documents are updated; otherwise the change is confirmed to be
+      internal-only.
+- [ ] Formatting, tests, and relevant static checks pass before a signed
+      commit is created.
 
 ## Concorde Behavior To Preserve
 
