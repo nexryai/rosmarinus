@@ -164,6 +164,17 @@ func (r *FollowRepository) ListFollowers(ctx context.Context, followeeID string,
 	}), limit)
 }
 
+func (r *FollowRepository) ListFollowersPage(ctx context.Context, followeeID, afterID string, limit int) ([]follows.Follow, error) {
+	filter := bson.M{
+		"followeeId": followeeID,
+		"deletedAt":  nil,
+	}
+	if afterID != "" {
+		filter["_id"] = bson.M{"$gt": afterID}
+	}
+	return r.findManyByID(ctx, acceptedFollowFilter(filter), limit)
+}
+
 func (r *FollowRepository) ListFollowing(ctx context.Context, followerID string, limit int) ([]follows.Follow, error) {
 	return r.findMany(ctx, acceptedFollowFilter(bson.M{
 		"followerId": followerID,
@@ -188,6 +199,29 @@ func (r *FollowRepository) findMany(ctx context.Context, filter bson.M, limit in
 	}
 	cursor, err := r.collection.Find(ctx, filter, options.Find().
 		SetSort(bson.D{{Key: "createdAt", Value: -1}}).
+		SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var docs []followDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	out := make([]follows.Follow, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, *toFollow(doc))
+	}
+	return out, nil
+}
+
+func (r *FollowRepository) findManyByID(ctx context.Context, filter bson.M, limit int) ([]follows.Follow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 10
+	}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().
+		SetSort(bson.D{{Key: "_id", Value: 1}}).
 		SetLimit(int64(limit)))
 	if err != nil {
 		return nil, err

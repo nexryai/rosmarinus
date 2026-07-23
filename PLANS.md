@@ -472,8 +472,9 @@ when an Ably notification is missed.
 - [x] Deliver basic local public/home/followers `Create(Note)` activities from
       `post.create` to accepted remote followers, preferring and deduplicating
       shared inboxes.
-- [ ] Paginate local post fan-out beyond the initial follower batch and deliver
-      specified-visibility posts only to their resolved remote recipients.
+- [x] Paginate local post fan-out beyond the initial follower batch.
+- [ ] Deliver specified-visibility posts only to their resolved remote
+      recipients.
 - [ ] Handle Next.js-driven notification read state commands.
 
 ## Shared MongoDB Ownership Boundary

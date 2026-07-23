@@ -651,30 +651,36 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 	if h.follows == nil || h.queue == nil {
 		return fmt.Errorf("follow repository and queue are required for post delivery")
 	}
-	followers, err := h.follows.ListFollowers(ctx, actor.ID, postDeliveryFollowerLimit)
-	if err != nil {
-		return fmt.Errorf("list followers for post delivery: %w", err)
-	}
 	activity := renderCreateNote(actor, note)
-	destinations := make(map[string]struct{}, len(followers))
-	for _, follow := range followers {
-		inbox := strings.TrimSpace(follow.FollowerSharedInbox)
-		if inbox == "" {
-			inbox = strings.TrimSpace(follow.FollowerInbox)
+	destinations := make(map[string]struct{})
+	afterID := ""
+	for {
+		followers, err := h.follows.ListFollowersPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
+		if err != nil {
+			return fmt.Errorf("list followers for post delivery: %w", err)
 		}
-		if inbox == "" {
-			continue
+		for _, follow := range followers {
+			inbox := strings.TrimSpace(follow.FollowerSharedInbox)
+			if inbox == "" {
+				inbox = strings.TrimSpace(follow.FollowerInbox)
+			}
+			if inbox == "" {
+				continue
+			}
+			if _, exists := destinations[inbox]; exists {
+				continue
+			}
+			destinations[inbox] = struct{}{}
+			task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+			if err := h.queue.Enqueue(ctx, task); err != nil {
+				return fmt.Errorf("enqueue Create(Note) delivery to %s: %w", inbox, err)
+			}
 		}
-		if _, exists := destinations[inbox]; exists {
-			continue
+		if len(followers) < postDeliveryFollowerLimit {
+			return nil
 		}
-		destinations[inbox] = struct{}{}
-		task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
-		if err := h.queue.Enqueue(ctx, task); err != nil {
-			return fmt.Errorf("enqueue Create(Note) delivery to %s: %w", inbox, err)
-		}
+		afterID = followers[len(followers)-1].ID
 	}
-	return nil
 }
 
 func renderCreateNote(actor *actors.Actor, note *domainnotes.Note) map[string]any {

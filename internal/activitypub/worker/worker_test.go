@@ -9,6 +9,8 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -162,6 +164,24 @@ func (f *fakeFollowRepo) ListFollowers(ctx context.Context, followeeID string, l
 		}
 	}
 	return result, nil
+}
+
+func (f *fakeFollowRepo) ListFollowersPage(ctx context.Context, followeeID, afterID string, limit int) ([]follows.Follow, error) {
+	result, err := f.ListFollowers(ctx, followeeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	page := make([]follows.Follow, 0, limit)
+	for _, follow := range result {
+		if follow.ID > afterID {
+			page = append(page, follow)
+			if len(page) == limit {
+				break
+			}
+		}
+	}
+	return page, nil
 }
 
 func (f *fakeFollowRepo) Upsert(ctx context.Context, follow follows.Follow) (*follows.Follow, error) {
@@ -920,6 +940,42 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	object, ok := delivery.Object["object"].(map[string]any)
 	if !ok || object["type"] != "Note" || object["id"] != note.URI || object["content"] != note.Text {
 		t.Fatalf("unexpected Note object: %#v", delivery.Object["object"])
+	}
+}
+
+func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	followRepo := &fakeFollowRepo{}
+	for i := 0; i < postDeliveryFollowerLimit*2+5; i++ {
+		id := fmt.Sprintf("follow-%03d", i)
+		_, err := followRepo.Upsert(context.Background(), follows.Follow{
+			ID:                  id,
+			FollowerID:          "remote-" + id,
+			FolloweeID:          local.ID,
+			FollowerURI:         "https://remote.example/users/" + id,
+			FolloweeURI:         local.URI,
+			FollowerSharedInbox: "https://remote.example/inbox/" + id,
+			Status:              follows.StatusAccepted,
+		})
+		if err != nil {
+			t.Fatalf("Upsert follow %d returned error: %v", i, err)
+		}
+	}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID,
+		NoteID:  "paginated-note",
+		Text:    "hello everyone",
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	if len(q.tasks) != postDeliveryFollowerLimit*2+5 {
+		t.Fatalf("delivery task count = %d, want %d", len(q.tasks), postDeliveryFollowerLimit*2+5)
 	}
 }
 
