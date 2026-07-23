@@ -59,7 +59,7 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
-	mux.HandleFunc("/notes/", noteByID(noteLookup))
+	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
@@ -246,7 +246,7 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLo
 	}
 }
 
-func noteByID(noteLookup NoteLookup) http.HandlerFunc {
+func noteByID(cfg config.Config, noteLookup NoteLookup) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -271,8 +271,21 @@ func noteByID(noteLookup NoteLookup) http.HandlerFunc {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		if note.Visibility != domainnotes.VisibilityPublic && note.Visibility != domainnotes.VisibilityHome {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		localURI := strings.TrimRight(cfg.PublicURL, "/") + "/notes/" + url.PathEscape(note.ID)
 		if len(parts) == 2 {
+			if note.URI != localURI {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			writeActivityJSON(w, apnotes.RenderCreate(note))
+			return
+		}
+		if note.URI != localURI {
+			http.Redirect(w, r, note.URI, http.StatusFound)
 			return
 		}
 		writeActivityJSON(w, apnotes.Render(note))

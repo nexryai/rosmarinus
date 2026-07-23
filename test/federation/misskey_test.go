@@ -181,8 +181,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 5: publish a public Rosmarinus note and verify the accepted Misskey
-	// follower receives and stores the delivered Create(Note).
+	// Phase 5: publish a public Rosmarinus note, dereference its Create activity,
+	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
@@ -195,6 +195,11 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("create local Rosmarinus post: %v", err)
 	}
 	t.Logf("Rosmarinus local note created note_id=%s uri=%s", createdLocal.NoteID, createdLocal.URI)
+	var publicActivity map[string]any
+	misskey.get(ctx, createdLocal.URI+"/activity", &publicActivity)
+	if publicActivity["type"] != "Create" || publicActivity["actor"] != localActor.URI {
+		t.Fatalf("unexpected public Create activity: %#v", publicActivity)
+	}
 	var misskeyLocalNoteID string
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
@@ -236,9 +241,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 7: publish a specified-visibility note, verify its public Create
-	// resource carries only the intended audience, and confirm that the
-	// non-following Misskey recipient receives it through its individual inbox.
+	// Phase 7: publish a specified-visibility note, verify it is not publicly
+	// dereferenceable, and confirm that the non-following Misskey recipient
+	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"
 	const specifiedNoteText = "Private hello from Rosmarinus"
 	directRecipientURI := "https://a.test/users/" + directRecipient.ID
@@ -253,14 +258,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("create specified Rosmarinus post: %v", err)
 	}
 	t.Logf("Rosmarinus specified note created note_id=%s uri=%s recipient=%s", createdSpecified.NoteID, createdSpecified.URI, directRecipientURI)
-	var specifiedActivity map[string]any
-	misskey.get(ctx, createdSpecified.URI+"/activity", &specifiedActivity)
-	if specifiedActivity["type"] != "Create" || specifiedActivity["actor"] != localActor.URI {
-		t.Fatalf("unexpected specified Create activity: %#v", specifiedActivity)
-	}
-	to, ok := specifiedActivity["to"].([]any)
-	if !ok || len(to) != 1 || to[0] != directRecipientURI {
-		t.Fatalf("specified Create audience = %#v", specifiedActivity["to"])
+	if status := misskey.getStatus(ctx, createdSpecified.URI+"/activity"); status != http.StatusNotFound {
+		t.Fatalf("specified Create activity status = %d, want %d", status, http.StatusNotFound)
 	}
 	waitFor(t, ctx, "specified Create(Note) stored for Misskey recipient", func() bool {
 		var notes []struct {
@@ -376,6 +375,24 @@ func (m *misskeyClient) get(ctx context.Context, uri string, result any) {
 	if err := json.Unmarshal(responseBody, result); err != nil {
 		m.t.Fatalf("decode ActivityPub GET response: %v", err)
 	}
+}
+
+func (m *misskeyClient) getStatus(ctx context.Context, uri string) int {
+	m.t.Helper()
+	m.t.Logf("ActivityPub status request uri=%s", uri)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		m.t.Fatalf("create ActivityPub status request: %v", err)
+	}
+	req.Header.Set("Accept", "application/activity+json")
+	res, err := m.httpClient.Do(req)
+	if err != nil {
+		m.t.Fatalf("ActivityPub status request %s: %v", uri, err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
+	m.t.Logf("ActivityPub status response uri=%s status=%s", uri, res.Status)
+	return res.StatusCode
 }
 
 func loggableMisskeyResponse(body []byte) string {

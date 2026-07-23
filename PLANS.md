@@ -830,8 +830,8 @@ must write to MongoDB.
 
 - [ ] `activitypub.ts / Minimum Note` full equivalent with all Concorde note
       side effects.
-- [ ] `fetch-resource.ts / /notes/:id` exact Concorde local-vs-remote redirect
-      semantics once local note ownership exists.
+- [x] `fetch-resource.ts / /notes/:id` Concorde-compatible local-vs-remote
+      redirect and public/home visibility behavior.
 - [ ] `fetch-resource.ts / HTML`, root/docs/assets, RSS/ATOM/JSON feeds:
       out of scope for Rosmarinus unless a future federation requirement needs
       them.

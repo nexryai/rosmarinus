@@ -380,8 +380,8 @@ func TestNoteByID(t *testing.T) {
 	rec := httptest.NewRecorder()
 	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
 		ID:             "note-id",
-		URI:            "https://remote.example/notes/1",
-		AttributedTo:   "https://remote.example/users/alice",
+		URI:            "https://example.test/notes/note-id",
+		AttributedTo:   "https://example.test/users/alice",
 		Text:           "hello",
 		ContentWarning: &cw,
 		InReplyToURI:   "https://remote.example/notes/root",
@@ -404,7 +404,7 @@ func TestNoteByID(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/activity+json") {
 		t.Fatalf("Content-Type = %q", got)
 	}
-	if !strings.Contains(rec.Body.String(), `"id":"https://remote.example/notes/1"`) {
+	if !strings.Contains(rec.Body.String(), `"id":"https://example.test/notes/note-id"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `"_misskey_content":"hello"`) {
@@ -439,7 +439,7 @@ func TestNoteActivityByID(t *testing.T) {
 		URI:          "https://example.test/notes/note-id",
 		AttributedTo: "https://example.test/users/alice",
 		Text:         "hello",
-		Visibility:   domainnotes.VisibilityFollowers,
+		Visibility:   domainnotes.VisibilityPublic,
 		CreatedAt:    time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC),
 	}}
 	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil).ServeHTTP(rec, req)
@@ -458,6 +458,46 @@ func TestNoteActivityByID(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
 		}
+	}
+}
+
+func TestRemoteNoteByIDRedirectsToCanonicalURI(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/notes/remote-note", nil)
+	rec := httptest.NewRecorder()
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID:         "remote-note",
+		URI:        "https://remote.example/notes/1",
+		Visibility: domainnotes.VisibilityPublic,
+	}}
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if location := rec.Header().Get("Location"); location != "https://remote.example/notes/1" {
+		t.Fatalf("Location = %q", location)
+	}
+}
+
+func TestNoteEndpointsDoNotExposePrivateVisibility(t *testing.T) {
+	for _, visibility := range []domainnotes.Visibility{
+		domainnotes.VisibilityFollowers,
+		domainnotes.VisibilitySpecified,
+	} {
+		t.Run(string(visibility), func(t *testing.T) {
+			noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+				ID:         "private-note",
+				URI:        "https://example.test/notes/private-note",
+				Visibility: visibility,
+			}}
+			for _, path := range []string{"/notes/private-note", "/notes/private-note/activity"} {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				rec := httptest.NewRecorder()
+				NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil).ServeHTTP(rec, req)
+				if rec.Code != http.StatusNotFound {
+					t.Fatalf("path=%s status=%d body=%s", path, rec.Code, rec.Body.String())
+				}
+			}
+		})
 	}
 }
 
