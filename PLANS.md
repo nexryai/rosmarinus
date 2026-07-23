@@ -411,12 +411,11 @@ when an Ably notification is missed.
       Actor-bound handlers must use this operation instead of first loading an
       Actor and checking ownership later.
 - [x] Require the implemented Actor-bound commands to name the acting/target
-      local Actor,
-      then authorize it against the account resolved from
-      `message.ClientID`. This includes `post.create`, `follow.approve`, and
-      `follow.reject`.
-- [ ] Apply the same owned-Actor authorization to future follow/reaction
-      commands and Actor update/delete when those commands are implemented.
+      local Actor, then authorize it against the account resolved from
+      `message.ClientID`. This includes `post.create`, `follow.create`,
+      `reaction.create`, `follow.approve`, and `follow.reject`.
+- [ ] Apply the same owned-Actor authorization to future Actor update/delete
+      commands when those commands are implemented.
 - [x] Add `actor.create`. Rosmarinus generates the Actor ID, URI, and key pair,
       and derives `ownerAccountId` from the authenticated account; the browser
       cannot supply or override the owner.
@@ -486,6 +485,9 @@ when an Ably notification is missed.
       `Follow` from the account-owned local Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
+- [x] Handle Next.js-driven `reaction.create` commands by checking Note
+      visibility, storing the reaction, and delivering a Misskey-compatible
+      `Like` to the remote author.
 - [x] Deliver basic local public/home/followers `Create(Note)` activities from
       `post.create` to accepted remote followers, preferring and deduplicating
       shared inboxes.

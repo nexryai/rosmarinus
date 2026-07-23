@@ -160,6 +160,26 @@ Rosmarinus-owned `follows` collection for authoritative status: the relationship
 changes to `accepted` only after Rosmarinus verifies and processes the remote
 `Accept(Follow)`. A remote `Reject(Follow)` removes the pending relationship.
 
+To react to a Rosmarinus-stored remote Note, publish `reaction.create` with the
+owned local Actor in `actor_id`:
+
+```json
+{
+  "version": 1,
+  "request_id": "request-01J...",
+  "actor_id": "actor-01J...",
+  "data": {
+    "note_id": "remote-note-id",
+    "reaction": "👍"
+  }
+}
+```
+
+Rosmarinus verifies Actor ownership and Note visibility, stores the reaction,
+and enqueues a Misskey-compatible `Like` to the remote author's individual
+inbox. `command.succeeded.data.result` contains `reaction_id`, `note_id`,
+`reaction`, and the dereferenceable local `uri`. MongoDB remains canonical.
+
 `actor.create` omits `actor_id` because the Actor does not exist yet:
 
 ```json

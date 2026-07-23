@@ -1066,6 +1066,95 @@ func TestCreatePostRejectsSpecifiedPostWithoutRecipients(t *testing.T) {
 	}
 }
 
+func TestCreateReactionStoresAndDeliversLike(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{
+		ID:  "relay",
+		URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:    "remote-alice",
+		Host:  &remoteHost,
+		URI:   "https://remote.example/users/alice",
+		Inbox: "https://remote.example/users/alice/inbox",
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"remote-note": {
+			ID:           "remote-note",
+			URI:          "https://remote.example/notes/1",
+			AttributedTo: remote.URI,
+			AuthorID:     remote.ID,
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	reactionRepo := &fakeReactionRepo{}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, q, &fakeClient{}, local)
+	created, err := h.CreateReaction(context.Background(), connector.ReactionCreateCommand{
+		ActorID:  local.ID,
+		NoteID:   "remote-note",
+		Reaction: " 👍 ",
+	})
+	if err != nil {
+		t.Fatalf("CreateReaction returned error: %v", err)
+	}
+	if created.ReactionID == "" || created.NoteID != "remote-note" || created.Reaction != "👍" || created.URI != "https://rosmarinus.example/likes/"+created.ReactionID {
+		t.Fatalf("created reaction = %+v", created)
+	}
+	stored, err := reactionRepo.Find(context.Background(), "remote-note", local.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("stored reaction = %+v, err=%v", stored, err)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d, want 1", len(q.tasks))
+	}
+	delivery, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok {
+		t.Fatalf("delivery payload type = %T", q.tasks[0].Payload)
+	}
+	if delivery.ActorID != local.ID || delivery.To != remote.Inbox || delivery.Object["type"] != "Like" || delivery.Object["object"] != stored.NoteURI || delivery.Object["_misskey_reaction"] != "👍" {
+		t.Fatalf("delivery = %+v", delivery)
+	}
+}
+
+func TestCreateReactionRejectsNoteInvisibleToActor(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{
+		ID:    "remote-alice",
+		Host:  &remoteHost,
+		URI:   "https://remote.example/users/alice",
+		Inbox: "https://remote.example/users/alice/inbox",
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"private-note": {
+			ID:           "private-note",
+			URI:          "https://remote.example/notes/private",
+			AttributedTo: remote.URI,
+			AuthorID:     remote.ID,
+			Visibility:   domainnotes.VisibilitySpecified,
+			MentionURIs:  []string{"https://elsewhere.example/users/bob"},
+		},
+	}}
+	reactionRepo := &fakeReactionRepo{}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, q, &fakeClient{}, local)
+	_, err := h.CreateReaction(context.Background(), connector.ReactionCreateCommand{
+		ActorID:  local.ID,
+		NoteID:   "private-note",
+		Reaction: "👍",
+	})
+	if err == nil {
+		t.Fatal("expected invisible Note reaction to fail")
+	}
+	if len(reactionRepo.reactions) != 0 || len(q.tasks) != 0 {
+		t.Fatalf("invisible reaction mutated state: reactions=%+v tasks=%+v", reactionRepo.reactions, q.tasks)
+	}
+}
+
 func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
 	repo := &fakeRepo{}
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)

@@ -17,6 +17,7 @@ const (
 	CommandFollowReject         = "follow.reject"
 	CommandFollowCreate         = "follow.create"
 	CommandPostCreate           = "post.create"
+	CommandReactionCreate       = "reaction.create"
 	CommandActorCreate          = "actor.create"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
@@ -52,6 +53,7 @@ type CommandExecutor interface {
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
+	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
 }
 
@@ -110,6 +112,24 @@ type PostCreateCommand struct {
 	Hashtags       []string
 }
 
+type ReactionCreateData struct {
+	NoteID   string `json:"note_id"`
+	Reaction string `json:"reaction"`
+}
+
+type ReactionCreateCommand struct {
+	ActorID  string
+	NoteID   string
+	Reaction string
+}
+
+type ReactionCreated struct {
+	ReactionID string `json:"reaction_id" bson:"reaction_id"`
+	NoteID     string `json:"note_id" bson:"note_id"`
+	Reaction   string `json:"reaction" bson:"reaction"`
+	URI        string `json:"uri" bson:"uri"`
+}
+
 type ActorCreateData struct {
 	Username string `json:"username"`
 	Name     string `json:"name,omitempty"`
@@ -149,7 +169,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate}
+	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandActorCreate}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -351,6 +371,20 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			Hashtags:       command.Hashtags,
 		})
 		return result, actorID, err
+	case CommandReactionCreate:
+		var command ReactionCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.NoteID) == "" || strings.TrimSpace(command.Reaction) == "" {
+			return nil, actorID, fmt.Errorf("note_id and reaction are required")
+		}
+		result, err := h.executor.CreateReaction(ctx, ReactionCreateCommand{
+			ActorID:  actorID,
+			NoteID:   command.NoteID,
+			Reaction: command.Reaction,
+		})
+		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -398,7 +432,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandActorCreate:
+	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandActorCreate:
 		return true
 	default:
 		return false

@@ -15,6 +15,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
+	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
@@ -657,6 +658,91 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) CreateReaction(ctx context.Context, command connector.ReactionCreateCommand) (connector.ReactionCreated, error) {
+	if h.notes == nil || h.reactions == nil || h.queue == nil {
+		return connector.ReactionCreated{}, fmt.Errorf("note repository, reaction repository, and queue are required")
+	}
+	actor, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
+	if actor == nil {
+		return connector.ReactionCreated{}, fmt.Errorf("local actor not found: %s", command.ActorID)
+	}
+	note, err := h.notes.FindByID(ctx, strings.TrimSpace(command.NoteID))
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
+	if note == nil {
+		return connector.ReactionCreated{}, fmt.Errorf("note not found: %s", command.NoteID)
+	}
+	allowed, err := h.canReactToNote(ctx, actor, note)
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
+	if !allowed {
+		return connector.ReactionCreated{}, fmt.Errorf("note is not visible to actor")
+	}
+	reactionValue := strings.TrimSpace(command.Reaction)
+	if reactionValue == "" {
+		return connector.ReactionCreated{}, fmt.Errorf("reaction is required")
+	}
+	recipient, err := h.repo.FindByURI(ctx, note.AttributedTo)
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
+	if recipient == nil || recipient.Host == nil {
+		return connector.ReactionCreated{}, fmt.Errorf("reaction target author is not remote")
+	}
+	inbox := strings.TrimSpace(recipient.Inbox)
+	if inbox == "" {
+		return connector.ReactionCreated{}, fmt.Errorf("reaction target inbox is empty")
+	}
+	stored, err := h.reactions.Upsert(ctx, reactions.Reaction{
+		NoteID:    note.ID,
+		NoteURI:   note.URI,
+		ActorID:   actor.ID,
+		ActorURI:  actor.URI,
+		ActorHost: actor.Host,
+		Reaction:  reactionValue,
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
+	activity := apreactions.RenderLike(h.cfg.PublicURL, stored)
+	task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return connector.ReactionCreated{}, fmt.Errorf("enqueue Like delivery: %w", err)
+	}
+	return connector.ReactionCreated{
+		ReactionID: stored.ID,
+		NoteID:     stored.NoteID,
+		Reaction:   stored.Reaction,
+		URI:        activity["id"].(string),
+	}, nil
+}
+
+func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) (bool, error) {
+	switch note.Visibility {
+	case domainnotes.VisibilityPublic, domainnotes.VisibilityHome:
+		return true, nil
+	case domainnotes.VisibilityFollowers:
+		if h.follows == nil {
+			return false, nil
+		}
+		follow, err := h.follows.Find(ctx, actor.ID, note.AuthorID)
+		return err == nil && follow != nil && follow.Status == follows.StatusAccepted, err
+	case domainnotes.VisibilitySpecified:
+		for _, uri := range note.MentionURIs {
+			if uri == actor.URI {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, mentionURIs []string) ([]*actors.Actor, []string, error) {

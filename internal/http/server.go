@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
+	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -102,18 +103,9 @@ func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteL
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		writeActivityJSON(w, map[string]any{
-			"@context": []any{
-				"https://www.w3.org/ns/activitystreams",
-				"https://w3id.org/security/v1",
-			},
-			"id":                strings.TrimRight(cfg.PublicURL, "/") + "/likes/" + url.PathEscape(reaction.ID),
-			"type":              "Like",
-			"actor":             reaction.ActorURI,
-			"object":            note.URI,
-			"content":           reaction.Reaction,
-			"_misskey_reaction": reaction.Reaction,
-		})
+		renderReaction := *reaction
+		renderReaction.NoteURI = note.URI
+		writeActivityJSON(w, apreactions.RenderLike(cfg.PublicURL, &renderReaction))
 	}
 }
 

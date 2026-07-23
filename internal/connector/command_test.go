@@ -52,6 +52,8 @@ type fakeCommandExecutor struct {
 	rejectedFolloweeID string
 	postCommand        PostCreateCommand
 	postCalls          int
+	reactionCommand    ReactionCreateCommand
+	reactionCalls      int
 	err                error
 }
 
@@ -81,6 +83,18 @@ func (f *fakeCommandExecutor) CreatePost(ctx context.Context, command PostCreate
 	f.postCalls++
 	f.postCommand = command
 	return PostCreated{AccountID: "account-1", ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, f.err
+}
+
+func (f *fakeCommandExecutor) CreateReaction(ctx context.Context, command ReactionCreateCommand) (ReactionCreated, error) {
+	_ = ctx
+	f.reactionCalls++
+	f.reactionCommand = command
+	return ReactionCreated{
+		ReactionID: "reaction-created",
+		NoteID:     command.NoteID,
+		Reaction:   command.Reaction,
+		URI:        "https://example.test/likes/reaction-created",
+	}, f.err
 }
 
 func (f *fakeCommandExecutor) CreateActor(ctx context.Context, accountID string, command ActorCreateCommand) (ActorCreated, error) {
@@ -194,12 +208,31 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 5 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandActorCreate {
+	if len(source.names) != 6 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandReactionCreate || source.names[5] != CommandActorCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
 		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
+	}
+}
+
+func TestCommandHandlerCreatesReactionAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandReactionCreate, "request-reaction", "actor-2", ReactionCreateData{
+		NoteID:   "remote-note",
+		Reaction: "👍",
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.reactionCalls != 1 || executor.reactionCommand.ActorID != "actor-2" || executor.reactionCommand.NoteID != "remote-note" || executor.reactionCommand.Reaction != "👍" {
+		t.Fatalf("reaction command = %+v calls=%d", executor.reactionCommand, executor.reactionCalls)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandReactionCreate {
+		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
 	}
 }
 

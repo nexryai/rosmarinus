@@ -184,6 +184,10 @@ Use these Ably message names and payloads:
   `mention_uris`, and `hashtags`. When `visibility` is `specified`,
   `mention_uris` is required, must contain at least one Actor URI, and defines
   the direct recipients.
+- `follow.create`: `data` contains `target`, which is a Fediverse handle or an
+  absolute ActivityPub Actor URL.
+- `reaction.create`: `data` contains `note_id` and `reaction`; top-level
+  `actor_id` is the owned local Actor applying the reaction.
 - `follow.approve`: `data` contains `follower_id`; top-level `actor_id` is the
   local followee Actor.
 - `follow.reject`: the same addressing rules as `follow.approve`.
