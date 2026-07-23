@@ -607,6 +607,14 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
+	mentionURIs := command.MentionURIs
+	var specifiedRecipients []*actors.Actor
+	if visibility == domainnotes.VisibilitySpecified {
+		specifiedRecipients, mentionURIs, err = h.resolveSpecifiedRecipients(ctx, command.MentionURIs)
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
 	now := time.Now().UTC()
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
 	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
@@ -620,7 +628,7 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		InReplyToURI:   command.InReplyToURI,
 		QuoteURI:       command.QuoteURI,
 		Visibility:     visibility,
-		MentionURIs:    command.MentionURIs,
+		MentionURIs:    mentionURIs,
 		Hashtags:       command.Hashtags,
 		CreatedAt:      now,
 		PublishedAt:    &now,
@@ -628,7 +636,11 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
-	if note.Visibility != domainnotes.VisibilitySpecified {
+	if note.Visibility == domainnotes.VisibilitySpecified {
+		if err := h.enqueueSpecifiedCreateNoteDeliveries(ctx, actor, note, specifiedRecipients); err != nil {
+			return connector.PostCreated{}, err
+		}
+	} else {
 		if err := h.enqueueCreateNoteDeliveries(ctx, actor, note); err != nil {
 			return connector.PostCreated{}, err
 		}
@@ -645,6 +657,61 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, mentionURIs []string) ([]*actors.Actor, []string, error) {
+	if h.resolver == nil {
+		return nil, nil, fmt.Errorf("actor resolver is not configured")
+	}
+	recipients := make([]*actors.Actor, 0, len(mentionURIs))
+	uris := make([]string, 0, len(mentionURIs))
+	seen := make(map[string]struct{}, len(mentionURIs))
+	for _, rawURI := range mentionURIs {
+		uri := strings.TrimSpace(rawURI)
+		if uri == "" {
+			continue
+		}
+		if _, exists := seen[uri]; exists {
+			continue
+		}
+		recipient, err := h.resolver.ResolveActor(ctx, uri)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve specified recipient %s: %w", uri, err)
+		}
+		seen[uri] = struct{}{}
+		uris = append(uris, uri)
+		recipients = append(recipients, recipient)
+	}
+	if len(recipients) == 0 {
+		return nil, nil, fmt.Errorf("specified visibility requires at least one mention_uri")
+	}
+	return recipients, uris, nil
+}
+
+func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, recipients []*actors.Actor) error {
+	if h.queue == nil {
+		return fmt.Errorf("queue is required for specified post delivery")
+	}
+	activity := renderCreateNote(actor, note)
+	destinations := make(map[string]struct{}, len(recipients))
+	for _, recipient := range recipients {
+		if recipient == nil || recipient.Host == nil {
+			continue
+		}
+		inbox := strings.TrimSpace(recipient.Inbox)
+		if inbox == "" {
+			return fmt.Errorf("specified recipient inbox is empty: %s", recipient.URI)
+		}
+		if _, exists := destinations[inbox]; exists {
+			continue
+		}
+		destinations[inbox] = struct{}{}
+		task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		if err := h.queue.Enqueue(ctx, task); err != nil {
+			return fmt.Errorf("enqueue specified Create(Note) delivery to %s: %w", inbox, err)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) error {

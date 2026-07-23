@@ -11,7 +11,7 @@ func Render(note *domainnotes.Note) map[string]any {
 	if note.RenoteURI != "" && note.Text == "" && note.InReplyToURI == "" && len(note.Attachments) == 0 {
 		return RenderAnnounce(note)
 	}
-	to, cc := renderAudience(note.AttributedTo, note.Visibility)
+	to, cc := renderAudience(note.AttributedTo, note.Visibility, note.MentionURIs)
 	published := note.CreatedAt
 	if note.PublishedAt != nil {
 		published = *note.PublishedAt
@@ -52,7 +52,7 @@ func Render(note *domainnotes.Note) map[string]any {
 }
 
 func RenderAnnounce(note *domainnotes.Note) map[string]any {
-	to, cc := renderAudience(note.AttributedTo, note.Visibility)
+	to, cc := renderAudience(note.AttributedTo, note.Visibility, note.MentionURIs)
 	published := note.CreatedAt
 	if note.PublishedAt != nil {
 		published = *note.PublishedAt
@@ -68,7 +68,7 @@ func RenderAnnounce(note *domainnotes.Note) map[string]any {
 	})
 }
 
-func renderAudience(actorURI string, visibility domainnotes.Visibility) ([]string, []string) {
+func renderAudience(actorURI string, visibility domainnotes.Visibility, mentionURIs []string) ([]string, []string) {
 	followers := actorURI + "/followers"
 	switch visibility {
 	case domainnotes.VisibilityPublic:
@@ -77,6 +77,8 @@ func renderAudience(actorURI string, visibility domainnotes.Visibility) ([]strin
 		return []string{followers}, []string{PublicAudience}
 	case domainnotes.VisibilityFollowers:
 		return []string{followers}, []string{}
+	case domainnotes.VisibilitySpecified:
+		return mentionURIs, []string{}
 	default:
 		return []string{}, []string{}
 	}

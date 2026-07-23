@@ -181,7 +181,9 @@ Use these Ably message names and payloads:
   `name` and `type`.
 - `post.create`: `data` contains `note_id` and `text`, and may contain
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
-  `mention_uris`, and `hashtags`.
+  `mention_uris`, and `hashtags`. When `visibility` is `specified`,
+  `mention_uris` is required, must contain at least one Actor URI, and defines
+  the direct recipients.
 - `follow.approve`: `data` contains `follower_id`; top-level `actor_id` is the
   local followee Actor.
 - `follow.reject`: the same addressing rules as `follow.approve`.

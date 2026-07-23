@@ -473,7 +473,7 @@ when an Ably notification is missed.
       `post.create` to accepted remote followers, preferring and deduplicating
       shared inboxes.
 - [x] Paginate local post fan-out beyond the initial follower batch.
-- [ ] Deliver specified-visibility posts only to their resolved remote
+- [x] Deliver specified-visibility posts only to their resolved remote
       recipients.
 - [ ] Handle Next.js-driven notification read state commands.
 

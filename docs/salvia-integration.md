@@ -177,6 +177,12 @@ changes to `accepted` only after Rosmarinus verifies and processes the remote
 Rosmarinus generates the Actor ID, URI, and key pair and derives
 `ownerAccountId` from Ably `message.clientId` through `salvia_accounts`.
 
+For `post.create` with `visibility: "specified"`, `mention_uris` is the
+recipient list and must contain at least one Actor URI. Rosmarinus resolves
+every recipient before storing the note, places the deduplicated Actor URIs in
+the ActivityPub `to` audience, and delivers remote recipients to their
+individual inboxes rather than a shared inbox.
+
 ## Account invalidation and recovery
 
 After updating `salvia_accounts`, Salvia publishes:

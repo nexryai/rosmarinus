@@ -979,6 +979,84 @@ func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	}
 }
 
+func TestCreatePostDeliversSpecifiedPostToRemoteActorInbox(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{
+		ID:          "remote-bob",
+		Host:        &remoteHost,
+		URI:         "https://remote.example/users/bob",
+		Inbox:       "https://remote.example/users/bob/inbox",
+		SharedInbox: "https://remote.example/inbox",
+	}
+	noteRepo := &fakeNoteRepo{}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID:    local.ID,
+		NoteID:     "specified-note",
+		Text:       "hello Bob",
+		Visibility: string(domainnotes.VisibilitySpecified),
+		MentionURIs: []string{
+			" " + remote.URI + " ",
+			remote.URI,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d, want 1", len(q.tasks))
+	}
+	delivery, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok {
+		t.Fatalf("delivery payload type = %T", q.tasks[0].Payload)
+	}
+	if delivery.To != remote.Inbox {
+		t.Fatalf("delivery target = %q, want personal inbox %q", delivery.To, remote.Inbox)
+	}
+	object, ok := delivery.Object["object"].(map[string]any)
+	if !ok {
+		t.Fatalf("object = %#v", delivery.Object["object"])
+	}
+	to, ok := object["to"].([]string)
+	if !ok || len(to) != 1 || to[0] != remote.URI {
+		t.Fatalf("object audience = %#v", object["to"])
+	}
+	note, err := noteRepo.FindByID(context.Background(), "specified-note")
+	if err != nil || note == nil {
+		t.Fatalf("stored note = %#v, err=%v", note, err)
+	}
+	if len(note.MentionURIs) != 1 || note.MentionURIs[0] != remote.URI {
+		t.Fatalf("stored mention URIs = %#v", note.MentionURIs)
+	}
+}
+
+func TestCreatePostRejectsSpecifiedPostWithoutRecipients(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	noteRepo := &fakeNoteRepo{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{local: local}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID:    local.ID,
+		NoteID:     "invalid-specified-note",
+		Text:       "nobody",
+		Visibility: string(domainnotes.VisibilitySpecified),
+	})
+	if err == nil {
+		t.Fatal("expected specified post without recipients to fail")
+	}
+	note, findErr := noteRepo.FindByID(context.Background(), "invalid-specified-note")
+	if findErr != nil {
+		t.Fatalf("FindByID returned error: %v", findErr)
+	}
+	if note != nil {
+		t.Fatalf("invalid note was stored: %#v", note)
+	}
+}
+
 func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
 	repo := &fakeRepo{}
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
