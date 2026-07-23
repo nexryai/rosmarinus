@@ -25,6 +25,7 @@ import (
 
 type fakeActorLookup struct {
 	actor *actors.Actor
+	other *actors.Actor
 }
 
 type fakeQueueClient struct {
@@ -50,6 +51,17 @@ func (f fakeActorLookup) FindLocalByID(ctx context.Context, id string) (*actors.
 	_ = ctx
 	if f.actor != nil && f.actor.ID == id {
 		return f.actor, nil
+	}
+	return nil, nil
+}
+
+func (f fakeActorLookup) FindByID(ctx context.Context, id string) (*actors.Actor, error) {
+	_ = ctx
+	if f.actor != nil && f.actor.ID == id {
+		return f.actor, nil
+	}
+	if f.other != nil && f.other.ID == id {
+		return f.other, nil
 	}
 	return nil, nil
 }
@@ -440,6 +452,55 @@ func TestNoteActivityRejectsUnknownSubresource(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/notes/note-id/unknown", nil)
 	rec := httptest.NewRecorder()
 	NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{}, nil, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFollowByActorIDs(t *testing.T) {
+	remoteHost := "remote.example"
+	lookup := fakeActorLookup{
+		actor: &actors.Actor{
+			ID:   "local-alice",
+			URI:  "https://example.test/users/local-alice",
+			Host: nil,
+		},
+		other: &actors.Actor{
+			ID:   "remote-bob",
+			URI:  "https://remote.example/users/bob",
+			Host: &remoteHost,
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/follows/local-alice/remote-bob", nil)
+	rec := httptest.NewRecorder()
+	NewHandler(testConfig(), nil, lookup, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"id":"https://example.test/follows/local-alice/remote-bob"`,
+		`"type":"Follow"`,
+		`"actor":"https://example.test/users/local-alice"`,
+		`"object":"https://remote.example/users/bob"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=180" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+}
+
+func TestFollowByActorIDsRequiresLocalToRemoteDirection(t *testing.T) {
+	remoteHost := "remote.example"
+	lookup := fakeActorLookup{
+		actor: &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &remoteHost},
+		other: &actors.Actor{ID: "local-bob", URI: "https://example.test/users/local-bob"},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/follows/remote-alice/local-bob", nil)
+	rec := httptest.NewRecorder()
+	NewHandler(testConfig(), nil, lookup, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

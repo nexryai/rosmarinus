@@ -33,6 +33,14 @@
 - Use `github.com/go-fed/httpsig` for HTTP Signature signing and verification.
 - Preserve Concorde-compatible behavior where it matches real-world `@peertube/http-signature` federation behavior.
 
+## Federation Tests
+
+- Keep `test/federation/misskey_test.go` organized into clearly labeled phase
+  comments. Each phase comment must state the federation behavior being
+  exercised and the outcome it verifies.
+- Update the Misskey federation workflow when adding behavior that can be
+  verified through the existing real-server fixture.
+
 ## Git Workflow
 
 - Make git commits at coherent implementation checkpoints after tests pass.

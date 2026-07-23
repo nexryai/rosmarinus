@@ -171,6 +171,17 @@ func (r *ActorRepository) FindLocalByID(ctx context.Context, id string) (*actors
 	})
 }
 
+func (r *ActorRepository) FindByID(ctx context.Context, id string) (*actors.Actor, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{
+		"_id":         id,
+		"isSuspended": false,
+	})
+}
+
 func (r *ActorRepository) FindLocalByUsername(ctx context.Context, username string) (*actors.Actor, error) {
 	return r.findOne(ctx, bson.M{
 		"usernameLower": strings.ToLower(username),

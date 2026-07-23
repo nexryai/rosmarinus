@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -32,6 +33,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
+	// Phase 1: connect to the real MongoDB/Redis fixture, load Rosmarinus's
+	// local Actor, and create two Misskey accounts for public and direct flows.
 	cfg := config.Config{
 		Host:          "rosmarinus.test",
 		PublicURL:     "https://rosmarinus.test",
@@ -86,24 +89,35 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		localActor,
 	)
 
+	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
+	// Follow resource is exposed while pending, then wait for Misskey's Accept.
 	remoteActorURI := "https://a.test/users/" + admin.ID
 	result, err := worker.CreateFollow(ctx, localActor.ID, remoteActorURI)
 	t.Logf("Rosmarinus outgoing Follow result=%q actor=%s target=%s err=%v", result, localActor.ID, remoteActorURI, err)
 	if err != nil {
 		t.Fatalf("create outgoing Follow: result=%q err=%v", result, err)
 	}
+	remoteActor, err := actorRepo.FindByURI(ctx, remoteActorURI)
+	if err != nil || remoteActor == nil {
+		t.Fatalf("find resolved Misskey actor: actor=%+v err=%v", remoteActor, err)
+	}
+	followActivityURI := cfg.PublicURL + "/follows/" + url.PathEscape(localActor.ID) + "/" + url.PathEscape(remoteActor.ID)
+	var followActivity map[string]any
+	misskey.get(ctx, followActivityURI, &followActivity)
+	if followActivity["type"] != "Follow" || followActivity["actor"] != localActor.URI || followActivity["object"] != remoteActorURI {
+		t.Fatalf("unexpected outgoing Follow activity: %#v", followActivity)
+	}
 
 	var relationship *follows.Follow
 	waitFor(t, ctx, "Misskey Accept(Follow)", func() bool {
-		remoteActor, findErr := actorRepo.FindByURI(ctx, remoteActorURI)
-		if findErr != nil || remoteActor == nil {
-			return false
-		}
+		var findErr error
 		relationship, findErr = followRepo.Find(ctx, localActor.ID, remoteActor.ID)
 		t.Logf("[DEBUG] followRepo.Find: %s <= %s: relationship=%+v err=%v", localActor.ID, remoteActor.ID, relationship, findErr)
 		return findErr == nil && relationship != nil && relationship.Status == follows.StatusAccepted
 	})
 
+	// Phase 3: publish a public Misskey note and verify Rosmarinus accepts,
+	// verifies, and persists the delivered Create(Note).
 	var created struct {
 		CreatedNote struct {
 			ID string `json:"id"`
@@ -125,6 +139,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && note != nil && note.Text == "Hello from latest Misskey federation test"
 	})
 
+	// Phase 4: make Misskey follow Rosmarinus, approve the pending request in
+	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	var relayOnMisskey struct {
 		ID          string `json:"id"`
 		IsFollowing bool   `json:"isFollowing"`
@@ -143,10 +159,6 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		"userId": relayOnMisskey.ID,
 	}, nil)
 
-	remoteActor, err := actorRepo.FindByURI(ctx, remoteActorURI)
-	if err != nil || remoteActor == nil {
-		t.Fatalf("find Misskey actor before inbound follow approval: actor=%+v err=%v", remoteActor, err)
-	}
 	waitFor(t, ctx, "inbound Misskey Follow stored as pending", func() bool {
 		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
 		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
@@ -167,6 +179,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
+	// Phase 5: publish a public Rosmarinus note and verify the accepted Misskey
+	// follower receives and stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
@@ -197,6 +211,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
+	// Phase 6: publish a specified-visibility note, verify its public Create
+	// resource carries only the intended audience, and confirm that the
+	// non-following Misskey recipient receives it through its individual inbox.
 	const specifiedNoteID = "latest-misskey-specified-note"
 	const specifiedNoteText = "Private hello from Rosmarinus"
 	directRecipientURI := "https://a.test/users/" + directRecipient.ID

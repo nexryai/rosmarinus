@@ -9,7 +9,8 @@ The Go integration test performs this real federation sequence:
 
 1. create an administrator and a direct-message recipient on `a.test`;
 2. resolve that Actor from Rosmarinus with signed ActivityPub GET;
-3. enqueue and deliver `Follow` from the Rosmarinus `relay` Actor;
+3. enqueue and deliver `Follow` from the Rosmarinus `relay` Actor and
+   dereference its Rosmarinus Follow activity;
 4. wait for Misskey's signed `Accept(Follow)` to change MongoDB state to
    `accepted`;
 5. create a public Misskey note;

@@ -25,6 +25,7 @@ import (
 const inboxBodyLimit = 64 * 1024
 
 type ActorLookup interface {
+	FindByID(context.Context, string) (*actors.Actor, error)
 	FindLocalByID(context.Context, string) (*actors.Actor, error)
 	FindLocalByUsername(context.Context, string) (*actors.Actor, error)
 }
@@ -56,11 +57,57 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 	mux.HandleFunc("/notes/", noteByID(noteLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", notImplemented(logger, http.MethodGet))
-	mux.HandleFunc("/follows/", notImplemented(logger, http.MethodGet))
+	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
 	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
 	return mux
+}
+
+func followByID(cfg config.Config, actorLookup ActorLookup) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if actorLookup == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/follows/"), "/")
+		parts := strings.Split(path, "/")
+		if path == "" || len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		follower, err := actorLookup.FindByID(r.Context(), parts[0])
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		followee, err := actorLookup.FindByID(r.Context(), parts[1])
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		// Concorde exposes this resource while an outgoing Follow is still
+		// pending, so actor identity is the authority rather than follow state.
+		if follower == nil || follower.Host != nil || followee == nil || followee.Host == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		base := strings.TrimRight(cfg.PublicURL, "/")
+		writeActivityJSON(w, map[string]any{
+			"@context": []any{
+				"https://www.w3.org/ns/activitystreams",
+				"https://w3id.org/security/v1",
+			},
+			"id":     base + "/follows/" + url.PathEscape(follower.ID) + "/" + url.PathEscape(followee.ID),
+			"type":   "Follow",
+			"actor":  follower.URI,
+			"object": followee.URI,
+		})
+	}
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
