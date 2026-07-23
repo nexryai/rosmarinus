@@ -156,19 +156,23 @@ func noteByID(noteLookup NoteLookup) http.HandlerFunc {
 			writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "note lookup is not configured"})
 			return
 		}
-		id := strings.TrimPrefix(r.URL.Path, "/notes/")
-		id = strings.Trim(id, "/")
-		if id == "" || strings.Contains(id, "/") {
+		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/notes/"), "/")
+		parts := strings.Split(path, "/")
+		if path == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "activity") {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		note, err := noteLookup.FindByID(r.Context(), id)
+		note, err := noteLookup.FindByID(r.Context(), parts[0])
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		if note == nil {
 			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if len(parts) == 2 {
+			writeActivityJSON(w, apnotes.RenderCreate(note))
 			return
 		}
 		writeActivityJSON(w, apnotes.Render(note))

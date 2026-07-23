@@ -7,14 +7,18 @@ Rosmarinus is attached as `https://rosmarinus.test` through the compose overlay.
 
 The Go integration test performs this real federation sequence:
 
-1. create a user on `a.test`;
+1. create an administrator and a direct-message recipient on `a.test`;
 2. resolve that Actor from Rosmarinus with signed ActivityPub GET;
 3. enqueue and deliver `Follow` from the Rosmarinus `relay` Actor;
 4. wait for Misskey's signed `Accept(Follow)` to change MongoDB state to
    `accepted`;
-5. create a public Misskey note; and
+5. create a public Misskey note;
 6. wait for the delivered `Create(Note)` to be verified and stored by
-   Rosmarinus.
+   Rosmarinus;
+7. approve Misskey's inbound follow and deliver a public Rosmarinus note;
+8. fetch the Rosmarinus note's `Create` activity endpoint; and
+9. deliver a `specified` Rosmarinus note to the second account's individual
+   inbox and verify that Misskey exposes it to that recipient.
 
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.

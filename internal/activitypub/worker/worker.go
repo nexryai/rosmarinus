@@ -692,7 +692,7 @@ func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, acto
 	if h.queue == nil {
 		return fmt.Errorf("queue is required for specified post delivery")
 	}
-	activity := renderCreateNote(actor, note)
+	activity := apnotes.RenderCreate(note)
 	destinations := make(map[string]struct{}, len(recipients))
 	for _, recipient := range recipients {
 		if recipient == nil || recipient.Host == nil {
@@ -718,7 +718,7 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 	if h.follows == nil || h.queue == nil {
 		return fmt.Errorf("follow repository and queue are required for post delivery")
 	}
-	activity := renderCreateNote(actor, note)
+	activity := apnotes.RenderCreate(note)
 	destinations := make(map[string]struct{})
 	afterID := ""
 	for {
@@ -747,26 +747,6 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 			return nil
 		}
 		afterID = followers[len(followers)-1].ID
-	}
-}
-
-func renderCreateNote(actor *actors.Actor, note *domainnotes.Note) map[string]any {
-	object := apnotes.Render(note)
-	contextValue := object["@context"]
-	delete(object, "@context")
-	published := note.CreatedAt
-	if note.PublishedAt != nil {
-		published = *note.PublishedAt
-	}
-	return map[string]any{
-		"@context":  contextValue,
-		"id":        note.URI + "/activity",
-		"type":      "Create",
-		"actor":     actor.URI,
-		"published": published.UTC().Format(time.RFC3339),
-		"to":        object["to"],
-		"cc":        object["cc"],
-		"object":    object,
 	}
 }
 

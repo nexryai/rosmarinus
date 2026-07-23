@@ -52,3 +52,29 @@ func TestRenderSpecifiedNoteAddressesMentionedActors(t *testing.T) {
 		t.Fatalf("cc = %#v", rendered["cc"])
 	}
 }
+
+func TestRenderCreateWrapsNoteAudience(t *testing.T) {
+	published := time.Date(2026, 7, 23, 1, 2, 3, 0, time.UTC)
+	note := &domainnotes.Note{
+		URI:          "https://rosmarinus.example/notes/1",
+		AttributedTo: "https://rosmarinus.example/users/alice",
+		Text:         "hello",
+		Visibility:   domainnotes.VisibilityPublic,
+		CreatedAt:    published,
+		PublishedAt:  &published,
+	}
+	rendered := RenderCreate(note)
+	if rendered["id"] != note.URI+"/activity" || rendered["type"] != "Create" || rendered["actor"] != note.AttributedTo {
+		t.Fatalf("unexpected Create activity: %#v", rendered)
+	}
+	if rendered["published"] != published.Format(time.RFC3339) {
+		t.Fatalf("published = %#v", rendered["published"])
+	}
+	object, ok := rendered["object"].(map[string]any)
+	if !ok || object["id"] != note.URI || object["@context"] != nil {
+		t.Fatalf("object = %#v", rendered["object"])
+	}
+	if rendered["@context"] == nil || rendered["to"] == nil || rendered["cc"] == nil {
+		t.Fatalf("missing Create activity context or audience: %#v", rendered)
+	}
+}

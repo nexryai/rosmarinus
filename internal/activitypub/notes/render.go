@@ -68,6 +68,26 @@ func RenderAnnounce(note *domainnotes.Note) map[string]any {
 	})
 }
 
+func RenderCreate(note *domainnotes.Note) map[string]any {
+	object := Render(note)
+	contextValue := object["@context"]
+	delete(object, "@context")
+	published := note.CreatedAt
+	if note.PublishedAt != nil {
+		published = *note.PublishedAt
+	}
+	return map[string]any{
+		"@context":  contextValue,
+		"id":        note.URI + "/activity",
+		"type":      "Create",
+		"actor":     note.AttributedTo,
+		"published": published.UTC().Format(time.RFC3339),
+		"to":        object["to"],
+		"cc":        object["cc"],
+		"object":    object,
+	}
+}
+
 func renderAudience(actorURI string, visibility domainnotes.Visibility, mentionURIs []string) ([]string, []string) {
 	followers := actorURI + "/followers"
 	switch visibility {

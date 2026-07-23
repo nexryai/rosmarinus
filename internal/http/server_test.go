@@ -405,6 +405,46 @@ func TestNoteByID(t *testing.T) {
 	}
 }
 
+func TestNoteActivityByID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/notes/note-id/activity", nil)
+	req.Header.Set("Accept", "application/activity+json")
+	rec := httptest.NewRecorder()
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID:           "note-id",
+		URI:          "https://example.test/notes/note-id",
+		AttributedTo: "https://example.test/users/alice",
+		Text:         "hello",
+		Visibility:   domainnotes.VisibilityFollowers,
+		CreatedAt:    time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC),
+	}}
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/activity+json") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	for _, want := range []string{
+		`"id":"https://example.test/notes/note-id/activity"`,
+		`"type":"Create"`,
+		`"actor":"https://example.test/users/alice"`,
+		`"object":{"_misskey_content":"hello"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestNoteActivityRejectsUnknownSubresource(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/notes/note-id/unknown", nil)
+	rec := httptest.NewRecorder()
+	NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{}, nil, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestInboxEnqueuesAcceptedActivity(t *testing.T) {
 	cfg := testConfig()
 	body := []byte(`{"type":"Create","actor":"https://remote.example/users/alice","id":"https://remote.example/activities/1","object":{"type":"Note","id":"https://remote.example/notes/1"}}`)

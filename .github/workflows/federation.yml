@@ -37,7 +37,7 @@ permissions:
 
 jobs:
   latest-misskey:
-    name: Latest Misskey follow and note delivery
+    name: Latest Misskey follow and post delivery
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

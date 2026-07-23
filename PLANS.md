@@ -70,7 +70,7 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [x] `GET /users/{user}/followers?page=true` backed by stored follows.
 - [x] `GET /users/{user}/following?page=true` backed by stored follows.
 - [x] `GET /notes/{note}`
-- [ ] `GET /notes/{note}/activity`
+- [x] `GET /notes/{note}/activity`
 - [ ] `GET /emojis/{emoji}`
 - [ ] `GET /likes/{like}`
 - [ ] `GET /follows/{follower}/{followee}`
@@ -798,6 +798,8 @@ must write to MongoDB.
         / `OrderedCollectionPage` responses.
   - [x] AP `GET /notes/:id` returns `application/activity+json` for stored
         notes.
+  - [x] AP `GET /notes/:id/activity` returns the corresponding public
+        `Create` activity.
   - [x] inbox `Accepted`.
   - [x] inbox `Invalid Host`.
   - [x] inbox `Payload Too Large`.

@@ -25,7 +25,7 @@ import (
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
 
-func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
+func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if os.Getenv("ROSMARINUS_FEDERATION_TEST") != "1" {
 		t.Skip("set ROSMARINUS_FEDERATION_TEST=1 inside the federation fixture")
 	}
@@ -62,6 +62,8 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 	misskey := newMisskeyClient(t)
 	admin := misskey.createAdmin(ctx, "federationadmin", "federation-password")
 	t.Logf("Misskey test account created actor_id=%s", admin.ID)
+	directRecipient := misskey.createAccount(ctx, admin.Token, "directrecipient", "direct-password")
+	t.Logf("Misskey direct recipient created actor_id=%s", directRecipient.ID)
 	misskey.call(ctx, "admin/update-meta", map[string]any{
 		"i":          admin.Token,
 		"federation": "all",
@@ -194,6 +196,47 @@ func TestLatestMisskeyFollowAcceptAndNoteDelivery(t *testing.T) {
 		}
 		return false
 	})
+
+	const specifiedNoteID = "latest-misskey-specified-note"
+	const specifiedNoteText = "Private hello from Rosmarinus"
+	directRecipientURI := "https://a.test/users/" + directRecipient.ID
+	createdSpecified, err := worker.CreatePost(ctx, connector.PostCreateCommand{
+		ActorID:     localActor.ID,
+		NoteID:      specifiedNoteID,
+		Text:        specifiedNoteText,
+		Visibility:  string(domainnotes.VisibilitySpecified),
+		MentionURIs: []string{directRecipientURI},
+	})
+	if err != nil {
+		t.Fatalf("create specified Rosmarinus post: %v", err)
+	}
+	t.Logf("Rosmarinus specified note created note_id=%s uri=%s recipient=%s", createdSpecified.NoteID, createdSpecified.URI, directRecipientURI)
+	var specifiedActivity map[string]any
+	misskey.get(ctx, createdSpecified.URI+"/activity", &specifiedActivity)
+	if specifiedActivity["type"] != "Create" || specifiedActivity["actor"] != localActor.URI {
+		t.Fatalf("unexpected specified Create activity: %#v", specifiedActivity)
+	}
+	to, ok := specifiedActivity["to"].([]any)
+	if !ok || len(to) != 1 || to[0] != directRecipientURI {
+		t.Fatalf("specified Create audience = %#v", specifiedActivity["to"])
+	}
+	waitFor(t, ctx, "specified Create(Note) stored for Misskey recipient", func() bool {
+		var notes []struct {
+			Text string `json:"text"`
+			URI  string `json:"uri"`
+		}
+		misskey.call(ctx, "users/notes", map[string]any{
+			"i":      directRecipient.Token,
+			"userId": relayOnMisskey.ID,
+			"limit":  10,
+		}, &notes)
+		for _, note := range notes {
+			if note.Text == specifiedNoteText && note.URI == createdSpecified.URI {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 type misskeyClient struct {
@@ -217,6 +260,19 @@ func (m *misskeyClient) createAdmin(ctx context.Context, username, password stri
 	m.call(ctx, "admin/accounts/create", map[string]any{"username": username, "password": password}, &account)
 	if account.ID == "" || account.Token == "" {
 		m.t.Fatalf("Misskey admin creation returned incomplete account: %+v", account)
+	}
+	return account
+}
+
+func (m *misskeyClient) createAccount(ctx context.Context, adminToken, username, password string) misskeyAccount {
+	var account misskeyAccount
+	m.call(ctx, "admin/accounts/create", map[string]any{
+		"i":        adminToken,
+		"username": username,
+		"password": password,
+	}, &account)
+	if account.ID == "" || account.Token == "" {
+		m.t.Fatalf("Misskey account creation returned incomplete account: %+v", account)
 	}
 	return account
 }
@@ -251,6 +307,32 @@ func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[s
 		if err := json.Unmarshal(responseBody, result); err != nil {
 			m.t.Fatalf("decode Misskey %s response: %v body=%s", endpoint, err, logBody)
 		}
+	}
+}
+
+func (m *misskeyClient) get(ctx context.Context, uri string, result any) {
+	m.t.Helper()
+	m.t.Logf("ActivityPub GET request uri=%s", uri)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		m.t.Fatalf("create ActivityPub GET request: %v", err)
+	}
+	req.Header.Set("Accept", "application/activity+json")
+	res, err := m.httpClient.Do(req)
+	if err != nil {
+		m.t.Fatalf("ActivityPub GET %s: %v", uri, err)
+	}
+	defer res.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		m.t.Fatalf("read ActivityPub GET response: %v", err)
+	}
+	m.t.Logf("ActivityPub GET response uri=%s status=%s body=%s", uri, res.Status, loggableMisskeyResponse(responseBody))
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		m.t.Fatalf("ActivityPub GET %s status=%d body=%s", uri, res.StatusCode, loggableMisskeyResponse(responseBody))
+	}
+	if err := json.Unmarshal(responseBody, result); err != nil {
+		m.t.Fatalf("decode ActivityPub GET response: %v", err)
 	}
 }
 
