@@ -45,6 +45,13 @@ func (r *ReactionRepository) Find(ctx context.Context, noteID, actorID string) (
 	})
 }
 
+func (r *ReactionRepository) FindByID(ctx context.Context, id string) (*reactions.Reaction, error) {
+	return r.findOne(ctx, bson.M{
+		"_id":       id,
+		"deletedAt": nil,
+	})
+}
+
 func (r *ReactionRepository) Upsert(ctx context.Context, reaction reactions.Reaction) (*reactions.Reaction, error) {
 	if reaction.NoteID == "" || reaction.ActorID == "" {
 		return nil, fmt.Errorf("noteId and actorId are required")

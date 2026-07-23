@@ -20,6 +20,7 @@ type Reaction struct {
 
 type Repository interface {
 	Find(context.Context, string, string) (*Reaction, error)
+	FindByID(context.Context, string) (*Reaction, error)
 	Upsert(context.Context, Reaction) (*Reaction, error)
 	Delete(context.Context, string, string, string) error
 }

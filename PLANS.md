@@ -72,7 +72,7 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [x] `GET /notes/{note}`
 - [x] `GET /notes/{note}/activity`
 - [ ] `GET /emojis/{emoji}`
-- [ ] `GET /likes/{like}`
+- [x] `GET /likes/{like}`
 - [x] `GET /follows/{follower}/{followee}`
 
 Responses should negotiate `application/activity+json` and

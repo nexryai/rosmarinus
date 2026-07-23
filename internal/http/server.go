@@ -19,6 +19,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -45,23 +46,75 @@ type FollowLookup interface {
 	ListFollowing(context.Context, string, int) ([]follows.Follow, error)
 }
 
-func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
-	return NewHandlerWithStores(cfg, logger, actorLookup, nil, nil, queueClient)
+type ReactionLookup interface {
+	FindByID(context.Context, string) (*reactions.Reaction, error)
 }
 
-func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, queueClient QueueClient) http.Handler {
+func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
+	return NewHandlerWithStores(cfg, logger, actorLookup, nil, nil, nil, queueClient)
+}
+
+func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
 	mux.HandleFunc("/notes/", noteByID(noteLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
-	mux.HandleFunc("/likes/", notImplemented(logger, http.MethodGet))
+	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
 	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
 	return mux
+}
+
+func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteLookup) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if reactionLookup == nil || noteLookup == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/likes/"), "/")
+		if id == "" || strings.Contains(id, "/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		reaction, err := reactionLookup.FindByID(r.Context(), id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if reaction == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		note, err := noteLookup.FindByID(r.Context(), reaction.NoteID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if note == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeActivityJSON(w, map[string]any{
+			"@context": []any{
+				"https://www.w3.org/ns/activitystreams",
+				"https://w3id.org/security/v1",
+			},
+			"id":                strings.TrimRight(cfg.PublicURL, "/") + "/likes/" + url.PathEscape(reaction.ID),
+			"type":              "Like",
+			"actor":             reaction.ActorURI,
+			"object":            note.URI,
+			"content":           reaction.Reaction,
+			"_misskey_reaction": reaction.Reaction,
+		})
+	}
 }
 
 func followByID(cfg config.Config, actorLookup ActorLookup) http.HandlerFunc {

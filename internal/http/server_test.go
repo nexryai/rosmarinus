@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -39,6 +40,10 @@ type fakeNoteLookup struct {
 type fakeFollowLookup struct {
 	followers []follows.Follow
 	following []follows.Follow
+}
+
+type fakeReactionLookup struct {
+	reaction *reactions.Reaction
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -110,6 +115,14 @@ func (f fakeFollowLookup) ListFollowing(ctx context.Context, id string, limit in
 		limit = len(f.following)
 	}
 	return f.following[:limit], nil
+}
+
+func (f fakeReactionLookup) FindByID(ctx context.Context, id string) (*reactions.Reaction, error) {
+	_ = ctx
+	if f.reaction != nil && f.reaction.ID == id {
+		return f.reaction, nil
+	}
+	return nil, nil
 }
 
 func testConfig() config.Config {
@@ -347,7 +360,7 @@ func TestActorFollowCollectionsByIDUseStoredFollows(t *testing.T) {
 		t.Run(tt.path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			rec := httptest.NewRecorder()
-			NewHandlerWithStores(testConfig(), nil, lookup, nil, followLookup, nil).ServeHTTP(rec, req)
+			NewHandlerWithStores(testConfig(), nil, lookup, nil, followLookup, nil, nil).ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 			}
@@ -384,7 +397,7 @@ func TestNoteByID(t *testing.T) {
 		}},
 		CreatedAt: time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}}
-	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil).ServeHTTP(rec, req)
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -429,7 +442,7 @@ func TestNoteActivityByID(t *testing.T) {
 		Visibility:   domainnotes.VisibilityFollowers,
 		CreatedAt:    time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC),
 	}}
-	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil).ServeHTTP(rec, req)
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -451,7 +464,7 @@ func TestNoteActivityByID(t *testing.T) {
 func TestNoteActivityRejectsUnknownSubresource(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/notes/note-id/unknown", nil)
 	rec := httptest.NewRecorder()
-	NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{}, nil, nil).ServeHTTP(rec, req)
+	NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{}, nil, nil, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -501,6 +514,48 @@ func TestFollowByActorIDsRequiresLocalToRemoteDirection(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/follows/remote-alice/local-bob", nil)
 	rec := httptest.NewRecorder()
 	NewHandler(testConfig(), nil, lookup, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLikeByID(t *testing.T) {
+	lookup := fakeReactionLookup{reaction: &reactions.Reaction{
+		ID:       "reaction-id",
+		NoteID:   "note-id",
+		NoteURI:  "https://example.test/notes/note-id",
+		ActorID:  "remote-alice",
+		ActorURI: "https://remote.example/users/alice",
+		Reaction: "👍",
+	}}
+	req := httptest.NewRequest(http.MethodGet, "/likes/reaction-id", nil)
+	rec := httptest.NewRecorder()
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID:  "note-id",
+		URI: "https://example.test/notes/note-id",
+	}}
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, lookup, nil).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{
+		`"id":"https://example.test/likes/reaction-id"`,
+		`"type":"Like"`,
+		`"actor":"https://remote.example/users/alice"`,
+		`"object":"https://example.test/notes/note-id"`,
+		`"content":"👍"`,
+		`"_misskey_reaction":"👍"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
+func TestLikeByIDReturnsNotFound(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/likes/missing", nil)
+	rec := httptest.NewRecorder()
+	NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{}, nil, fakeReactionLookup{}, nil).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -55,6 +56,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	actorRepo := mongostore.NewActorRepository(db)
 	noteRepo := mongostore.NewNoteRepository(db)
 	followRepo := mongostore.NewFollowRepository(db)
+	reactionRepo := mongostore.NewReactionRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -82,7 +84,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		noteRepo,
 		followRepo,
 		mongostore.NewBlockRepository(db),
-		mongostore.NewReactionRepository(db),
+		reactionRepo,
 		mongostore.NewReportRepository(db),
 		queueClient,
 		client,
@@ -193,8 +195,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("create local Rosmarinus post: %v", err)
 	}
 	t.Logf("Rosmarinus local note created note_id=%s uri=%s", createdLocal.NoteID, createdLocal.URI)
+	var misskeyLocalNoteID string
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
+			ID   string `json:"id"`
 			Text string `json:"text"`
 			URI  string `json:"uri"`
 		}
@@ -205,13 +209,34 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}, &notes)
 		for _, note := range notes {
 			if note.Text == localNoteText && note.URI == createdLocal.URI {
+				misskeyLocalNoteID = note.ID
 				return true
 			}
 		}
 		return false
 	})
 
-	// Phase 6: publish a specified-visibility note, verify its public Create
+	// Phase 6: react to the delivered Rosmarinus note from Misskey, verify
+	// Rosmarinus stores the federated reaction, and dereference its Like activity.
+	misskey.call(ctx, "notes/reactions/create", map[string]any{
+		"i":        admin.Token,
+		"noteId":   misskeyLocalNoteID,
+		"reaction": "👍",
+	}, nil)
+	var storedReaction *reactions.Reaction
+	waitFor(t, ctx, "Misskey reaction stored by Rosmarinus", func() bool {
+		var findErr error
+		storedReaction, findErr = reactionRepo.Find(ctx, localNoteID, remoteActor.ID)
+		return findErr == nil && storedReaction != nil && storedReaction.Reaction == "👍"
+	})
+	likeActivityURI := cfg.PublicURL + "/likes/" + url.PathEscape(storedReaction.ID)
+	var likeActivity map[string]any
+	misskey.get(ctx, likeActivityURI, &likeActivity)
+	if likeActivity["type"] != "Like" || likeActivity["actor"] != remoteActorURI || likeActivity["object"] != createdLocal.URI || likeActivity["_misskey_reaction"] != "👍" {
+		t.Fatalf("unexpected Like activity: %#v", likeActivity)
+	}
+
+	// Phase 7: publish a specified-visibility note, verify its public Create
 	// resource carries only the intended audience, and confirm that the
 	// non-following Misskey recipient receives it through its individual inbox.
 	const specifiedNoteID = "latest-misskey-specified-note"

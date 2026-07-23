@@ -344,6 +344,15 @@ func (f *fakeReactionRepo) Find(ctx context.Context, noteID, actorID string) (*r
 	return f.reactions[noteID+"\x00"+actorID], nil
 }
 
+func (f *fakeReactionRepo) FindByID(ctx context.Context, id string) (*reactions.Reaction, error) {
+	for _, reaction := range f.reactions {
+		if reaction.ID == id {
+			return reaction, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeReactionRepo) Upsert(ctx context.Context, reaction reactions.Reaction) (*reactions.Reaction, error) {
 	if f.reactions == nil {
 		f.reactions = map[string]*reactions.Reaction{}
