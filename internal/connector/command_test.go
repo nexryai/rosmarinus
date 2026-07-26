@@ -44,17 +44,19 @@ func (f *fakeActorOwnershipLookup) FindOwnedLocalByID(ctx context.Context, accou
 }
 
 type fakeCommandExecutor struct {
-	createdFollowerID  string
-	createdTarget      string
-	approvedFollowerID string
-	approvedFolloweeID string
-	rejectedFollowerID string
-	rejectedFolloweeID string
-	postCommand        PostCreateCommand
-	postCalls          int
-	reactionCommand    ReactionCreateCommand
-	reactionCalls      int
-	err                error
+	createdFollowerID   string
+	createdTarget       string
+	approvedFollowerID  string
+	approvedFolloweeID  string
+	rejectedFollowerID  string
+	rejectedFolloweeID  string
+	postCommand         PostCreateCommand
+	postCalls           int
+	reactionCommand     ReactionCreateCommand
+	reactionCalls       int
+	reactionDelete      ReactionDeleteCommand
+	reactionDeleteCalls int
+	err                 error
 }
 
 func (f *fakeCommandExecutor) CreateFollow(ctx context.Context, followerID, target string) (string, error) {
@@ -94,6 +96,17 @@ func (f *fakeCommandExecutor) CreateReaction(ctx context.Context, command Reacti
 		NoteID:     command.NoteID,
 		Reaction:   command.Reaction,
 		URI:        "https://example.test/likes/reaction-created",
+	}, f.err
+}
+
+func (f *fakeCommandExecutor) DeleteReaction(ctx context.Context, command ReactionDeleteCommand) (ReactionDeleted, error) {
+	_ = ctx
+	f.reactionDeleteCalls++
+	f.reactionDelete = command
+	return ReactionDeleted{
+		ReactionID: "reaction-created",
+		NoteID:     command.NoteID,
+		URI:        "https://example.test/likes/reaction-created/undo",
 	}, f.err
 }
 
@@ -208,7 +221,7 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 6 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandReactionCreate || source.names[5] != CommandActorCreate {
+	if len(source.names) != 7 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandReactionCreate || source.names[5] != CommandReactionDelete || source.names[6] != CommandActorCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
@@ -232,6 +245,24 @@ func TestCommandHandlerCreatesReactionAsOwnedActor(t *testing.T) {
 		t.Fatalf("reaction command = %+v calls=%d", executor.reactionCommand, executor.reactionCalls)
 	}
 	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandReactionCreate {
+		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerDeletesReactionAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandReactionDelete, "request-reaction-delete", "actor-2", ReactionDeleteData{
+		NoteID: "remote-note",
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.reactionDeleteCalls != 1 || executor.reactionDelete.ActorID != "actor-2" || executor.reactionDelete.NoteID != "remote-note" {
+		t.Fatalf("reaction delete command = %+v calls=%d", executor.reactionDelete, executor.reactionDeleteCalls)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandReactionDelete {
 		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
 	}
 }

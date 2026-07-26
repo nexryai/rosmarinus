@@ -188,6 +188,8 @@ Use these Ably message names and payloads:
   absolute ActivityPub Actor URL.
 - `reaction.create`: `data` contains `note_id` and `reaction`; top-level
   `actor_id` is the owned local Actor applying the reaction.
+- `reaction.delete`: `data` contains `note_id`; top-level `actor_id` is the
+  owned local Actor whose reaction is removed.
 - `follow.approve`: `data` contains `follower_id`; top-level `actor_id` is the
   local followee Actor.
 - `follow.reject`: the same addressing rules as `follow.approve`.

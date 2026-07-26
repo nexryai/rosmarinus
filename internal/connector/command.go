@@ -18,6 +18,7 @@ const (
 	CommandFollowCreate         = "follow.create"
 	CommandPostCreate           = "post.create"
 	CommandReactionCreate       = "reaction.create"
+	CommandReactionDelete       = "reaction.delete"
 	CommandActorCreate          = "actor.create"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
@@ -54,6 +55,7 @@ type CommandExecutor interface {
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
 	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
+	DeleteReaction(context.Context, ReactionDeleteCommand) (ReactionDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
 }
 
@@ -130,6 +132,21 @@ type ReactionCreated struct {
 	URI        string `json:"uri" bson:"uri"`
 }
 
+type ReactionDeleteData struct {
+	NoteID string `json:"note_id"`
+}
+
+type ReactionDeleteCommand struct {
+	ActorID string
+	NoteID  string
+}
+
+type ReactionDeleted struct {
+	ReactionID string `json:"reaction_id" bson:"reaction_id"`
+	NoteID     string `json:"note_id" bson:"note_id"`
+	URI        string `json:"uri" bson:"uri"`
+}
+
 type ActorCreateData struct {
 	Username string `json:"username"`
 	Name     string `json:"name,omitempty"`
@@ -169,7 +186,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandActorCreate}
+	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -385,6 +402,19 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			Reaction: command.Reaction,
 		})
 		return result, actorID, err
+	case CommandReactionDelete:
+		var command ReactionDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.NoteID) == "" {
+			return nil, actorID, fmt.Errorf("note_id is required")
+		}
+		result, err := h.executor.DeleteReaction(ctx, ReactionDeleteCommand{
+			ActorID: actorID,
+			NoteID:  command.NoteID,
+		})
+		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -432,7 +462,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandActorCreate:
+	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate:
 		return true
 	default:
 		return false

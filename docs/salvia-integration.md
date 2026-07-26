@@ -180,6 +180,13 @@ and enqueues a Misskey-compatible `Like` to the remote author's individual
 inbox. `command.succeeded.data.result` contains `reaction_id`, `note_id`,
 `reaction`, and the dereferenceable local `uri`. MongoDB remains canonical.
 
+To remove that Actor's reaction, publish `reaction.delete` with the same
+top-level `actor_id` and `data.note_id`. Rosmarinus verifies ownership, removes
+the matching stored reaction, and delivers `Undo(Like)` to the remote author.
+Its successful result contains `reaction_id`, `note_id`, and the Undo activity
+`uri`. Retrying the same logical removal must reuse its original `request_id`;
+a new request after the reaction is already absent fails as `command_failed`.
+
 `actor.create` omits `actor_id` because the Actor does not exist yet:
 
 ```json

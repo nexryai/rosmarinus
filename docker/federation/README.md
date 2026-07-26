@@ -17,7 +17,8 @@ The Go integration test performs this real federation sequence:
 6. wait for the delivered `Create(Note)` to be verified and stored by
    Rosmarinus;
 7. react to that Misskey note from Rosmarinus, verify Misskey applies the
-   delivered Like, and dereference its Rosmarinus Like activity;
+   delivered Like, dereference its Rosmarinus Like activity, then deliver
+   `Undo(Like)` and verify Misskey removes the reaction;
 8. approve Misskey's inbound follow, dereference a public Rosmarinus
    `Create` activity, and deliver that note;
 9. react to that note from Misskey, verify the reaction in Rosmarinus, and

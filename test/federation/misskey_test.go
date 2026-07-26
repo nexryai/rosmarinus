@@ -144,7 +144,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	})
 
 	// Phase 4: react to the Misskey note as the local Actor, verify Misskey
-	// applies the delivered Like, and dereference Rosmarinus's Like activity.
+	// applies the delivered Like, dereference it, then deliver Undo(Like) and
+	// verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
 		ActorID:  localActor.ID,
 		NoteID:   remoteNote.ID,
@@ -168,6 +169,26 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if outgoingLike["type"] != "Like" || outgoingLike["actor"] != localActor.URI || outgoingLike["object"] != noteURI || outgoingLike["_misskey_reaction"] != "👍" {
 		t.Fatalf("unexpected outgoing Like activity: %#v", outgoingLike)
 	}
+	deletedReaction, err := worker.DeleteReaction(ctx, connector.ReactionDeleteCommand{
+		ActorID: localActor.ID,
+		NoteID:  remoteNote.ID,
+	})
+	if err != nil {
+		t.Fatalf("delete Rosmarinus reaction: %v", err)
+	}
+	if deletedReaction.ReactionID != createdReaction.ReactionID || deletedReaction.URI != createdReaction.URI+"/undo" {
+		t.Fatalf("unexpected deleted reaction: %+v", deletedReaction)
+	}
+	waitFor(t, ctx, "Rosmarinus Undo(Like) applied by Misskey", func() bool {
+		var shown struct {
+			Reactions map[string]int `json:"reactions"`
+		}
+		misskey.call(ctx, "notes/show", map[string]any{
+			"i":      admin.Token,
+			"noteId": created.CreatedNote.ID,
+		}, &shown)
+		return shown.Reactions["👍"] == 0
+	})
 
 	// Phase 5: make Misskey follow Rosmarinus, approve the pending request in
 	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).

@@ -725,6 +725,57 @@ func (h *Handler) CreateReaction(ctx context.Context, command connector.Reaction
 	}, nil
 }
 
+func (h *Handler) DeleteReaction(ctx context.Context, command connector.ReactionDeleteCommand) (connector.ReactionDeleted, error) {
+	if h.notes == nil || h.reactions == nil || h.queue == nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("note repository, reaction repository, and queue are required")
+	}
+	actor, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	if actor == nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("local actor not found: %s", command.ActorID)
+	}
+	note, err := h.notes.FindByID(ctx, strings.TrimSpace(command.NoteID))
+	if err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	if note == nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("note not found: %s", command.NoteID)
+	}
+	existing, err := h.reactions.Find(ctx, note.ID, actor.ID)
+	if err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	if existing == nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("reaction not found")
+	}
+	recipient, err := h.repo.FindByURI(ctx, note.AttributedTo)
+	if err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	if recipient == nil || recipient.Host == nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("reaction target author is not remote")
+	}
+	inbox := strings.TrimSpace(recipient.Inbox)
+	if inbox == "" {
+		return connector.ReactionDeleted{}, fmt.Errorf("reaction target inbox is empty")
+	}
+	undo := apreactions.RenderUndoLike(h.cfg.PublicURL, existing, time.Now().UTC())
+	if err := h.reactions.Delete(ctx, note.ID, actor.ID, ""); err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	task := queue.NewDeliverTask(actor.ID, inbox, undo, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return connector.ReactionDeleted{}, fmt.Errorf("enqueue Undo(Like) delivery: %w", err)
+	}
+	return connector.ReactionDeleted{
+		ReactionID: existing.ID,
+		NoteID:     existing.NoteID,
+		URI:        undo["id"].(string),
+	}, nil
+}
+
 func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) (bool, error) {
 	switch note.Visibility {
 	case domainnotes.VisibilityPublic, domainnotes.VisibilityHome:

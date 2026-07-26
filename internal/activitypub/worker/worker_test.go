@@ -1118,6 +1118,31 @@ func TestCreateReactionStoresAndDeliversLike(t *testing.T) {
 	if delivery.ActorID != local.ID || delivery.To != remote.Inbox || delivery.Object["type"] != "Like" || delivery.Object["object"] != stored.NoteURI || delivery.Object["_misskey_reaction"] != "👍" {
 		t.Fatalf("delivery = %+v", delivery)
 	}
+	deleted, err := h.DeleteReaction(context.Background(), connector.ReactionDeleteCommand{
+		ActorID: local.ID,
+		NoteID:  "remote-note",
+	})
+	if err != nil {
+		t.Fatalf("DeleteReaction returned error: %v", err)
+	}
+	if deleted.ReactionID != created.ReactionID || deleted.NoteID != created.NoteID || deleted.URI != created.URI+"/undo" {
+		t.Fatalf("deleted reaction = %+v", deleted)
+	}
+	stored, err = reactionRepo.Find(context.Background(), "remote-note", local.ID)
+	if err != nil || stored != nil {
+		t.Fatalf("reaction after delete = %+v, err=%v", stored, err)
+	}
+	if len(q.tasks) != 2 {
+		t.Fatalf("delivery task count after delete = %d, want 2", len(q.tasks))
+	}
+	undoDelivery, ok := q.tasks[1].Payload.(queue.DeliverPayload)
+	if !ok {
+		t.Fatalf("Undo delivery payload type = %T", q.tasks[1].Payload)
+	}
+	like, ok := undoDelivery.Object["object"].(map[string]any)
+	if undoDelivery.ActorID != local.ID || undoDelivery.To != remote.Inbox || undoDelivery.Object["type"] != "Undo" || !ok || like["type"] != "Like" || like["id"] != created.URI {
+		t.Fatalf("Undo delivery = %+v", undoDelivery)
+	}
 }
 
 func TestCreateReactionRejectsNoteInvisibleToActor(t *testing.T) {
