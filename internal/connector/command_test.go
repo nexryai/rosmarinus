@@ -46,6 +46,8 @@ func (f *fakeActorOwnershipLookup) FindOwnedLocalByID(ctx context.Context, accou
 type fakeCommandExecutor struct {
 	createdFollowerID   string
 	createdTarget       string
+	deletedFollow       FollowDeleteCommand
+	deletedFollowCalls  int
 	approvedFollowerID  string
 	approvedFolloweeID  string
 	rejectedFollowerID  string
@@ -64,6 +66,17 @@ func (f *fakeCommandExecutor) CreateFollow(ctx context.Context, followerID, targ
 	f.createdFollowerID = followerID
 	f.createdTarget = target
 	return "created", f.err
+}
+
+func (f *fakeCommandExecutor) DeleteFollow(ctx context.Context, command FollowDeleteCommand) (FollowDeleted, error) {
+	_ = ctx
+	f.deletedFollowCalls++
+	f.deletedFollow = command
+	return FollowDeleted{
+		FollowerID: command.ActorID,
+		FolloweeID: "remote-actor",
+		URI:        "https://example.test/follows/actor-1/remote-actor/undo",
+	}, f.err
 }
 
 func (f *fakeCommandExecutor) ApproveFollow(ctx context.Context, followerID, followeeID string) (string, error) {
@@ -221,7 +234,7 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 7 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowApprove || source.names[2] != CommandFollowReject || source.names[3] != CommandPostCreate || source.names[4] != CommandReactionCreate || source.names[5] != CommandReactionDelete || source.names[6] != CommandActorCreate {
+	if len(source.names) != 8 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandReactionCreate || source.names[6] != CommandReactionDelete || source.names[7] != CommandActorCreate {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
@@ -276,6 +289,22 @@ func TestCommandHandlerCreatesFollowAsOwnedActor(t *testing.T) {
 	}
 	if executor.createdFollowerID != "actor-2" || executor.createdTarget != "alice@remote.example" {
 		t.Fatalf("follow command = actor:%q target:%q", executor.createdFollowerID, executor.createdTarget)
+	}
+}
+
+func TestCommandHandlerDeletesFollowAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandFollowDelete, "request-follow-delete", "actor-2", FollowDeleteData{Target: "alice@remote.example"})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.deletedFollowCalls != 1 || executor.deletedFollow.ActorID != "actor-2" || executor.deletedFollow.Target != "alice@remote.example" {
+		t.Fatalf("follow delete command = %+v calls=%d", executor.deletedFollow, executor.deletedFollowCalls)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandFollowDelete {
+		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
 	}
 }
 

@@ -190,8 +190,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.Reactions["👍"] == 0
 	})
 
-	// Phase 5: make Misskey follow Rosmarinus, approve the pending request in
-	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
+	// Phase 5: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
+	// relationship is soft-deleted, and confirm Misskey removes the relay Actor
+	// from the administrator's followers.
 	var relayOnMisskey struct {
 		ID          string `json:"id"`
 		IsFollowing bool   `json:"isFollowing"`
@@ -205,6 +206,61 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatal("Misskey users/show returned an empty Rosmarinus actor id")
 	}
 	t.Logf("Misskey resolved Rosmarinus actor misskey_user_id=%s", relayOnMisskey.ID)
+	waitFor(t, ctx, "Rosmarinus relay appears in Misskey followers", func() bool {
+		var followers []struct {
+			Follower struct {
+				ID  string `json:"id"`
+				URI string `json:"uri"`
+			} `json:"follower"`
+		}
+		misskey.call(ctx, "users/followers", map[string]any{
+			"i":      admin.Token,
+			"userId": admin.ID,
+			"limit":  100,
+		}, &followers)
+		for _, follower := range followers {
+			if follower.Follower.ID == relayOnMisskey.ID || follower.Follower.URI == localActor.URI {
+				return true
+			}
+		}
+		return false
+	})
+	deletedFollow, err := worker.DeleteFollow(ctx, connector.FollowDeleteCommand{
+		ActorID: localActor.ID,
+		Target:  remoteActorURI,
+	})
+	if err != nil {
+		t.Fatalf("delete outgoing Follow: %v", err)
+	}
+	if deletedFollow.FollowerID != localActor.ID || deletedFollow.FolloweeID != remoteActor.ID || deletedFollow.URI != followActivityURI+"/undo" {
+		t.Fatalf("unexpected deleted follow: %+v", deletedFollow)
+	}
+	waitFor(t, ctx, "outgoing Follow soft-deleted in Rosmarinus", func() bool {
+		stored, findErr := followRepo.Find(ctx, localActor.ID, remoteActor.ID)
+		return findErr == nil && stored == nil
+	})
+	waitFor(t, ctx, "Rosmarinus relay removed from Misskey followers", func() bool {
+		var followers []struct {
+			Follower struct {
+				ID  string `json:"id"`
+				URI string `json:"uri"`
+			} `json:"follower"`
+		}
+		misskey.call(ctx, "users/followers", map[string]any{
+			"i":      admin.Token,
+			"userId": admin.ID,
+			"limit":  100,
+		}, &followers)
+		for _, follower := range followers {
+			if follower.Follower.ID == relayOnMisskey.ID || follower.Follower.URI == localActor.URI {
+				return false
+			}
+		}
+		return true
+	})
+
+	// Phase 6: make Misskey follow Rosmarinus, approve the pending request in
+	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
 		"userId": relayOnMisskey.ID,
@@ -230,7 +286,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 6: publish a public Rosmarinus note, dereference its Create activity,
+	// Phase 7: publish a public Rosmarinus note, dereference its Create activity,
 	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
@@ -270,7 +326,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 7: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 8: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -290,7 +346,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 8: publish a specified-visibility note, verify it is not publicly
+	// Phase 9: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"

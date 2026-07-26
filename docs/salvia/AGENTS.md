@@ -186,6 +186,9 @@ Use these Ably message names and payloads:
   the direct recipients.
 - `follow.create`: `data` contains `target`, which is a Fediverse handle or an
   absolute ActivityPub Actor URL.
+- `follow.delete`: `data` contains the same `target` forms as `follow.create`;
+  top-level `actor_id` is the owned local Actor whose outgoing relationship is
+  removed.
 - `reaction.create`: `data` contains `note_id` and `reaction`; top-level
   `actor_id` is the owned local Actor applying the reaction.
 - `reaction.delete`: `data` contains `note_id`; top-level `actor_id` is the

@@ -630,6 +630,64 @@ func TestCreateFollowAndAcceptEstablishesOutgoingRelationship(t *testing.T) {
 	}
 }
 
+func TestDeleteFollowRemovesRelationshipAndEnqueuesUndo(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:  "local-alice",
+		URI: "https://rosmarinus.example/users/local-alice",
+	}
+	remote := &actors.Actor{
+		ID:          "remote-bob",
+		URI:         "https://remote.example/users/bob",
+		Host:        &host,
+		Inbox:       "https://remote.example/users/bob/inbox",
+		SharedInbox: "https://remote.example/inbox",
+	}
+	const followActivityID = "https://rosmarinus.example/follows/local-alice/remote-bob"
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:       local.ID,
+		FolloweeID:       remote.ID,
+		FollowerURI:      local.URI,
+		FolloweeURI:      remote.URI,
+		Status:           follows.StatusAccepted,
+		RemoteActivityID: followActivityID,
+	})
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+
+	deleted, err := h.DeleteFollow(context.Background(), connector.FollowDeleteCommand{
+		ActorID: local.ID,
+		Target:  remote.URI,
+	})
+	if err != nil {
+		t.Fatalf("DeleteFollow returned error: %v", err)
+	}
+	if deleted.FollowerID != local.ID || deleted.FolloweeID != remote.ID || deleted.URI != followActivityID+"/undo" {
+		t.Fatalf("deleted follow = %+v", deleted)
+	}
+	if followRepo.deleted == nil || followRepo.deleted.FollowerID != local.ID || followRepo.deleted.FolloweeID != remote.ID {
+		t.Fatalf("deleted relationship = %+v", followRepo.deleted)
+	}
+	if existing, _ := followRepo.Find(context.Background(), local.ID, remote.ID); existing != nil {
+		t.Fatalf("follow relationship still exists: %+v", existing)
+	}
+	payload, ok := q.task.Payload.(queue.DeliverPayload)
+	if !ok || payload.ActorID != local.ID || payload.To != remote.Inbox {
+		t.Fatalf("unexpected Undo(Follow) delivery: %+v", q.task)
+	}
+	if payload.Object["id"] != followActivityID+"/undo" || payload.Object["type"] != "Undo" || payload.Object["actor"] != local.URI {
+		t.Fatalf("unexpected Undo(Follow): %+v", payload.Object)
+	}
+	object, ok := payload.Object["object"].(map[string]any)
+	if !ok || object["id"] != followActivityID || object["type"] != "Follow" || object["actor"] != local.URI || object["object"] != remote.URI {
+		t.Fatalf("unexpected embedded Follow: %+v", payload.Object["object"])
+	}
+}
+
 func TestProcessInboxAcceptWithoutIDMatchesLatestMisskey(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {

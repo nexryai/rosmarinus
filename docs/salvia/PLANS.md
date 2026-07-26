@@ -220,6 +220,8 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       `quote_uri`, `mention_uris`, and `hashtags`.
 - [ ] Implement `follow.create` with a Fediverse handle or absolute Actor URL
       in `data.target`.
+- [ ] Implement `follow.delete` with the owned local `actor_id` and the same
+      handle or absolute Actor URL in `data.target`.
 - [ ] Implement `reaction.create` with the owned local `actor_id`,
       `data.note_id`, and `data.reaction`.
 - [ ] Implement `reaction.delete` with the owned local `actor_id` and
@@ -376,8 +378,9 @@ The current Rosmarinus contract provides:
 - lookup of `salvia_accounts` by Ably `clientId`;
 - account status and authorization revision checks;
 - one-account-to-many-Actor ownership through `ownerAccountId`;
-- `actor.create`, `post.create`, `follow.create`, `reaction.create`,
-  `reaction.delete`, `follow.approve`, and `follow.reject` commands;
+- `actor.create`, `post.create`, `follow.create`, `follow.delete`,
+  `reaction.create`, `reaction.delete`, `follow.approve`, and `follow.reject`
+  commands;
 - command receipt persistence for request ID idempotency;
 - account-scoped result and domain event publication;
 - `notification.created` account event publication;

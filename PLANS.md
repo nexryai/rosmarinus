@@ -413,7 +413,7 @@ when an Ably notification is missed.
 - [x] Require the implemented Actor-bound commands to name the acting/target
       local Actor, then authorize it against the account resolved from
       `message.ClientID`. This includes `post.create`, `follow.create`,
-      `reaction.create`, `reaction.delete`, `follow.approve`, and
+      `follow.delete`, `reaction.create`, `reaction.delete`, `follow.approve`, and
       `follow.reject`.
 - [ ] Apply the same owned-Actor authorization to future Actor update/delete
       commands when those commands are implemented.
@@ -484,6 +484,9 @@ when an Ably notification is missed.
 - [x] Handle Next.js-driven `follow.create` commands by resolving a remote
       handle or Actor URL, persisting an outgoing request, and delivering
       `Follow` from the account-owned local Actor.
+- [x] Handle Next.js-driven `follow.delete` commands by soft-deleting the
+      account-owned Actor's outgoing relationship and delivering
+      `Undo(Follow)` to the remote Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
 - [x] Handle Next.js-driven `reaction.create` commands by checking Note

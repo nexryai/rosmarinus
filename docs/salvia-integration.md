@@ -160,6 +160,15 @@ Rosmarinus-owned `follows` collection for authoritative status: the relationship
 changes to `accepted` only after Rosmarinus verifies and processes the remote
 `Accept(Follow)`. A remote `Reject(Follow)` removes the pending relationship.
 
+To stop following the same remote Actor, publish `follow.delete` with the owned
+local Actor in `actor_id` and the handle or absolute Actor URL in `data.target`.
+Rosmarinus resolves the target, soft-deletes the active relationship from its
+`follows` collection, and enqueues `Undo(Follow)` to the remote Actor. A
+successful `command.succeeded.data.result` contains `follower_id`,
+`followee_id`, and the Undo activity `uri`. Retrying the same logical removal
+must reuse its original `request_id`; a new request after the relationship is
+already absent fails as `command_failed`.
+
 To react to a Rosmarinus-stored remote Note, publish `reaction.create` with the
 owned local Actor in `actor_id`:
 

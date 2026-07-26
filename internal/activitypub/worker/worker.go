@@ -290,6 +290,79 @@ func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (
 	return "ok: follow delivery enqueued", nil
 }
 
+func (h *Handler) DeleteFollow(ctx context.Context, command connector.FollowDeleteCommand) (connector.FollowDeleted, error) {
+	if h.follows == nil || h.queue == nil {
+		return connector.FollowDeleted{}, fmt.Errorf("follow repository and queue are required")
+	}
+	follower, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.FollowDeleted{}, err
+	}
+	if follower == nil {
+		return connector.FollowDeleted{}, fmt.Errorf("local follower not found: %s", command.ActorID)
+	}
+
+	target := strings.TrimSpace(command.Target)
+	var followee *actors.Actor
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		followee, err = h.resolver.ResolveActor(ctx, target)
+	} else {
+		followee, err = h.resolver.ResolveActorHandle(ctx, target)
+	}
+	if err != nil {
+		return connector.FollowDeleted{}, fmt.Errorf("resolve follow target: %w", err)
+	}
+	if followee == nil || followee.Host == nil {
+		return connector.FollowDeleted{}, fmt.Errorf("follow target must be a remote actor")
+	}
+	existing, err := h.follows.Find(ctx, follower.ID, followee.ID)
+	if err != nil {
+		return connector.FollowDeleted{}, err
+	}
+	if existing == nil {
+		return connector.FollowDeleted{}, fmt.Errorf("follow relationship not found")
+	}
+
+	remoteInbox := strings.TrimSpace(followee.Inbox)
+	if remoteInbox == "" {
+		remoteInbox = strings.TrimSpace(followee.SharedInbox)
+	}
+	if remoteInbox == "" {
+		return connector.FollowDeleted{}, fmt.Errorf("follow target inbox is empty")
+	}
+	followActivityID := existing.RemoteActivityID
+	if followActivityID == "" {
+		followActivityID = strings.TrimRight(h.cfg.PublicURL, "/") + "/follows/" + url.PathEscape(follower.ID) + "/" + url.PathEscape(followee.ID)
+	}
+	undoActivityID := strings.TrimRight(followActivityID, "/") + "/undo"
+	followActivity := map[string]any{
+		"id":     followActivityID,
+		"type":   "Follow",
+		"actor":  follower.URI,
+		"object": followee.URI,
+	}
+	undoActivity := map[string]any{
+		"@context":  "https://www.w3.org/ns/activitystreams",
+		"id":        undoActivityID,
+		"type":      "Undo",
+		"actor":     follower.URI,
+		"object":    followActivity,
+		"published": time.Now().UTC().Format(time.RFC3339),
+	}
+	if err := h.follows.Delete(ctx, follower.ID, followee.ID, ""); err != nil {
+		return connector.FollowDeleted{}, err
+	}
+	task := queue.NewDeliverTask(follower.ID, remoteInbox, undoActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return connector.FollowDeleted{}, fmt.Errorf("enqueue Undo(Follow) delivery: %w", err)
+	}
+	return connector.FollowDeleted{
+		FollowerID: follower.ID,
+		FolloweeID: followee.ID,
+		URI:        undoActivityID,
+	}, nil
+}
+
 func (h *Handler) performAcceptFollow(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
 	return h.finishOutgoingFollow(ctx, actor, activity, true)
 }

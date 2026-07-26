@@ -16,6 +16,7 @@ const (
 	CommandFollowApprove        = "follow.approve"
 	CommandFollowReject         = "follow.reject"
 	CommandFollowCreate         = "follow.create"
+	CommandFollowDelete         = "follow.delete"
 	CommandPostCreate           = "post.create"
 	CommandReactionCreate       = "reaction.create"
 	CommandReactionDelete       = "reaction.delete"
@@ -51,6 +52,7 @@ type ActorOwnershipLookup interface {
 
 type CommandExecutor interface {
 	CreateFollow(context.Context, string, string) (string, error)
+	DeleteFollow(context.Context, FollowDeleteCommand) (FollowDeleted, error)
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
@@ -87,6 +89,21 @@ type FollowRejectData struct {
 
 type FollowCreateData struct {
 	Target string `json:"target"`
+}
+
+type FollowDeleteData struct {
+	Target string `json:"target"`
+}
+
+type FollowDeleteCommand struct {
+	ActorID string
+	Target  string
+}
+
+type FollowDeleted struct {
+	FollowerID string `json:"follower_id" bson:"follower_id"`
+	FolloweeID string `json:"followee_id" bson:"followee_id"`
+	URI        string `json:"uri" bson:"uri"`
 }
 
 type PostCreateData struct {
@@ -186,7 +203,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -347,6 +364,19 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		}
 		result, err := h.executor.CreateFollow(ctx, actorID, command.Target)
 		return result, actorID, err
+	case CommandFollowDelete:
+		var command FollowDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := h.executor.DeleteFollow(ctx, FollowDeleteCommand{
+			ActorID: actorID,
+			Target:  command.Target,
+		})
+		return result, actorID, err
 	case CommandFollowApprove:
 		var command FollowApproveData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -462,7 +492,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate:
 		return true
 	default:
 		return false
