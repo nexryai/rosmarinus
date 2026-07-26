@@ -1342,6 +1342,103 @@ func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
 	}
 }
 
+func TestPerformUndoAcceptDeletesOutgoingFollow(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:  "relay",
+		URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:   "remote-alice",
+		URI:  "https://remote.example/users/alice",
+		Host: &host,
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:  local.ID,
+		FolloweeID:  remote.ID,
+		FollowerURI: local.URI,
+		FolloweeURI: remote.URI,
+		Status:      follows.StatusAccepted,
+	})
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	result, err := h.performUndo(context.Background(), remote, map[string]any{
+		"id":    "https://remote.example/activities/undo-accept",
+		"type":  "Undo",
+		"actor": remote.URI,
+		"object": map[string]any{
+			"id":    "https://remote.example/activities/accept",
+			"type":  "Accept",
+			"actor": remote.URI,
+			"object": map[string]any{
+				"id":     "https://rosmarinus.example/follows/relay/remote-alice",
+				"type":   "Follow",
+				"actor":  local.URI,
+				"object": remote.URI,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("performUndo returned error: %v", err)
+	}
+	if result != "ok: unfollowed" {
+		t.Fatalf("result = %q", result)
+	}
+	if follow, _ := followRepo.Find(context.Background(), local.ID, remote.ID); follow != nil {
+		t.Fatalf("follow still exists: %+v", follow)
+	}
+	if followRepo.deleted == nil || followRepo.deleted.RemoteUndoActivityID != "https://remote.example/activities/undo-accept" {
+		t.Fatalf("delete was not recorded: %+v", followRepo.deleted)
+	}
+}
+
+func TestPerformUndoAcceptRejectsMismatchedFollowee(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:  "relay",
+		URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:   "remote-alice",
+		URI:  "https://remote.example/users/alice",
+		Host: &host,
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID:  local.ID,
+		FolloweeID:  remote.ID,
+		FollowerURI: local.URI,
+		FolloweeURI: remote.URI,
+		Status:      follows.StatusAccepted,
+	})
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	result, err := h.performUndo(context.Background(), remote, map[string]any{
+		"id":    "https://remote.example/activities/undo-accept",
+		"type":  "Undo",
+		"actor": remote.URI,
+		"object": map[string]any{
+			"type":  "Accept",
+			"actor": remote.URI,
+			"object": map[string]any{
+				"type":   "Follow",
+				"actor":  local.URI,
+				"object": "https://other.example/users/mallory",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("performUndo returned error: %v", err)
+	}
+	if result != "skip: accepted follow object mismatch" {
+		t.Fatalf("result = %q", result)
+	}
+	if follow, _ := followRepo.Find(context.Background(), local.ID, remote.ID); follow == nil {
+		t.Fatal("mismatched Undo(Accept) deleted the follow")
+	}
+}
+
 func TestProcessInboxBlockStoresBlock(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {

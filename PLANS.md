@@ -145,7 +145,8 @@ same style as Concorde.
       `Undo(EmojiReact)` by deleting the actor's stored note reaction.
 - [x] `Undo`: support remote `Undo(Announce)` by deleting the stored renote.
 - [x] `Undo`: support remote `Undo(Block)` by deleting stored local block state.
-- [ ] `Undo`: support undo accept.
+- [x] `Undo`: support undo accept while verifying the remote acceptor and the
+      embedded Follow endpoints before deleting a local-to-remote relationship.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
 - [x] `Delete`: tombstone remote actors and enqueue account cleanup tasks.

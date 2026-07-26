@@ -1296,6 +1296,9 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 	if aptypes.IsBlock(object) {
 		return h.performUndoBlock(ctx, actor, activity, object)
 	}
+	if aptypes.IsAccept(object) {
+		return h.performUndoAccept(ctx, actor, activity, object)
+	}
 	if !aptypes.IsFollow(object) {
 		return fmt.Sprintf("skip: unsupported undo object type %v", activity["object"]), nil
 	}
@@ -1322,6 +1325,56 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 	}
 	undoID, _ := activity["id"].(string)
 	if err := h.follows.Delete(ctx, actor.ID, followee.ID, undoID); err != nil {
+		return "", err
+	}
+	return "ok: unfollowed", nil
+}
+
+func (h *Handler) performUndoAccept(ctx context.Context, actor *actors.Actor, activity, accept map[string]any) (string, error) {
+	acceptActorURI, err := aptypes.GetAPID(accept["actor"])
+	if err != nil {
+		return "skip: undo accept actor is invalid", nil
+	}
+	if acceptActorURI != actor.URI {
+		return "skip: undo accept actor mismatch", nil
+	}
+
+	object := accept["object"]
+	var followerURI string
+	if follow, ok := object.(map[string]any); ok && aptypes.IsFollow(follow) {
+		followerURI, err = aptypes.GetAPID(follow["actor"])
+		if err != nil {
+			return "skip: accepted follow actor is invalid", nil
+		}
+		followeeURI, followeeErr := aptypes.GetAPID(follow["object"])
+		if followeeErr != nil || followeeURI != actor.URI {
+			return "skip: accepted follow object mismatch", nil
+		}
+	} else {
+		followerURI, err = aptypes.GetAPID(object)
+		if err != nil {
+			return "skip: accepted follower is invalid", nil
+		}
+	}
+	follower, err := h.repo.FindByURI(ctx, followerURI)
+	if err != nil {
+		return "", err
+	}
+	if follower == nil || follower.Host != nil {
+		return "skip: accepted follower is not a local user", nil
+	}
+	if h.follows == nil {
+		return "skip: follow repository is not configured", nil
+	}
+	follow, err := h.follows.Find(ctx, follower.ID, actor.ID)
+	if err != nil {
+		return "", err
+	}
+	if follow == nil || follow.Status != follows.StatusAccepted {
+		return "skip: not following", nil
+	}
+	undoID, _ := activity["id"].(string)
+	if err := h.follows.Delete(ctx, follower.ID, actor.ID, undoID); err != nil {
 		return "", err
 	}
 	return "ok: unfollowed", nil
