@@ -24,6 +24,10 @@ read/write and index privileges only on Rosmarinus-owned collections and
 Rosmarinus never creates an index on `salvia_accounts`. Salvia must provide a
 unique index on `ablyClientId`.
 
+Remote documents in `actors` are refreshed by Rosmarinus after it verifies a
+signed ActivityPub `Update(Person)`. Salvia should render the current shared
+document and must not maintain a separately writable remote-profile copy.
+
 ### MongoDB role bootstrap
 
 [`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom

@@ -214,10 +214,57 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 	case aptypes.IsReject(activity):
 		return h.performRejectFollow(ctx, actor, activity)
 	case aptypes.IsUpdate(activity):
-		return fmt.Sprintf("skip: activity type %v is not implemented yet", activity["type"]), nil
+		return h.performUpdate(ctx, actor, activity)
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
 	}
+}
+
+func (h *Handler) performUpdate(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	if actor.Host == nil {
+		return "skip: update actor is not remote", nil
+	}
+	object, err := h.updateObject(ctx, activity["object"])
+	if err != nil {
+		return "", err
+	}
+	if object == nil || !aptypes.IsActor(object) {
+		return fmt.Sprintf("skip: update object type %v is not implemented", activity["object"]), nil
+	}
+	objectID, err := aptypes.GetAPID(object)
+	if err != nil || objectID != actor.URI {
+		return "skip: actor id mismatch", nil
+	}
+	updated, err := apresolver.ParseRemoteActor(object, actor.URI)
+	if err != nil {
+		return "", fmt.Errorf("parse updated actor: %w", err)
+	}
+	if updated.PublicKeyID == "" {
+		updated.PublicKeyID = actor.PublicKeyID
+		updated.PublicKeyPEM = actor.PublicKeyPEM
+	}
+	if _, err := h.repo.UpsertRemoteActor(ctx, updated); err != nil {
+		return "", fmt.Errorf("store updated actor: %w", err)
+	}
+	return "ok: Person updated", nil
+}
+
+func (h *Handler) updateObject(ctx context.Context, value any) (map[string]any, error) {
+	if object, ok := value.(map[string]any); ok {
+		return object, nil
+	}
+	uri, err := aptypes.GetAPID(value)
+	if err != nil {
+		return nil, nil
+	}
+	if h.client == nil {
+		return nil, fmt.Errorf("update object resolver is not configured")
+	}
+	object, err := h.client.FetchObject(ctx, uri, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve update object: %w", err)
+	}
+	return object, nil
 }
 
 func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (string, error) {

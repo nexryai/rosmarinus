@@ -151,7 +151,9 @@ same style as Concorde.
       author.
 - [x] `Delete`: tombstone remote actors and enqueue account cleanup tasks.
 - [ ] `Delete`: implement full cascaded account cleanup side effects.
-- [ ] `Update`: update actors, notes, and questions/polls.
+- [x] `Update`: authenticate remote Actor updates, require the updated Actor ID
+      to match the signer, and refresh the stored remote Actor.
+- [ ] `Update`: update notes and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
 - [ ] `Add` and `Remove`: inspect Concorde handling before deciding exact scope.

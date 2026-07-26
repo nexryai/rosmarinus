@@ -688,6 +688,91 @@ func TestDeleteFollowRemovesRelationshipAndEnqueuesUndo(t *testing.T) {
 	}
 }
 
+func TestPerformUpdateRefreshesRemoteActorAndPreservesOmittedKey(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:  "relay",
+		URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:           "remote-alice",
+		Username:     "alice",
+		Name:         "Old name",
+		Host:         &host,
+		URI:          "https://remote.example/users/alice",
+		Inbox:        "https://remote.example/users/alice/inbox",
+		PublicKeyID:  "https://remote.example/users/alice#main-key",
+		PublicKeyPEM: "old public key",
+	}
+	repo := &fakeRepo{local: local, remote: remote}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	result, err := h.performUpdate(context.Background(), remote, map[string]any{
+		"type":  "Update",
+		"actor": remote.URI,
+		"object": map[string]any{
+			"id":                remote.URI,
+			"type":              "Person",
+			"preferredUsername": "alice",
+			"name":              "New name",
+			"inbox":             "https://remote.example/users/alice/new-inbox",
+			"outbox":            "https://remote.example/users/alice/outbox",
+		},
+	})
+	if err != nil {
+		t.Fatalf("performUpdate returned error: %v", err)
+	}
+	if result != "ok: Person updated" {
+		t.Fatalf("result = %q", result)
+	}
+	if repo.remote == nil || repo.remote.Name != "New name" || repo.remote.Inbox != "https://remote.example/users/alice/new-inbox" {
+		t.Fatalf("updated actor = %+v", repo.remote)
+	}
+	if repo.remote.PublicKeyID != remote.PublicKeyID || repo.remote.PublicKeyPEM != remote.PublicKeyPEM {
+		t.Fatalf("omitted public key was not preserved: %+v", repo.remote)
+	}
+}
+
+func TestPerformUpdateRejectsDifferentActorOnSameHost(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID:  "relay",
+		URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID:       "remote-alice",
+		Username: "alice",
+		Name:     "Alice",
+		Host:     &host,
+		URI:      "https://remote.example/users/alice",
+		Inbox:    "https://remote.example/users/alice/inbox",
+	}
+	repo := &fakeRepo{local: local, remote: remote}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	result, err := h.performUpdate(context.Background(), remote, map[string]any{
+		"type":  "Update",
+		"actor": remote.URI,
+		"object": map[string]any{
+			"id":                "https://remote.example/users/bob",
+			"type":              "Person",
+			"preferredUsername": "bob",
+			"name":              "Bob",
+			"inbox":             "https://remote.example/users/bob/inbox",
+			"outbox":            "https://remote.example/users/bob/outbox",
+		},
+	})
+	if err != nil {
+		t.Fatalf("performUpdate returned error: %v", err)
+	}
+	if result != "skip: actor id mismatch" {
+		t.Fatalf("result = %q", result)
+	}
+	if repo.remote != remote || repo.remote.Name != "Alice" {
+		t.Fatalf("mismatched update changed actor: %+v", repo.remote)
+	}
+}
+
 func TestProcessInboxAcceptWithoutIDMatchesLatestMisskey(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
