@@ -277,14 +277,16 @@ the same style as current Misskey.
 - [x] Validate `followers` and `following` host.
 - [x] Validate `preferredUsername` against current Misskey-compatible rules.
 - [x] Truncate display name to current Misskey-compatible limits.
-- [ ] Truncate and store summary to current Misskey-compatible limits.
+- [x] Convert, truncate, and store summary to current Misskey-compatible
+      limits.
 - [x] Store remote public keys by `keyId`.
 - [x] Store `inbox`, `sharedInbox`, `followersUri`, `followingUri`, and
       `featured`.
 - [x] Store `movedToUri`, `alsoKnownAs`, and `movedAt`, and expose them as
       additive fields in Salvia's read-only Actor projection.
-- [ ] Store bot/cat flags, discoverability, profile fields, birthday, location,
-      avatar, banner, and custom emoji names where available.
+- [x] Store bot/cat/locked/discoverability flags, profile fields, birthday,
+      location, HTTPS profile/avatar/banner URLs, hashtags, and custom emoji
+      names where available.
 - [x] Refresh remote actors when stale after 24 hours, retaining the last
       validated Actor if a refresh temporarily fails.
 - [ ] Update featured notes from remote `featured` collections.
@@ -338,7 +340,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 - [ ] Render local custom emojis as ActivityPub `Emoji` tags.
 - [x] Extract remote `Emoji` tags from notes.
-- [ ] Extract remote `Emoji` tags from actors.
+- [x] Extract remote `Emoji` names from Actor tags; media upsert remains part
+      of the shared custom-emoji pipeline below.
 - [x] Normalize `:name:` to `name`.
 - [ ] Upsert by `(host, name)`.
 - [ ] Update existing emoji if AP URI, updated timestamp, or original URL changes.

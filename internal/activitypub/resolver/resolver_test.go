@@ -203,6 +203,22 @@ func TestParseRemoteActor(t *testing.T) {
 		"alsoKnownAs":       []any{"https://old.example/users/alice"},
 		"preferredUsername": "alice",
 		"name":              "Alice",
+		"summary":           `<p>Hello <strong>world</strong> <a href="https://remote.example/tags/Go">#Go</a></p>`,
+		"url":               map[string]any{"href": "https://remote.example/@alice"},
+		"icon":              map[string]any{"url": "https://remote.example/files/avatar.webp"},
+		"image":             []any{map[string]any{"url": "https://remote.example/files/banner.webp"}},
+		"attachment": []any{map[string]any{
+			"type": "PropertyValue", "name": "Site", "value": `<a href="https://example.com">Example</a>`,
+		}},
+		"tag": []any{
+			map[string]any{"type": "Hashtag", "name": "#Go"},
+			map[string]any{"type": "Emoji", "name": ":blob:", "icon": map[string]any{"url": "https://remote.example/files/blob.webp"}},
+		},
+		"vcard:bday":                "2000-01-02T00:00:00Z",
+		"vcard:Address":             "Somewhere",
+		"manuallyApprovesFollowers": true,
+		"discoverable":              true,
+		"isCat":                     true,
 		"endpoints": map[string]any{
 			"sharedInbox": "https://remote.example/inbox",
 		},
@@ -231,6 +247,46 @@ func TestParseRemoteActor(t *testing.T) {
 	}
 	if actor.Host == nil || *actor.Host != "remote.example" {
 		t.Fatalf("unexpected host: %+v", actor.Host)
+	}
+	if actor.Summary != "Hello **world** #Go" || actor.URL != "https://remote.example/@alice" {
+		t.Fatalf("unexpected profile summary/url: %+v", actor)
+	}
+	if len(actor.ProfileFields) != 1 || actor.ProfileFields[0].Value != "[Example](https://example.com)" {
+		t.Fatalf("unexpected profile fields: %+v", actor.ProfileFields)
+	}
+	if actor.Birthday != "2000-01-02" || actor.Location != "Somewhere" || actor.AvatarURL == "" || actor.BannerURL == "" {
+		t.Fatalf("unexpected actor profile metadata: %+v", actor)
+	}
+	if len(actor.Tags) != 1 || actor.Tags[0] != "go" || len(actor.EmojiNames) != 1 || actor.EmojiNames[0] != "blob" {
+		t.Fatalf("unexpected actor tags/emojis: %+v", actor)
+	}
+	if actor.IsBot || !actor.IsCat || !actor.IsLocked || !actor.IsDiscoverable {
+		t.Fatalf("unexpected actor flags: %+v", actor)
+	}
+}
+
+func TestParseRemoteActorRejectsNonHTTPSProfileURL(t *testing.T) {
+	_, err := ParseRemoteActor(map[string]any{
+		"type": "Person", "id": "https://remote.example/users/alice",
+		"inbox": "https://remote.example/users/alice/inbox", "preferredUsername": "alice",
+		"url": "http://remote.example/@alice",
+	}, "https://remote.example/users/alice")
+	if err == nil || !strings.Contains(err.Error(), "actor url") {
+		t.Fatalf("expected invalid profile URL error, got %v", err)
+	}
+}
+
+func TestParseRemoteActorTruncatesUnicodeSummary(t *testing.T) {
+	actor, err := ParseRemoteActor(map[string]any{
+		"type": "Service", "id": "https://remote.example/users/bot",
+		"inbox": "https://remote.example/users/bot/inbox", "preferredUsername": "bot",
+		"summary": strings.Repeat("猫", maxActorSummaryLength+1),
+	}, "https://remote.example/users/bot")
+	if err != nil {
+		t.Fatalf("ParseRemoteActor returned error: %v", err)
+	}
+	if len([]rune(actor.Summary)) != maxActorSummaryLength || !actor.IsBot {
+		t.Fatalf("summary length=%d IsBot=%v", len([]rune(actor.Summary)), actor.IsBot)
 	}
 }
 

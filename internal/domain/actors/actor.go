@@ -12,6 +12,19 @@ type Actor struct {
 	Username       string
 	UsernameLower  string
 	Name           string
+	Summary        string
+	URL            string
+	ProfileFields  []ProfileField
+	Birthday       string
+	Location       string
+	AvatarURL      string
+	BannerURL      string
+	Tags           []string
+	EmojiNames     []string
+	IsBot          bool
+	IsCat          bool
+	IsLocked       bool
+	IsDiscoverable bool
 	Type           string
 	Host           *string
 	URI            string
@@ -28,6 +41,11 @@ type Actor struct {
 	PublicKeyPEM   string
 	PrivateKeyPEM  string
 	IsSuspended    bool
+}
+
+type ProfileField struct {
+	Name  string
+	Value string
 }
 
 type Lookup interface {

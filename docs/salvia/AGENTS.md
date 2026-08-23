@@ -110,6 +110,13 @@ read-only federation state. A non-null `movedAt` is the signal that Rosmarinus
 accepted the reciprocal alias proof; Salvia must not validate or write account
 migrations itself.
 
+Treat remote Actor `summary`, `url`, `profileFields`, `birthday`, `location`,
+`avatarUrl`, `bannerUrl`, `tags`, `emojiNames`, `isBot`, `isCat`, `isLocked`,
+`isDiscoverable`, and `lastFetchedAt` as read-only federation profile state.
+`summary` and profile-field values are already converted to Rosmarinus'
+MFM-compatible text. The avatar/banner fields are validated remote HTTPS URLs,
+not a guarantee of locally cached media.
+
 ## Account and Actor Identity
 
 An Ably `clientId` identifies one authenticated local account. It does not

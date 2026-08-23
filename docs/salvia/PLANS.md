@@ -325,6 +325,9 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the
       UI needs moved-account labels or navigation; treat them as read-only and
       trust `movedAt`, not an unverified URI alone, as the accepted-move signal.
+- [ ] Project the explicit remote Actor profile fields documented in the
+      integration contract; render converted summary/property text safely and
+      distinguish remote avatar/banner source URLs from cached media.
 - [ ] Model eventual consistency in loading and post-command UI states.
 - [ ] Keep presentation fields and preferences in Salvia-owned collections.
 - [ ] Verify the Salvia runtime MongoDB role cannot mutate a Rosmarinus

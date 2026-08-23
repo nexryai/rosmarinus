@@ -6,11 +6,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
 type Fetcher interface {
@@ -35,6 +38,14 @@ type Resolver struct {
 }
 
 const remoteActorRefreshInterval = 24 * time.Hour
+
+const (
+	maxActorSummaryLength  = 2048
+	maxActorLocationLength = 128
+	maxActorURLLength      = 512
+)
+
+var actorBirthdayPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
 
 func (r *Resolver) SetFederationPolicy(policy FederationPolicy) {
 	r.policy = policy
@@ -157,33 +168,202 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 		return actors.Actor{}, fmt.Errorf("invalid actor: wrong username")
 	}
 	name, _ := object["name"].(string)
-	if len(name) > 128 {
-		name = name[:128]
+	name = truncateRunes(name, 128)
+	summary, err := actorSummary(object)
+	if err != nil {
+		return actors.Actor{}, err
 	}
+	profileURL, err := optionalHTTPSHref(object["url"], maxActorURLLength)
+	if err != nil {
+		return actors.Actor{}, fmt.Errorf("invalid actor url: %w", err)
+	}
+	avatarURL, _ := optionalHTTPSHref(object["icon"], maxActorURLLength)
+	bannerURL, _ := optionalHTTPSHref(object["image"], maxActorURLLength)
+	profileFields := actorProfileFields(object["attachment"])
+	tags := actorHashtags(object["tag"])
+	emojiNames := actorEmojiNames(object["tag"])
+	birthday := actorBirthday(object["vcard:bday"])
+	location, _ := object["vcard:Address"].(string)
+	location = truncateRunes(location, maxActorLocationLength)
 	publicKeyID, publicKeyPEM, err := publicKey(object, expectHost)
 	if err != nil {
 		return actors.Actor{}, err
 	}
+	kind := actorType(object)
 	host := expectHost
 	return actors.Actor{
-		ID:            remoteActorID(id),
-		Username:      username,
-		UsernameLower: strings.ToLower(username),
-		Name:          name,
-		Type:          actorType(object),
-		Host:          &host,
-		URI:           id,
-		Inbox:         inbox,
-		SharedInbox:   sharedInbox,
-		FollowersURI:  followersURI,
-		FollowingURI:  followingURI,
-		FeaturedURI:   featuredURI,
-		MovedToURI:    movedToURI,
-		AlsoKnownAs:   alsoKnownAs,
-		PublicKeyID:   publicKeyID,
-		PublicKeyPEM:  publicKeyPEM,
-		IsSuspended:   false,
+		ID:             remoteActorID(id),
+		Username:       username,
+		UsernameLower:  strings.ToLower(username),
+		Name:           name,
+		Summary:        summary,
+		URL:            profileURL,
+		ProfileFields:  profileFields,
+		Birthday:       birthday,
+		Location:       location,
+		AvatarURL:      avatarURL,
+		BannerURL:      bannerURL,
+		Tags:           tags,
+		EmojiNames:     emojiNames,
+		IsBot:          kind == "Service" || kind == "Application",
+		IsCat:          boolValue(object["isCat"]),
+		IsLocked:       boolValue(object["manuallyApprovesFollowers"]),
+		IsDiscoverable: boolValue(object["discoverable"]),
+		Type:           kind,
+		Host:           &host,
+		URI:            id,
+		Inbox:          inbox,
+		SharedInbox:    sharedInbox,
+		FollowersURI:   followersURI,
+		FollowingURI:   followingURI,
+		FeaturedURI:    featuredURI,
+		MovedToURI:     movedToURI,
+		AlsoKnownAs:    alsoKnownAs,
+		PublicKeyID:    publicKeyID,
+		PublicKeyPEM:   publicKeyPEM,
+		IsSuspended:    false,
 	}, nil
+}
+
+func actorSummary(object map[string]any) (string, error) {
+	if summary, ok := object["_misskey_summary"].(string); ok && summary != "" {
+		return truncateRunes(summary, maxActorSummaryLength), nil
+	}
+	value, exists := object["summary"]
+	if !exists || value == nil || value == "" {
+		return "", nil
+	}
+	summary, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid actor: wrong summary")
+	}
+	hashtags := actorHashtags(object["tag"])
+	for i := range hashtags {
+		hashtags[i] = "#" + hashtags[i]
+	}
+	converted, err := mfm.FromHTML(truncateRunes(summary, maxActorSummaryLength), hashtags)
+	if err != nil {
+		return "", fmt.Errorf("invalid actor summary: %w", err)
+	}
+	return converted, nil
+}
+
+func actorProfileFields(value any) []actors.ProfileField {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	fields := make([]actors.ProfileField, 0, len(items))
+	for _, item := range items {
+		property, ok := item.(map[string]any)
+		if !ok || !aptypes.IsType(property, "PropertyValue") {
+			continue
+		}
+		name, nameOK := property["name"].(string)
+		value, valueOK := property["value"].(string)
+		if !nameOK || !valueOK {
+			continue
+		}
+		converted, err := mfm.FromHTML(value, nil)
+		if err != nil {
+			continue
+		}
+		fields = append(fields, actors.ProfileField{Name: truncateRunes(name, 128), Value: truncateRunes(converted, 2048)})
+	}
+	return fields
+}
+
+func actorHashtags(value any) []string {
+	result := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, item := range aptypes.ToArray(value) {
+		tag, ok := item.(map[string]any)
+		if !ok || !aptypes.IsType(tag, "Hashtag") {
+			continue
+		}
+		name, _ := tag["name"].(string)
+		name = strings.TrimPrefix(strings.TrimSpace(name), "#")
+		name = strings.ToLower(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+		if len(result) == 32 {
+			break
+		}
+	}
+	return result
+}
+
+func actorEmojiNames(value any) []string {
+	result := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, item := range aptypes.ToArray(value) {
+		tag, ok := item.(map[string]any)
+		if !ok || !aptypes.IsType(tag, "Emoji") {
+			continue
+		}
+		name, _ := tag["name"].(string)
+		name = strings.Trim(strings.TrimSpace(name), ":")
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		result = append(result, name)
+	}
+	return result
+}
+
+func actorBirthday(value any) string {
+	birthday, _ := value.(string)
+	return actorBirthdayPattern.FindString(birthday)
+}
+
+func optionalHTTPSHref(value any, maxLength int) (string, error) {
+	for _, item := range aptypes.ToArray(value) {
+		var href string
+		switch link := item.(type) {
+		case string:
+			href = link
+		case map[string]any:
+			href, _ = link["url"].(string)
+			if href == "" {
+				href, _ = link["href"].(string)
+			}
+		}
+		if href == "" {
+			continue
+		}
+		parsed, err := url.Parse(href)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+			return "", fmt.Errorf("unexpected schema: %s", href)
+		}
+		if utf8.RuneCountInString(href) > maxLength {
+			return "", fmt.Errorf("url exceeds %d characters", maxLength)
+		}
+		return href, nil
+	}
+	return "", nil
+}
+
+func boolValue(value any) bool {
+	result, _ := value.(bool)
+	return result
+}
+
+func truncateRunes(value string, max int) string {
+	if utf8.RuneCountInString(value) <= max {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:max])
 }
 
 func requiredSameHostID(value any, expectHost, field string) (string, error) {
