@@ -139,7 +139,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	queueClient := queue.NewAsynqClient(redisCfg)
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
+	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
+	apWorker.SetActivityLocker(apLocker)
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
 	var connectorCommands *connector.CommandHandler
@@ -192,7 +194,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		mongoClient:                mongoClient,
 		mongoDB:                    mongoDB,
 		redisClient:                redisClient,
-		apLocker:                   cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute),
+		apLocker:                   apLocker,
 		actors:                     actorRepo,
 		notes:                      noteRepo,
 		follows:                    followRepo,

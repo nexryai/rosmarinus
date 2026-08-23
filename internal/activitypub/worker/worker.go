@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -45,6 +46,10 @@ type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
 }
 
+type ActivityLocker interface {
+	Acquire(context.Context, string) (func(context.Context) error, bool, error)
+}
+
 type ConnectorPublisher interface {
 	PublishPostCreated(context.Context, connector.PostCreated) error
 	PublishFollowApprovalRequested(context.Context, connector.FollowApproval) error
@@ -64,6 +69,7 @@ type Handler struct {
 	queue      QueueClient
 	client     APClient
 	connector  ConnectorPublisher
+	locker     ActivityLocker
 	resolver   *apresolver.Resolver
 	localActor *actors.Actor
 }
@@ -89,6 +95,10 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 
 func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 	h.connector = publisher
+}
+
+func (h *Handler) SetActivityLocker(locker ActivityLocker) {
+	h.locker = locker
 }
 
 func (h *Handler) Register(server *queue.AsynqServer) {
@@ -193,6 +203,23 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 	activityHost, err := hostOf(activityID)
 	if err != nil || signerHost != activityHost {
 		return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerHost, activityHost), nil
+	}
+	if h.locker != nil {
+		lockName := fmt.Sprintf("activity:%x", sha256.Sum256([]byte(activityID)))
+		unlock, acquired, err := h.locker.Acquire(ctx, lockName)
+		if err != nil {
+			return "", fmt.Errorf("acquire activity lock: %w", err)
+		}
+		if !acquired {
+			return "skip: activity is already being processed", nil
+		}
+		defer func() {
+			unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := unlock(unlockCtx); err != nil && h.logger != nil {
+				h.logger.Printf("inbox: release activity lock id=%s err=%v", activityID, err)
+			}
+		}()
 	}
 	return h.performActivity(ctx, authActor, payload.Activity)
 }

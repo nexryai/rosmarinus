@@ -450,6 +450,9 @@ flags, but that is an operational option, not the default architecture.
 
 ### Redis Locks And Cache
 
+- [x] Acquire the Redis AP lock for each verified inbound activity ID before
+      applying federation side effects, and release it with an independent
+      bounded context.
 - [ ] AP object lock by URI for note/actor/announce resolution.
 - [ ] Instance metadata lock by host.
 - [ ] Public key cache keyed by `keyId`.

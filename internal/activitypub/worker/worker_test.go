@@ -421,6 +421,23 @@ type fakeClient struct {
 	objects map[string]map[string]any
 }
 
+type fakeActivityLocker struct {
+	acquired bool
+	name     string
+	unlocked bool
+}
+
+func (l *fakeActivityLocker) Acquire(_ context.Context, name string) (func(context.Context) error, bool, error) {
+	l.name = name
+	if !l.acquired {
+		return nil, false, nil
+	}
+	return func(context.Context) error {
+		l.unlocked = true
+		return nil
+	}, true, nil
+}
+
 func (f *fakeClient) FetchObject(ctx context.Context, uri string, signer *actors.Actor) (map[string]any, error) {
 	return f.objects[uri], nil
 }
@@ -708,6 +725,8 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
 	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	locker := &fakeActivityLocker{acquired: true}
+	h.SetActivityLocker(locker)
 	h.SetConnectorPublisher(connectorPublisher)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
@@ -749,6 +768,9 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 	if connectorPublisher.requested.FollowerID != remote.ID || connectorPublisher.requested.FolloweeID != local.ID {
 		t.Fatalf("unexpected approval request payload: %+v", connectorPublisher.requested)
+	}
+	if !strings.HasPrefix(locker.name, "activity:") || !locker.unlocked {
+		t.Fatalf("activity lock was not used and released: %+v", locker)
 	}
 }
 
