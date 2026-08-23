@@ -117,6 +117,11 @@ Treat remote Actor `summary`, `url`, `profileFields`, `birthday`, `location`,
 MFM-compatible text. The avatar/banner fields are validated remote HTTPS URLs,
 not a guarantee of locally cached media.
 
+Remote Note relationships expose both federation URIs (`inReplyToUri`,
+`quoteUri`) and resolved Rosmarinus IDs (`replyId`, `quoteId`). Use the ID fields
+for MongoDB joins and thread rendering. Treat URI fields as read-only
+ActivityPub source data, not database foreign keys.
+
 ## Account and Actor Identity
 
 An Ably `clientId` identifies one authenticated local account. It does not

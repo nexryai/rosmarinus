@@ -28,7 +28,9 @@ type noteDocument struct {
 	ContentWarning *string                `bson:"contentWarning,omitempty"`
 	Sensitive      bool                   `bson:"sensitive"`
 	InReplyToURI   string                 `bson:"inReplyToUri,omitempty"`
+	ReplyID        string                 `bson:"replyId,omitempty"`
 	QuoteURI       string                 `bson:"quoteUri,omitempty"`
+	QuoteID        string                 `bson:"quoteId,omitempty"`
 	RenoteID       string                 `bson:"renoteId,omitempty"`
 	RenoteURI      string                 `bson:"renoteUri,omitempty"`
 	Visibility     string                 `bson:"visibility"`
@@ -148,7 +150,9 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		ContentWarning: doc.ContentWarning,
 		Sensitive:      doc.Sensitive,
 		InReplyToURI:   doc.InReplyToURI,
+		ReplyID:        doc.ReplyID,
 		QuoteURI:       doc.QuoteURI,
+		QuoteID:        doc.QuoteID,
 		RenoteID:       doc.RenoteID,
 		RenoteURI:      doc.RenoteURI,
 		Visibility:     domainnotes.Visibility(doc.Visibility),
@@ -173,7 +177,9 @@ func fromNote(note domainnotes.Note) noteDocument {
 		ContentWarning: note.ContentWarning,
 		Sensitive:      note.Sensitive,
 		InReplyToURI:   note.InReplyToURI,
+		ReplyID:        note.ReplyID,
 		QuoteURI:       note.QuoteURI,
+		QuoteID:        note.QuoteID,
 		RenoteID:       note.RenoteID,
 		RenoteURI:      note.RenoteURI,
 		Visibility:     string(note.Visibility),

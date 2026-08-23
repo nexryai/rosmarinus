@@ -2067,7 +2067,17 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	client := &fakeClient{objects: map[string]map[string]any{
+		"https://remote.example/notes/root": {
+			"id": "https://remote.example/notes/root", "type": "Note",
+			"attributedTo": remote.URI, "to": apnotes.PublicAudience, "content": "root",
+		},
+		"https://remote.example/notes/quote": {
+			"id": "https://remote.example/notes/quote", "type": "Note",
+			"attributedTo": remote.URI, "to": apnotes.PublicAudience, "content": "quote",
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -2122,6 +2132,9 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 	}
 	if note.InReplyToURI != "https://remote.example/notes/root" || note.QuoteURI != "https://remote.example/notes/quote" {
 		t.Fatalf("unexpected reply/quote: %+v", note)
+	}
+	if note.ReplyID == "" || note.QuoteID == "" {
+		t.Fatalf("reply/quote were not resolved: %+v", note)
 	}
 	if len(note.Hashtags) != 1 || note.Hashtags[0] != "hello" {
 		t.Fatalf("hashtags = %#v", note.Hashtags)

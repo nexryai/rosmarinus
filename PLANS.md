@@ -298,8 +298,10 @@ For MFM behavior, use the current `./misskey` backend and the matching
 Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 - [x] Resolve by AP URI with remote signed GET for Create object references.
-- [ ] Resolve by AP URI with local URI parsing and full note resolver cache.
-- [ ] Use Redis AP locks to deduplicate concurrent resolution by URI.
+- [x] Resolve local/cached notes by AP URI from MongoDB and fetch/store missing
+      remote notes through the shared strict resolver.
+- [x] Use Redis AP locks to deduplicate concurrent note and Announce target
+      resolution by URI.
 - [x] Validate post types: `Note`, `Question`, `Article`, `Audio`, `Document`,
       `Image`, `Page`, `Video`, `Event`.
 - [x] Require `note.id` and `attributedTo` hosts to match actor host.
@@ -310,7 +312,7 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Preserve remote attachment metadata on notes.
 - [ ] Resolve attachments as media records.
 - [x] Store and render basic reply and quote URIs.
-- [ ] Resolve replies and quotes.
+- [x] Resolve replies and quotes recursively with URL history/depth protection.
 - [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
       `source.mediaType = text/x.misskeymarkdown`.
 - [ ] Preserve full Misskey compatibility fields:
@@ -331,8 +333,9 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Store basic renote/Announce target references.
 - [x] Store basic remote attachment metadata.
 - [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
-- [ ] Store cached files, polls, URL, visible users, resolved reply/renote, and
-      denormalized author fields.
+- [x] Store resolved `replyId` and `quoteId` alongside their AP URIs.
+- [ ] Store cached files, polls, URL, visible users, and denormalized author
+      fields.
 - [ ] Update reply counts, renote counts, hashtags, and local notifications
       where Rosmarinus owns those writes.
 
@@ -453,7 +456,8 @@ flags, but that is an operational option, not the default architecture.
 - [x] Acquire the Redis AP lock for each verified inbound activity ID before
       applying federation side effects, and release it with an independent
       bounded context.
-- [ ] AP object lock by URI for note/actor/announce resolution.
+- [x] AP object lock by URI for note and Announce target resolution.
+- [ ] Extend AP object locking to forced Actor refresh paths.
 - [ ] Instance metadata lock by host.
 - [ ] Public key cache keyed by `keyId`.
 - [ ] Actor URI cache.

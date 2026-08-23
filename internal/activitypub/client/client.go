@@ -25,6 +25,19 @@ type Client struct {
 	cfg        config.Config
 }
 
+type StatusError struct {
+	Operation string
+	Status    int
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s status %d", e.Operation, e.Status)
+}
+
+func (e *StatusError) HTTPStatusCode() int {
+	return e.Status
+}
+
 func New(cfg config.Config, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -72,7 +85,7 @@ func (c *Client) FetchObject(ctx context.Context, targetURL string, signer *acto
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return nil, fmt.Errorf("activitypub get status %d", res.StatusCode)
+		return nil, &StatusError{Operation: "activitypub get", Status: res.StatusCode}
 	}
 	if !validActivityContentType(res.Header.Get("Content-Type")) {
 		return nil, fmt.Errorf("invalid activitypub content-type: %s", res.Header.Get("Content-Type"))
@@ -123,7 +136,7 @@ func (c *Client) Deliver(ctx context.Context, targetURL string, signer actors.Ac
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("activitypub deliver status %d", res.StatusCode)
+		return &StatusError{Operation: "activitypub deliver", Status: res.StatusCode}
 	}
 	return nil
 }

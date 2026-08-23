@@ -2,12 +2,14 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 )
 
 func TestResolveActorHandle(t *testing.T) {
@@ -110,6 +112,82 @@ func TestResolveActorKeepsFreshRemoteActor(t *testing.T) {
 	resolved, err := resolver.ResolveActor(context.Background(), existing.URI)
 	if err != nil || resolved != existing || fetcher.calls != 0 {
 		t.Fatalf("resolved=%+v err=%v fetch calls=%d", resolved, err, fetcher.calls)
+	}
+}
+
+func TestResolveNoteResolvesReplyQuoteAndUsesObjectLocks(t *testing.T) {
+	host := "remote.example"
+	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	repo := &resolverActorRepository{existing: author}
+	noteRepo := &resolverNoteRepository{}
+	fetcher := &mappedResolverFetcher{objects: map[string]map[string]any{
+		"https://remote.example/notes/root": remoteNoteObject(author.URI, "root", map[string]any{
+			"inReplyTo": "https://remote.example/notes/reply",
+			"quoteUrl":  "https://remote.example/notes/quote",
+		}),
+		"https://remote.example/notes/reply": remoteNoteObject(author.URI, "reply", nil),
+		"https://remote.example/notes/quote": remoteNoteObject(author.URI, "quote", nil),
+	}}
+	locker := &resolverObjectLocker{}
+	resolver := New(repo, fetcher, nil)
+	resolver.SetNoteRepository(noteRepo)
+	resolver.SetObjectLocker(locker)
+
+	note, err := resolver.ResolveNote(context.Background(), "https://remote.example/notes/root")
+	if err != nil {
+		t.Fatalf("ResolveNote returned error: %v", err)
+	}
+	if note.ReplyID == "" || note.QuoteID == "" || len(noteRepo.notes) != 3 {
+		t.Fatalf("note=%+v stored=%+v", note, noteRepo.notes)
+	}
+	if len(locker.names) != 3 || locker.unlocked != 3 {
+		t.Fatalf("object locks names=%v unlocked=%d", locker.names, locker.unlocked)
+	}
+}
+
+func TestResolveNoteRejectsRecursiveReferences(t *testing.T) {
+	host := "remote.example"
+	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	fetcher := &mappedResolverFetcher{objects: map[string]map[string]any{
+		"https://remote.example/notes/a": remoteNoteObject(author.URI, "a", map[string]any{"inReplyTo": "https://remote.example/notes/b"}),
+		"https://remote.example/notes/b": remoteNoteObject(author.URI, "b", map[string]any{"inReplyTo": "https://remote.example/notes/a"}),
+	}}
+	resolver := New(&resolverActorRepository{existing: author}, fetcher, nil)
+	resolver.SetNoteRepository(&resolverNoteRepository{})
+
+	_, err := resolver.ResolveNote(context.Background(), "https://remote.example/notes/a")
+	if err == nil || !strings.Contains(err.Error(), "already resolved note") {
+		t.Fatalf("expected recursive reference error, got %v", err)
+	}
+}
+
+func TestResolveNoteIgnoresPermanentlyInvalidQuote(t *testing.T) {
+	host := "remote.example"
+	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	root := remoteNoteObject(author.URI, "root", map[string]any{"quoteUrl": "acct:invalid"})
+	resolver := New(&resolverActorRepository{existing: author}, &mappedResolverFetcher{objects: map[string]map[string]any{
+		"https://remote.example/notes/root": root,
+	}}, nil)
+	resolver.SetNoteRepository(&resolverNoteRepository{})
+
+	note, err := resolver.ResolveNote(context.Background(), "https://remote.example/notes/root")
+	if err != nil {
+		t.Fatalf("ResolveNote returned error: %v", err)
+	}
+	if note.QuoteURI != "acct:invalid" || note.QuoteID != "" {
+		t.Fatalf("unexpected quote resolution: %+v", note)
+	}
+}
+
+func TestResolveNoteDoesNotFetchMissingLocalNote(t *testing.T) {
+	fetcher := &mappedResolverFetcher{}
+	resolver := New(&resolverActorRepository{}, fetcher, nil)
+	resolver.SetFederationPolicy(config.Config{PublicURL: "https://local.example"})
+	resolver.SetNoteRepository(&resolverNoteRepository{})
+
+	_, err := resolver.ResolveNote(context.Background(), "https://local.example/notes/missing")
+	if err == nil || !strings.Contains(err.Error(), "local note not found") || fetcher.calls != 0 {
+		t.Fatalf("err=%v fetch calls=%d", err, fetcher.calls)
 	}
 }
 
@@ -387,6 +465,84 @@ func (resolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[
 type countingResolverFetcher struct {
 	calls  int
 	object map[string]any
+}
+
+type mappedResolverFetcher struct {
+	objects map[string]map[string]any
+	calls   int
+}
+
+func (f *mappedResolverFetcher) FetchObject(_ context.Context, uri string, _ *actors.Actor) (map[string]any, error) {
+	f.calls++
+	return f.objects[uri], nil
+}
+
+type resolverNoteRepository struct {
+	notes map[string]*domainnotes.Note
+}
+
+func (r *resolverNoteRepository) FindByID(_ context.Context, id string) (*domainnotes.Note, error) {
+	for _, note := range r.notes {
+		if note.ID == id {
+			return note, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *resolverNoteRepository) FindByURI(_ context.Context, uri string) (*domainnotes.Note, error) {
+	return r.notes[uri], nil
+}
+
+func (r *resolverNoteRepository) CreateLocalNote(_ context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
+	return r.store(note), nil
+}
+
+func (r *resolverNoteRepository) UpsertRemoteNote(_ context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
+	if existing := r.notes[note.URI]; existing != nil {
+		return existing, nil
+	}
+	return r.store(note), nil
+}
+
+func (r *resolverNoteRepository) DeleteRemoteNote(context.Context, string, string) error {
+	return nil
+}
+
+func (r *resolverNoteRepository) store(note domainnotes.Note) *domainnotes.Note {
+	if r.notes == nil {
+		r.notes = map[string]*domainnotes.Note{}
+	}
+	if note.ID == "" {
+		note.ID = fmt.Sprintf("note-%d", len(r.notes)+1)
+	}
+	r.notes[note.URI] = &note
+	return &note
+}
+
+type resolverObjectLocker struct {
+	names    []string
+	unlocked int
+}
+
+func (l *resolverObjectLocker) Acquire(_ context.Context, name string) (func(context.Context) error, bool, error) {
+	l.names = append(l.names, name)
+	return func(context.Context) error {
+		l.unlocked++
+		return nil
+	}, true, nil
+}
+
+func remoteNoteObject(actorURI, id string, extra map[string]any) map[string]any {
+	object := map[string]any{
+		"id": "https://remote.example/notes/" + id, "type": "Note",
+		"attributedTo": actorURI, "content": id,
+		"to": "https://www.w3.org/ns/activitystreams#Public",
+	}
+	for key, value := range extra {
+		object[key] = value
+	}
+	return object
 }
 
 func (f *countingResolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[string]any, error) {

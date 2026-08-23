@@ -322,6 +322,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Scope all local-Actor queries through authenticated account ownership.
 - [ ] Add stable pagination and deterministic sorting for notes, followers,
       following, reactions, and notifications where applicable.
+- [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
+      retain `inReplyToUri` and `quoteUri` only as federation source metadata.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the
       UI needs moved-account labels or navigation; treat them as read-only and
       trust `movedAt`, not an unverified URI alone, as the accepted-move signal.

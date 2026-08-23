@@ -23,7 +23,9 @@ type Note struct {
 	ContentWarning *string
 	Sensitive      bool
 	InReplyToURI   string
+	ReplyID        string
 	QuoteURI       string
+	QuoteID        string
 	RenoteID       string
 	RenoteURI      string
 	Visibility     Visibility

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -11,8 +12,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
@@ -29,15 +32,23 @@ type FederationPolicy interface {
 	IsSelfFederationURL(string) bool
 }
 
+type ObjectLocker interface {
+	Acquire(context.Context, string) (func(context.Context) error, bool, error)
+}
+
 type Resolver struct {
 	repo      actors.Repository
 	fetcher   Fetcher
 	signer    *actors.Actor
 	webFinger WebFinger
 	policy    FederationPolicy
+	notes     domainnotes.Repository
+	locker    ObjectLocker
 }
 
 const remoteActorRefreshInterval = 24 * time.Hour
+
+const noteResolutionLimit = 256
 
 const (
 	maxActorSummaryLength  = 2048
@@ -49,6 +60,14 @@ var actorBirthdayPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}`)
 
 func (r *Resolver) SetFederationPolicy(policy FederationPolicy) {
 	r.policy = policy
+}
+
+func (r *Resolver) SetNoteRepository(notes domainnotes.Repository) {
+	r.notes = notes
+}
+
+func (r *Resolver) SetObjectLocker(locker ObjectLocker) {
+	r.locker = locker
 }
 
 func New(repo actors.Repository, fetcher Fetcher, signer *actors.Actor) *Resolver {
@@ -112,6 +131,189 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 		return nil, err
 	}
 	return r.repo.UpsertRemoteActor(ctx, actor)
+}
+
+func (r *Resolver) ResolveNote(ctx context.Context, uri string) (*domainnotes.Note, error) {
+	return r.resolveNote(ctx, uri, &noteResolution{history: map[string]struct{}{}})
+}
+
+func (r *Resolver) ResolveNoteLinks(ctx context.Context, rootURI, replyURI, quoteURI string) (*domainnotes.Note, *domainnotes.Note, error) {
+	resolution := &noteResolution{history: map[string]struct{}{rootURI: {}}}
+	reply, err := r.resolveNote(ctx, replyURI, resolution)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve reply: %w", err)
+	}
+	quote, err := r.resolveQuote(ctx, quoteURI, resolution)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve quote: %w", err)
+	}
+	return reply, quote, nil
+}
+
+type noteResolution struct {
+	history map[string]struct{}
+}
+
+type permanentNoteResolutionError struct {
+	err error
+}
+
+func (e *permanentNoteResolutionError) Error() string {
+	return e.err.Error()
+}
+
+func (e *permanentNoteResolutionError) Unwrap() error {
+	return e.err
+}
+
+func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *noteResolution) (*domainnotes.Note, error) {
+	if uri == "" {
+		return nil, nil
+	}
+	host, err := resolvableHostOf(uri)
+	if err != nil {
+		return nil, &permanentNoteResolutionError{err: err}
+	}
+	if r.policy != nil && r.policy.IsFederationHostBlocked(host) {
+		return nil, &permanentNoteResolutionError{err: fmt.Errorf("note host is blocked: %s", host)}
+	}
+	if r.notes == nil {
+		return nil, fmt.Errorf("note repository is not configured")
+	}
+	existing, err := r.notes.FindByURI(ctx, uri)
+	if err != nil || existing != nil {
+		return existing, err
+	}
+	if _, ok := resolution.history[uri]; ok {
+		return nil, fmt.Errorf("cannot resolve already resolved note: %s", uri)
+	}
+	if len(resolution.history) >= noteResolutionLimit {
+		return nil, fmt.Errorf("note resolution limit reached")
+	}
+	resolution.history[uri] = struct{}{}
+	if r.policy != nil && r.policy.IsSelfFederationURL(uri) {
+		return nil, &permanentNoteResolutionError{err: fmt.Errorf("local note not found: %s", uri)}
+	}
+	if r.fetcher == nil {
+		return nil, fmt.Errorf("note fetcher is not configured")
+	}
+
+	unlock, err := r.acquireObjectLock(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	if unlock != nil {
+		defer func() {
+			unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = unlock(unlockCtx)
+		}()
+		if existing, err := r.notes.FindByURI(ctx, uri); err != nil || existing != nil {
+			return existing, err
+		}
+	}
+
+	object, err := r.fetcher.FetchObject(ctx, uri, r.signer)
+	if err != nil {
+		return nil, err
+	}
+	if !aptypes.IsPost(object) {
+		return nil, &permanentNoteResolutionError{err: fmt.Errorf("resolved object is not a post: %v", object["type"])}
+	}
+	parsed, err := apnotes.ParseRemoteNote(object, uri)
+	if err != nil {
+		return nil, &permanentNoteResolutionError{err: err}
+	}
+	author, err := r.ResolveActor(ctx, parsed.AttributedTo)
+	if err != nil {
+		return nil, fmt.Errorf("resolve note author: %w", err)
+	}
+	reply, quote, err := r.resolveNoteLinks(ctx, parsed, resolution)
+	if err != nil {
+		return nil, err
+	}
+	note := domainnotes.Note{
+		URI: parsed.URI, AttributedTo: parsed.AttributedTo, AuthorID: author.ID,
+		Text: parsed.Text, ContentWarning: parsed.ContentWarning, Sensitive: parsed.Sensitive,
+		InReplyToURI: parsed.InReplyToURI, QuoteURI: parsed.QuoteURI,
+		Visibility: domainnotes.Visibility(parsed.Visibility), MentionURIs: parsed.MentionURIs,
+		Hashtags: parsed.Hashtags, Emojis: parsed.Emojis, Attachments: parsed.Attachments,
+		Raw: object, CreatedAt: time.Now().UTC(), PublishedAt: activityPublishedAt(object),
+	}
+	if reply != nil {
+		note.ReplyID = reply.ID
+	}
+	if quote != nil {
+		note.QuoteID = quote.ID
+	}
+	return r.notes.UpsertRemoteNote(ctx, note)
+}
+
+func (r *Resolver) resolveNoteLinks(ctx context.Context, parsed *apnotes.Note, resolution *noteResolution) (*domainnotes.Note, *domainnotes.Note, error) {
+	reply, err := r.resolveNote(ctx, parsed.InReplyToURI, resolution)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve reply: %w", err)
+	}
+	quote, err := r.resolveQuote(ctx, parsed.QuoteURI, resolution)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve quote: %w", err)
+	}
+	return reply, quote, nil
+}
+
+func (r *Resolver) resolveQuote(ctx context.Context, uri string, resolution *noteResolution) (*domainnotes.Note, error) {
+	quote, err := r.resolveNote(ctx, uri, resolution)
+	if err != nil && isPermanentNoteResolutionError(err) {
+		return nil, nil
+	}
+	return quote, err
+}
+
+func isPermanentNoteResolutionError(err error) bool {
+	var permanent *permanentNoteResolutionError
+	if errors.As(err, &permanent) {
+		return true
+	}
+	var status interface{ HTTPStatusCode() int }
+	if !errors.As(err, &status) {
+		return false
+	}
+	code := status.HTTPStatusCode()
+	return code >= 400 && code < 500 && code != 408 && code != 429
+}
+
+func (r *Resolver) acquireObjectLock(ctx context.Context, uri string) (func(context.Context) error, error) {
+	if r.locker == nil {
+		return nil, nil
+	}
+	lockName := fmt.Sprintf("object:%x", sha256.Sum256([]byte(uri)))
+	for attempt := 0; attempt < 50; attempt++ {
+		unlock, acquired, err := r.locker.Acquire(ctx, lockName)
+		if err != nil {
+			return nil, fmt.Errorf("acquire AP object lock: %w", err)
+		}
+		if acquired {
+			return unlock, nil
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("timed out acquiring AP object lock")
+}
+
+func activityPublishedAt(object map[string]any) *time.Time {
+	value, _ := object["published"].(string)
+	published, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return nil
+	}
+	published = published.UTC()
+	return &published
 }
 
 func resolvableHostOf(raw string) (string, error) {

@@ -50,6 +50,20 @@ account as moved. It must not infer a valid migration from `movedToUri` alone:
 Rosmarinus writes `movedAt` only after fetching both Actors, confirming the
 source claim, and finding the source URI in the destination's `alsoKnownAs`.
 
+Remote Note documents retain ActivityPub relationship URIs and resolved local
+references together:
+
+```text
+inReplyToUri   ActivityPub URI claimed by the remote Note
+replyId        Rosmarinus Note `_id` after successful recursive resolution
+quoteUri       ActivityPub quote URI
+quoteId        Rosmarinus Note `_id` after successful recursive resolution
+```
+
+Salvia should join thread/quote views by `replyId` and `quoteId`. The URI fields
+are federation source data and remain useful for diagnostics and outbound
+rendering; they are not MongoDB foreign keys.
+
 ### MongoDB role bootstrap
 
 [`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom

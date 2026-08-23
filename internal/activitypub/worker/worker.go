@@ -77,6 +77,7 @@ type Handler struct {
 func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
 	actorResolver := apresolver.NewWithWebFinger(repo, apClient, localActor, apwebfinger.New(nil, cfg.UserAgent))
 	actorResolver.SetFederationPolicy(cfg)
+	actorResolver.SetNoteRepository(noteRepo)
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
@@ -99,6 +100,7 @@ func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 
 func (h *Handler) SetActivityLocker(locker ActivityLocker) {
 	h.locker = locker
+	h.resolver.SetObjectLocker(locker)
 }
 
 func (h *Handler) Register(server *queue.AsynqServer) {
@@ -794,6 +796,10 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err != nil {
 		return fmt.Sprintf("skip: invalid note: %v", err), nil
 	}
+	reply, quote, err := h.resolver.ResolveNoteLinks(ctx, parsed.URI, parsed.InReplyToURI, parsed.QuoteURI)
+	if err != nil {
+		return "", err
+	}
 	note := domainnotes.Note{
 		URI:            parsed.URI,
 		AttributedTo:   parsed.AttributedTo,
@@ -811,6 +817,12 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		Raw:            object,
 		CreatedAt:      time.Now().UTC(),
 		PublishedAt:    publishedAt(object),
+	}
+	if reply != nil {
+		note.ReplyID = reply.ID
+	}
+	if quote != nil {
+		note.QuoteID = quote.ID
 	}
 	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
 		return "", err
@@ -1557,62 +1569,11 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 }
 
 func (h *Handler) resolveAnnounceTarget(ctx context.Context, targetURI string) (*domainnotes.Note, error) {
-	target, err := h.notes.FindByURI(ctx, targetURI)
-	if err != nil || target != nil {
-		return target, err
-	}
-	if h.client == nil {
-		return nil, fmt.Errorf("announce target resolver is not configured")
-	}
-	object, err := h.client.FetchObject(ctx, targetURI, h.localActor)
+	target, err := h.resolver.ResolveNote(ctx, targetURI)
 	if err != nil {
 		return nil, fmt.Errorf("resolve announce target: %w", err)
 	}
-	if !aptypes.IsPost(object) {
-		return nil, fmt.Errorf("announce target is not a post: %v", object["type"])
-	}
-	attributedTo, err := aptypes.GetOneAPID(object["attributedTo"])
-	if err != nil {
-		return nil, fmt.Errorf("announce target attributedTo is invalid: %w", err)
-	}
-	if h.repo == nil {
-		return nil, fmt.Errorf("actor repository is not configured")
-	}
-	targetActor, err := h.repo.FindByURI(ctx, attributedTo)
-	if err != nil {
-		return nil, err
-	}
-	if targetActor == nil {
-		targetActor, err = h.resolver.ResolveActor(ctx, attributedTo)
-		if err != nil {
-			return nil, fmt.Errorf("resolve announce target actor: %w", err)
-		}
-	}
-	if targetActor == nil {
-		return nil, nil
-	}
-	parsed, err := apnotes.ParseRemoteNote(object, targetURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid announce target note: %w", err)
-	}
-	return h.notes.UpsertRemoteNote(ctx, domainnotes.Note{
-		URI:            parsed.URI,
-		AttributedTo:   parsed.AttributedTo,
-		AuthorID:       targetActor.ID,
-		Text:           parsed.Text,
-		ContentWarning: parsed.ContentWarning,
-		Sensitive:      parsed.Sensitive,
-		InReplyToURI:   parsed.InReplyToURI,
-		QuoteURI:       parsed.QuoteURI,
-		Visibility:     domainnotes.Visibility(parsed.Visibility),
-		MentionURIs:    parsed.MentionURIs,
-		Hashtags:       parsed.Hashtags,
-		Emojis:         parsed.Emojis,
-		Attachments:    parsed.Attachments,
-		Raw:            object,
-		CreatedAt:      time.Now().UTC(),
-		PublishedAt:    publishedAt(object),
-	})
+	return target, nil
 }
 
 func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
