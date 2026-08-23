@@ -4,9 +4,11 @@ Rosmarinus is the ActivityPub microservice successor to Concorde. It should not
 copy Concorde's frontend or Misskey API surface, but it should preserve the
 federation behavior that other ActivityPub servers depend on.
 
-Do not edit `./concorde`. Treat it as the behavioral reference. `./misskey`
-is used only as a Docker federation test fixture/reference and must not drive
-Rosmarinus implementation semantics.
+Do not edit `./misskey` or `./concorde`. Treat the current `./misskey` backend
+and its tests as the primary federation reference. Treat `./concorde` as a
+secondary historical reference for predecessor behavior and regression
+investigation only; current Misskey wins when their federation semantics
+differ unless this plan records an intentional Rosmarinus exception.
 
 ## Goals
 
@@ -26,6 +28,11 @@ Rosmarinus implementation semantics.
 - Keep dependencies injectable through interfaces.
 - Use Go's `log` package through injected `*log.Logger` values.
 - Add focused tests for parsing, signing, resolving, rendering, and queue behavior.
+- At each federation checkpoint, inspect the current `./misskey` implementation
+  and relevant tests and record the Misskey commit used as the behavior
+  baseline in the checkpoint or commit notes.
+- Use `./concorde` to explain historical differences and mine regression
+  fixtures, not as the default source for new federation semantics.
 - Extend the latest-Misskey federation test whenever an implementation
   checkpoint adds or materially changes externally observable federation
   behavior. Unit tests remain required for edge cases; the Docker federation
@@ -39,6 +46,9 @@ Rosmarinus implementation semantics.
 
 ## Implementation Checkpoint Definition Of Done
 
+- [ ] Current Misskey source and relevant unit/federation tests were reviewed
+      for the changed federation behavior, and intentional deviations are
+      documented in tests or handoff notes.
 - [ ] Focused unit/integration tests cover the changed behavior.
 - [ ] If the behavior is observable through the existing real-Misskey fixture,
       `test/federation/misskey_test.go` includes or updates a clearly commented
@@ -49,17 +59,104 @@ Rosmarinus implementation semantics.
 - [ ] Formatting, tests, and relevant static checks pass before a signed
       commit is created.
 
-## Concorde Behavior To Preserve
+## Federation Reference Baseline
 
-Concorde does more than just receive inbox activities. The relevant federation
-surface is spread across ActivityPub routes, well-known routes, resolver code,
-queue processors, note/follow services, and instance metadata services.
+The reference-policy audit on 2026-08-23 found that Concorde and current
+Misskey still share the same broad ActivityPub model, but they are no longer
+close enough for Concorde to be the primary implementation guide:
 
-Rosmarinus intentionally differs from Concorde in follow approval policy:
-Concorde could auto-accept follows depending on each user's settings, but
-Rosmarinus requires local user approval for every inbound follow. Inbound
-`Follow` activities must be stored as pending requests and must not deliver
-`Accept(Follow)` until an explicit local approval action occurs.
+- `./concorde` at `a49b1d8c` (`12.25Q4.1`) and `./misskey` at `33f53280`
+  (`2026.8.0-alpha.0`) share Misskey `12.119.1` commit `fccd9c32` from
+  2022-12-03 as their merge base.
+- After that base, the inspected federation paths contain 54 Concorde commits
+  and 256 Misskey commits. The current Misskey side changed 124 files with
+  roughly 9,256 insertions and 3,757 deletions in those paths.
+- Both still recognize the same core Create/Delete/Update/Follow/Accept/Reject/
+  Add/Remove/Announce/Like/Undo/Block/Flag activities, post and Actor types,
+  `_misskey_reaction || content || name` reaction precedence, and much of the
+  Actor/Note validation shape.
+- Current Misskey additionally implements `Move`, bounded and host-checked
+  collection ingestion, stricter resolver and URL checks, LD-signature fallback,
+  newer retry behavior, and additional Actor/Note validation. It also removed
+  `Accept` from signed GET headers and changed several older validation details.
+
+Therefore, similarity may reduce porting work, but it must be established per
+behavior rather than assumed.
+
+Use these current Misskey files as the initial code map, following their
+dependencies when a checkpoint needs more detail:
+
+- `packages/backend/src/core/activitypub/ApInboxService.ts` for activity
+  dispatch and per-activity behavior.
+- `packages/backend/src/server/ActivityPubServerService.ts`,
+  `queue/processors/InboxProcessorService.ts`, and
+  `core/activitypub/ApRequestService.ts` for inbox validation and HTTP
+  signatures.
+- `core/activitypub/ApResolverService.ts` and `misc/check-against-url.ts` for
+  resolution, recursion, redirects, and URL trust boundaries.
+- `core/activitypub/models/ApPersonService.ts`, `ApNoteService.ts`, and
+  `ApQuestionService.ts` for Actor, Note, emoji, and poll ingestion.
+- `core/activitypub/ApRendererService.ts`, `ApDeliverManagerService.ts`, and
+  `queue/QueueProcessorService.ts` for rendering, delivery, and retry behavior.
+- `packages/backend/test/unit` and `packages/backend/test-federation/test` for
+  executable behavior examples.
+
+### Intentional Rosmarinus Differences
+
+- Rosmarinus requires explicit local approval for every inbound follow. Current
+  Misskey's per-user follow policy must not reintroduce auto-acceptance.
+- Rosmarinus uses MongoDB and exposes only the ActivityPub microservice surface;
+  Misskey's PostgreSQL entities, frontend/API features, timelines, moderation
+  UI, and unrelated side effects are out of scope.
+- Rosmarinus uses `github.com/go-fed/httpsig`. Match current Misskey's wire
+  behavior without copying its Node signature implementation.
+- Salvia integration remains limited to the shared MongoDB read contracts and
+  Ably commands/events documented elsewhere in this plan.
+
+### Current-Misskey Baseline Reconciliation
+
+Complete this audit before treating already-implemented Concorde-derived paths
+as final:
+
+- [ ] Compare all completed inbox, resolver, renderer, and delivery behavior
+      against the pinned current Misskey commit and add focused regression
+      tests for every material difference.
+- [ ] Align signed GET with current Misskey's
+      `(request-target) date host` header list; retain `Accept` as an unsigned
+      request header.
+- [ ] Revisit the existing ID-less `Accept`/`Reject` allowance. Current Misskey
+      requires a string activity ID; retain the allowance only as a documented,
+      fixture-backed interoperability exception.
+- [ ] Replace blanket Collection/OrderedCollection refusal with current
+      Misskey's bounded, signer-host-checked ingestion behavior.
+- [ ] Implement and test `Move` with alias validation and following migration
+      semantics appropriate to Rosmarinus ownership boundaries.
+- [ ] Port current Misskey resolver protections: recursion limits, local-object
+      resolution, blocked-host enforcement, redirect/final-ID consistency, and
+      federation-loop URL restrictions.
+- [ ] Reconcile Actor validation differences, including optional outbox values
+      and ignoring an invalid shared inbox while retaining the individual
+      inbox, rather than rejecting an otherwise usable Actor.
+- [ ] Reconcile Note validation differences, including published timestamp
+      safety, sender/attribution equality, HTTPS note URLs, and raw AP mention
+      limits.
+- [ ] Align inbox/delivery retry defaults and exponential backoff with current
+      Misskey, accounting explicitly for Asynq's attempt numbering.
+- [ ] Mine current Misskey's `test/unit/activitypub.ts`, `test/unit/ap-request.ts`,
+      and `test-federation/test` cases as the primary compatibility fixtures.
+      Keep Concorde fixtures only as supplemental historical regressions.
+
+## Federation Surface To Implement
+
+Current Misskey does more than just receive inbox activities. The relevant
+federation surface is spread across ActivityPub routes, resolver and renderer
+services, queue processors, note/follow services, instance metadata services,
+and federation tests.
+
+Rosmarinus intentionally differs from current Misskey in follow approval
+policy: Rosmarinus requires local user approval for every inbound follow.
+Inbound `Follow` activities must be stored as pending requests and must not
+deliver `Accept(Follow)` until an explicit local approval action occurs.
 
 ### Public Discovery Endpoints
 
@@ -70,7 +167,7 @@ Rosmarinus requires local user approval for every inbound follow. Inbound
 - [x] `GET /nodeinfo/2.0`
 - [x] `GET /nodeinfo/2.1` if we decide to expose it
 
-Concorde uses WebFinger to map `acct:user@example.com` and local actor URLs to
+Current Misskey uses WebFinger to map `acct:user@example.com` and local Actor URLs to
 ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 
 ### ActivityPub Public Endpoints
@@ -94,11 +191,11 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 
 Responses should negotiate `application/activity+json` and
 `application/ld+json; profile="https://www.w3.org/ns/activitystreams"` in the
-same style as Concorde.
+the same style as current Misskey.
 
 ### Inbox Validation
 
-- [x] Read raw request body and limit it, initially to Concorde's 64 KiB.
+- [x] Read raw request body and limit it to current Misskey's 64 KiB.
 - [x] Parse JSON after preserving the raw body.
 - [x] Require and verify `Digest: SHA-256=...`.
 - [x] Parse HTTP Signature.
@@ -113,8 +210,10 @@ same style as Concorde.
 - [x] Reject old `acct:` key IDs.
 - [x] Verify signature using the actor public key.
 - [x] Require signer actor URI to match `activity.actor`.
-- [x] Require `activity.id` host to match signer host when present; accept
-      current Misskey-compatible `Accept`/`Reject` activities without an ID.
+- [x] Require `activity.id` host to match signer host when present; the current
+      implementation also accepts `Accept`/`Reject` without an ID.
+- [ ] Reconcile the ID-less exception with current Misskey's requirement that
+      every processed activity have a string ID.
 - [ ] Update instance communication stats after accepted requests.
 - [x] Enqueue the activity and return `202 Accepted`.
 
@@ -127,7 +226,7 @@ same style as Concorde.
 - [ ] `Announce`: full visibility checks, blocked-host checks, counters, and
       notification side effects.
 - [x] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note and create
-      or replace the actor's reaction using Concorde-compatible
+      or replace the actor's reaction using current Misskey-compatible
       `_misskey_reaction || content || name` precedence.
 - [ ] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and update
       note reaction counts/notification side effects.
@@ -156,8 +255,13 @@ same style as Concorde.
 - [ ] `Update`: update notes and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
-- [ ] `Add` and `Remove`: inspect Concorde handling before deciding exact scope.
-- [x] Refuse to ingest `Collection` / `OrderedCollection` as a single activity.
+- [ ] `Add` and `Remove`: inspect current Misskey handling before deciding exact scope.
+- [x] The current implementation refuses to ingest `Collection` /
+      `OrderedCollection` as a single activity.
+- [ ] Implement current Misskey-compatible bounded collection ingestion with
+      recursion and signer-host checks.
+- [ ] `Move`: validate actor aliases and migrate eligible remote-following
+      relationships without violating local Actor ownership.
 
 ### Actor Resolution
 
@@ -168,9 +272,9 @@ same style as Concorde.
 - [x] Require actor `id`, `inbox`, and `outbox` to belong to the expected host.
 - [x] Validate `sharedInbox` and public key host.
 - [x] Validate `followers` and `following` host.
-- [x] Validate `preferredUsername` against Concorde-compatible rules.
-- [x] Truncate display name to Concorde-compatible limits.
-- [ ] Truncate and store summary to Concorde-compatible limits.
+- [x] Validate `preferredUsername` against current Misskey-compatible rules.
+- [x] Truncate display name to current Misskey-compatible limits.
+- [ ] Truncate and store summary to current Misskey-compatible limits.
 - [x] Store remote public keys by `keyId`.
 - [x] Store `inbox`, `sharedInbox`, `followersUri`, `followingUri`, and
       `featured`.
@@ -183,8 +287,7 @@ same style as Concorde.
 
 For MFM behavior, use the current `./misskey` backend and the matching
 `./mfm.js` checkout (currently MFM.js 0.26.0) as the compatibility references.
-Concorde remains the reference for other federation behavior, but its older MFM
-behavior must not constrain Salvia-authored notes.
+Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 - [x] Resolve by AP URI with remote signed GET for Create object references.
 - [ ] Resolve by AP URI with local URI parsing and full note resolver cache.
@@ -249,10 +352,13 @@ behavior must not constrain Salvia-authored notes.
       `User-Agent`.
 - [x] Sign GET requests with `Accept`, `Date`, `Host`, and `Signature`.
 - [x] Delegate HTTP Signature cryptographic signing and verification to
-      `github.com/go-fed/httpsig`, while preserving Concorde-compatible header
+      `github.com/go-fed/httpsig`, while preserving current Misskey-compatible header
       lists and signing string shape.
 - [x] Use `(request-target) date host digest` for POST signing strings.
-- [x] Use `(request-target) date host accept` for GET signing strings.
+- [x] The current implementation uses `(request-target) date host accept` for
+      GET signing strings.
+- [ ] Align GET signing with current Misskey's `(request-target) date host`
+      list while continuing to send the unsigned `Accept` header.
 - [ ] Build delivery inbox lists from followers and direct recipients.
 - [ ] Prefer `sharedInbox` and deduplicate inboxes.
 - [ ] Skip blocked and suspended hosts.
@@ -272,10 +378,10 @@ behavior must not constrain Salvia-authored notes.
 
 ## Redis Queue Design
 
-Concorde uses Bull with Redis. Rosmarinus should use Redis as the queue backend,
-not an in-memory worker. The default implementation should use Asynq, wrapped by
-`internal/queue` interfaces so ActivityPub services do not depend on Asynq
-directly.
+Current Misskey uses BullMQ with Redis. Rosmarinus should likewise use Redis as
+the queue backend, not an in-memory worker. The default implementation should
+use Asynq, wrapped by `internal/queue` interfaces so ActivityPub services do not
+depend on Asynq directly.
 
 Rosmarinus should remain a single application binary by default. The HTTP server,
 Asynq client, and Asynq worker server should run in the same process, sharing the
@@ -324,10 +430,16 @@ flags, but that is an operational option, not the default architecture.
 - [x] Worker concurrency per queue.
 - [ ] Per-second rate limits:
       `deliver` defaults to 128/sec, `inbox` defaults to 16/sec.
-- [x] Retry attempts:
-      `deliver` defaults to 17, `inbox` defaults to 10.
-- [x] AP backoff compatible with Concorde:
+- [x] The current implementation defaults retry attempts to 17 for `deliver`
+      and 10 for `inbox`.
+- [ ] Align retry defaults with current Misskey's 12 attempts for `deliver`
+      and 8 for `inbox`, unless deployment evidence justifies a documented
+      Rosmarinus override.
+- [x] The current implementation retains Concorde's AP backoff:
       `(attempts^4 + 15) * 1s`, capped at 8 hours, plus up to 20% jitter.
+- [ ] Align HTTP-related backoff with current Misskey:
+      `(2^attempts - 1) * 1m`, capped at 8 hours, plus up to 20% jitter; verify
+      the equivalent Asynq attempt index and update retry-default tests.
 - [x] Job timeout:
       `deliver` defaults to 1 minute, `inbox` defaults to 5 minutes.
 - [ ] Dead-letter or failed-job inspection.
@@ -636,7 +748,7 @@ workflow may require both services to update the same document or collection.
 
 - [x] HTTP Signature implementation should use `github.com/go-fed/httpsig` for
       signing and verification. Keep compatibility wrappers only for
-      ActivityPub draft-era quirks and Concorde-compatible behavior.
+      ActivityPub draft-era quirks and current Misskey-compatible behavior.
 - [x] Make git commits at coherent implementation checkpoints after tests pass,
       instead of leaving unrelated completed changes uncommitted.
 
@@ -660,8 +772,10 @@ workflow may require both services to update the same document or collection.
 
 ### Phase 1: ActivityPub Types, Signatures, And Queues
 
-- [x] Implement AP type helpers equivalent to Concorde `getApId`, `getApType`,
-      actor/post/activity predicates, and array normalization.
+- [x] Implement AP type helpers for `getApId`, `getApType`, actor/post/activity
+      predicates, and array normalization.
+- [ ] Reconcile those helpers with current Misskey's nullable type handling,
+      `Move`, and URL/href normalization.
 - [x] Implement digest verification tests.
 - [x] Implement HTTP Signature parse/verify tests with fixture requests.
 - [x] Implement signed GET/POST tests with stable signing strings.
@@ -675,14 +789,16 @@ workflow may require both services to update the same document or collection.
 - [x] Implement remote WebFinger client.
 - [x] Implement actor renderer and `/users/{id}`.
 - [x] Implement `/users/{id}/publickey`.
-- [x] Implement Concorde-shaped local actor `outbox`, `followers`,
+- [x] Implement Misskey-shaped local Actor `outbox`, `followers`,
       `following`, and `featured` AP collections with empty contents until
       social graph and local note ownership are implemented.
 - [x] Back local actor `followers` and `following` collections with stored
       `follows` records.
 - [x] Implement remote actor create/update baseline.
 - [x] Implement signed remote AP GET.
-- [x] Add actor validation tests based on Concorde edge cases.
+- [x] Add Actor validation tests based on historical Concorde edge cases.
+- [ ] Add current Misskey Actor validation and resolver edge cases, treating
+      any intentionally retained historical behavior as an explicit exception.
 
 ### Phase 2A: Salvia Boundary And Multi-Actor Authorization
 
@@ -732,7 +848,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Validate digest, signature, host, signer, and activity host.
 - [x] Enqueue `inbox` jobs.
 - [x] Implement basic `Create Note` handler.
-- [x] Implement minimum note object parser compatible with Concorde tests.
+- [x] Implement a minimum Note object parser using historical Concorde tests.
+- [ ] Reconcile it with current Misskey's ActivityPub Note tests and validation.
 - [x] Implement basic note storage.
 - [ ] Implement full note resolver.
 - [x] Implement initial audience parser.
@@ -792,21 +909,25 @@ Implement this phase before exposing additional browser-driven mutations.
 
 ### Phase 7: Federation Hardening
 
-- [ ] Implement blocked/suspended host checks everywhere Concorde applies them.
+- [ ] Implement blocked/suspended host checks everywhere current Misskey
+      applies them.
 - [ ] Implement instance metadata refresh.
 - [ ] Implement queue inspection and delayed job promotion commands or admin
       hooks suitable for operations.
 - [ ] Add load/race tests for duplicate inbox delivery.
-- [ ] Add compatibility fixtures from Concorde for ActivityPub render/parse.
+- [ ] Add compatibility fixtures from current Misskey for ActivityPub
+      render/parse, then retain useful Concorde fixtures as historical
+      regressions.
 - [ ] Document operational Redis and MongoDB settings.
 
-## Concorde Backend Test Port Status
+## Federation Compatibility Test Adoption Status
 
-The following tests from `./concorde/packages/backend/test` have been reviewed.
-Only ActivityPub/federation behavior that belongs to Rosmarinus is ported.
-Frontend, Misskey API, streaming, drive, and timeline tests are intentionally
-out of scope unless they expose ActivityPub persistence semantics Rosmarinus
-must write to MongoDB.
+Current Misskey unit tests and `packages/backend/test-federation` are the
+primary fixture source for all new work. The following historical tests from
+`./concorde/packages/backend/test` were already reviewed and remain useful as
+supplemental regressions. Frontend, Misskey API, streaming, drive, and timeline
+tests are out of scope unless they expose ActivityPub persistence semantics
+Rosmarinus must write to MongoDB.
 
 ### Ported
 
@@ -822,7 +943,7 @@ must write to MongoDB.
   - [x] AP `GET /@:username` and `GET /users/:id` return
         `application/activity+json` when AP is requested.
   - [x] AP `GET /users/:id/outbox`, `followers`, `following`, and
-        `collections/featured` return Concorde-shaped `OrderedCollection`
+        `collections/featured` return Misskey-shaped `OrderedCollection`
         / `OrderedCollectionPage` responses.
   - [x] AP `GET /notes/:id` returns `application/activity+json` for stored
         notes.
@@ -839,9 +960,9 @@ must write to MongoDB.
 
 ### Not Ported Yet
 
-- [ ] `activitypub.ts / Minimum Note` full equivalent with all Concorde note
-      side effects.
-- [x] `fetch-resource.ts / /notes/:id` Concorde-compatible local-vs-remote
+- [ ] Reassess the historical `activitypub.ts / Minimum Note` side effects
+      against current Misskey before porting any missing behavior.
+- [x] `fetch-resource.ts / /notes/:id` local-vs-remote
       redirect and public/home visibility behavior.
 - [ ] `fetch-resource.ts / HTML`, root/docs/assets, RSS/ATOM/JSON feeds:
       out of scope for Rosmarinus unless a future federation requirement needs
@@ -855,9 +976,9 @@ must write to MongoDB.
 Use this once actor resolution, signed GET, Create Note ingestion, and delivery
 workers are implemented enough to exchange basic activities.
 
-Implementation compatibility should be checked against `./concorde`. The
-latest Misskey checkout in `./misskey` is used only to run a real Docker-based
-federation peer and to inspect its official local federation test topology.
+Implementation compatibility must be checked against the current `./misskey`
+backend, unit tests, and official Docker federation suite. `./concorde` may add
+historical regression coverage but does not define new behavior.
 
 Treat this suite as incremental acceptance coverage, not a one-time smoke test.
 Each completed federation capability should add the smallest stable Misskey
@@ -893,10 +1014,8 @@ focused unit/integration coverage until the fixture can cover it.
       `PUBLIC_URL=https://rosmarinus.example.test`,
       `LOCAL_ACTOR_USERNAME=relay`,
       `LOCAL_ACTOR_TYPE=Service`.
-- [ ] Run a separate Misskey/Concorde test instance with its own PostgreSQL and
-      Redis. The archived `./concorde/docker-compose.yml` and
-      `./concorde/packages/backend/test/docker-compose.yml` are useful
-      references, but should not be edited.
+- [ ] Run a separate current Misskey test instance with its own PostgreSQL and
+      Redis using `./misskey/packages/backend/test-federation`.
 - [ ] Put both services behind local DNS names and a reverse proxy. A practical
       local-only topology is:
       `rosmarinus.example.test -> 127.0.0.1:<rosmarinus-proxy-port>` and
@@ -909,21 +1028,22 @@ focused unit/integration coverage until the fixture can cover it.
 
 ### Local Misskey Test Execution Draft
 
-- [ ] Inspect `./misskey/packages/backend/test-federation` only for Docker
-      topology, service names, local DNS, and test command conventions.
+- [ ] Inspect `./misskey/packages/backend/test-federation` for both its Docker
+      topology and its expected federation behavior; port the smallest relevant
+      scenario at each checkpoint.
 - [x] Add `docker/federation/misskey-rosmarinus.compose.yml` to attach
       Rosmarinus, MongoDB, Redis, and `nginx` TLS endpoint `rosmarinus.test` to
       Misskey's federation network.
 - [x] Add `docker/federation/nginx/rosmarinus.test.conf` to proxy
       `https://rosmarinus.test` to the Rosmarinus HTTP server.
-- [ ] Prepare a disposable Misskey/Concorde config with:
+- [ ] Prepare a disposable current Misskey config with:
       `url: http(s)://misskey.example.test`,
       Postgres pointing to the test DB,
       Redis pointing to the test Redis,
       and federation enabled.
 - [ ] Use the available JS package manager (`yarn`, `pnpm`, or `npm`) only in
-      the Misskey/Concorde checkout or a disposable test checkout. Do not modify
-      `./concorde` source files.
+      the Misskey checkout or a disposable test checkout. Do not modify
+      `./misskey` or `./concorde` source files.
 - [ ] Start Misskey web and queue worker locally, then create a local Misskey
       test account through its setup flow or seed script.
 - [ ] Start Rosmarinus with `RUN_HTTP=true` and `RUN_WORKERS=true` so inbox and
@@ -974,8 +1094,9 @@ focused unit/integration coverage until the fixture can cover it.
 
 - [ ] Stop Rosmarinus during queued delivery, restart it, and confirm Asynq
       resumes pending jobs from Redis.
-- [ ] Force a temporary Misskey outage and confirm AP backoff behavior resembles
-      Concorde's delayed retry profile.
+- [ ] Force a temporary Misskey outage and confirm AP backoff behavior matches
+      current Misskey's delayed retry profile after accounting for queue-library
+      attempt numbering.
 - [ ] Inspect failed jobs and logs for enough information to identify target
       inbox, actor, activity ID, and failure reason.
 - [ ] Keep packet captures or structured logs for WebFinger, signed GET, inbox,
@@ -1000,12 +1121,12 @@ focused unit/integration coverage until the fixture can cover it.
       Salvia-owned account collection and authorizes Actor ownership.
 - [ ] Decide media ownership: store remote files, proxy URLs only, or delegate
       media storage to another service.
-- [ ] Decide how much of Concorde's antenna/word-mute/timeline side effects
+- [ ] Decide how much of current Misskey's antenna/word-mute/timeline side effects
       belong in this microservice.
 - [x] Decide local Actor provisioning roles: keep the environment-provisioned
       Actor as a stable system Actor for service-level federation work. Create
       user-managed Actors through authenticated Connector commands, store them
       in MongoDB with `ownerAccountId`, and allow one Salvia account to own
       multiple Actors.
-- [ ] Decide whether object IDs keep Concorde-compatible generated IDs or use
-      MongoDB ObjectIDs/ULIDs.
+- [ ] Decide whether object IDs follow current Misskey's externally observable
+      ID properties or use MongoDB ObjectIDs/ULIDs behind stable AP URIs.

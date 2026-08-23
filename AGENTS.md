@@ -20,18 +20,30 @@
 - Its main responsibility is communicating with other ActivityPub servers and writing federation state to MongoDB.
 - Use MongoDB as the database and design collections/indexes with MongoDB best practices.
 
-## Concorde Compatibility
+## Federation Compatibility
 
-- Treat `./concorde` as the behavioral reference for ActivityPub federation.
-- Do not edit `./concorde`.
-- For ActivityPub parsing, HTTP signatures, MFM handling, custom emoji handling, and federation edge cases, read Concorde and implement Rosmarinus as closely as practical.
-- Treat `./misskey` only as a Docker federation test fixture/reference. Do not use it as the primary implementation guide.
+- Treat the current `./misskey` checkout as the primary behavioral and
+  implementation reference for ActivityPub federation.
+- Do not edit `./misskey` or `./concorde`.
+- For ActivityPub parsing, HTTP signatures, MFM handling, custom emoji
+  handling, delivery, retry behavior, and federation edge cases, inspect the
+  current Misskey backend and its unit/federation tests before implementing or
+  changing Rosmarinus behavior.
+- Treat `./concorde` as a secondary historical reference. Use it to understand
+  the predecessor's behavior and to identify compatibility regressions, but do
+  not let it override current Misskey behavior.
+- When Rosmarinus intentionally differs from current Misskey because of its
+  microservice scope, MongoDB model, mandatory follow approval policy, Go
+  implementation, or real-world interoperability requirements, document and
+  test the exception explicitly.
 
 ## HTTP Signatures
 
 - ActivityPub still commonly uses draft-era HTTP Signatures, so compatibility matters more than strict modern spec interpretation.
 - Use `github.com/go-fed/httpsig` for HTTP Signature signing and verification.
-- Preserve Concorde-compatible behavior where it matches real-world `@peertube/http-signature` federation behavior.
+- Match current Misskey's signed header sets and validation behavior where
+  practical, while preserving explicitly tested compatibility with real-world
+  `@peertube/http-signature` peers.
 
 ## Federation Tests
 
