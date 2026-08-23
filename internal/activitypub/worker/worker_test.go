@@ -101,6 +101,7 @@ func (f *fakeRepo) FindByPublicKeyID(ctx context.Context, keyID string) (*actors
 }
 
 func (f *fakeRepo) UpsertRemoteActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
+	actor.LastFetchedAt = time.Now()
 	if f.remotes != nil {
 		if existing := f.remotes[actor.URI]; existing != nil && existing.ID != "" {
 			actor.ID = existing.ID

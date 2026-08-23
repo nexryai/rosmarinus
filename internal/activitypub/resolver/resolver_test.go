@@ -115,6 +115,39 @@ func TestResolveActorKeepsFreshRemoteActor(t *testing.T) {
 	}
 }
 
+func TestResolveActorUpdatesFeaturedNotes(t *testing.T) {
+	actorURI := "https://remote.example/users/alice"
+	featuredURI := "https://remote.example/users/alice/collections/featured"
+	noteURI := "https://remote.example/notes/pinned"
+	fetcher := &mappedResolverFetcher{objects: map[string]map[string]any{
+		actorURI: {
+			"id": actorURI, "type": "Person", "preferredUsername": "alice",
+			"inbox": actorURI + "/inbox", "featured": featuredURI,
+		},
+		featuredURI: {
+			"id": featuredURI, "type": "OrderedCollection", "orderedItems": []any{noteURI},
+		},
+		noteURI: remoteNoteObject(actorURI, "pinned", nil),
+	}}
+	repo := &resolverActorRepository{}
+	noteRepo := &resolverNoteRepository{}
+	locker := &resolverObjectLocker{}
+	resolver := New(repo, fetcher, nil)
+	resolver.SetNoteRepository(noteRepo)
+	resolver.SetObjectLocker(locker)
+
+	actor, err := resolver.ResolveActor(context.Background(), actorURI)
+	if err != nil {
+		t.Fatalf("ResolveActor returned error: %v", err)
+	}
+	if len(actor.FeaturedNoteIDs) != 1 || actor.FeaturedNoteIDs[0] == "" || len(noteRepo.notes) != 1 {
+		t.Fatalf("actor=%+v notes=%+v", actor, noteRepo.notes)
+	}
+	if len(locker.names) != 2 || locker.unlocked != 2 {
+		t.Fatalf("object locks names=%v unlocked=%d", locker.names, locker.unlocked)
+	}
+}
+
 func TestResolveNoteResolvesReplyQuoteAndUsesObjectLocks(t *testing.T) {
 	host := "remote.example"
 	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
@@ -442,7 +475,9 @@ func (r *resolverActorRepository) FindByPublicKeyID(context.Context, string) (*a
 }
 
 func (r *resolverActorRepository) UpsertRemoteActor(_ context.Context, actor actors.Actor) (*actors.Actor, error) {
+	actor.LastFetchedAt = time.Now()
 	r.upserted = &actor
+	r.existing = &actor
 	return &actor, nil
 }
 

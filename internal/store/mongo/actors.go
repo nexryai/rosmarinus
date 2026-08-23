@@ -23,42 +23,43 @@ type ActorRepository struct {
 }
 
 type actorDocument struct {
-	ID             string                      `bson:"_id,omitempty"`
-	OwnerAccountID string                      `bson:"ownerAccountId,omitempty"`
-	IsSystemActor  bool                        `bson:"isSystemActor,omitempty"`
-	Username       string                      `bson:"username"`
-	UsernameLower  string                      `bson:"usernameLower"`
-	Name           string                      `bson:"name,omitempty"`
-	Summary        string                      `bson:"summary,omitempty"`
-	URL            string                      `bson:"url,omitempty"`
-	ProfileFields  []actorProfileFieldDocument `bson:"profileFields,omitempty"`
-	Birthday       string                      `bson:"birthday,omitempty"`
-	Location       string                      `bson:"location,omitempty"`
-	AvatarURL      string                      `bson:"avatarUrl,omitempty"`
-	BannerURL      string                      `bson:"bannerUrl,omitempty"`
-	Tags           []string                    `bson:"tags,omitempty"`
-	EmojiNames     []string                    `bson:"emojiNames,omitempty"`
-	IsBot          bool                        `bson:"isBot,omitempty"`
-	IsCat          bool                        `bson:"isCat,omitempty"`
-	IsLocked       bool                        `bson:"isLocked,omitempty"`
-	IsDiscoverable bool                        `bson:"isDiscoverable,omitempty"`
-	Type           string                      `bson:"type"`
-	Host           *string                     `bson:"host"`
-	URI            string                      `bson:"uri"`
-	Inbox          string                      `bson:"inbox"`
-	SharedInbox    string                      `bson:"sharedInbox"`
-	FollowersURI   string                      `bson:"followersUri,omitempty"`
-	FollowingURI   string                      `bson:"followingUri,omitempty"`
-	FeaturedURI    string                      `bson:"featuredUri,omitempty"`
-	MovedToURI     string                      `bson:"movedToUri,omitempty"`
-	AlsoKnownAs    []string                    `bson:"alsoKnownAs,omitempty"`
-	MovedAt        *time.Time                  `bson:"movedAt,omitempty"`
-	LastFetchedAt  time.Time                   `bson:"lastFetchedAt,omitempty"`
-	PublicKeyID    string                      `bson:"publicKeyId"`
-	PublicKeyPEM   string                      `bson:"publicKeyPem"`
-	PrivateKeyPEM  string                      `bson:"privateKeyPem,omitempty"`
-	IsSuspended    bool                        `bson:"isSuspended"`
-	DeletedAt      *time.Time                  `bson:"deletedAt,omitempty"`
+	ID              string                      `bson:"_id,omitempty"`
+	OwnerAccountID  string                      `bson:"ownerAccountId,omitempty"`
+	IsSystemActor   bool                        `bson:"isSystemActor,omitempty"`
+	Username        string                      `bson:"username"`
+	UsernameLower   string                      `bson:"usernameLower"`
+	Name            string                      `bson:"name,omitempty"`
+	Summary         string                      `bson:"summary,omitempty"`
+	URL             string                      `bson:"url,omitempty"`
+	ProfileFields   []actorProfileFieldDocument `bson:"profileFields,omitempty"`
+	Birthday        string                      `bson:"birthday,omitempty"`
+	Location        string                      `bson:"location,omitempty"`
+	AvatarURL       string                      `bson:"avatarUrl,omitempty"`
+	BannerURL       string                      `bson:"bannerUrl,omitempty"`
+	Tags            []string                    `bson:"tags,omitempty"`
+	EmojiNames      []string                    `bson:"emojiNames,omitempty"`
+	IsBot           bool                        `bson:"isBot,omitempty"`
+	IsCat           bool                        `bson:"isCat,omitempty"`
+	IsLocked        bool                        `bson:"isLocked,omitempty"`
+	IsDiscoverable  bool                        `bson:"isDiscoverable,omitempty"`
+	Type            string                      `bson:"type"`
+	Host            *string                     `bson:"host"`
+	URI             string                      `bson:"uri"`
+	Inbox           string                      `bson:"inbox"`
+	SharedInbox     string                      `bson:"sharedInbox"`
+	FollowersURI    string                      `bson:"followersUri,omitempty"`
+	FollowingURI    string                      `bson:"followingUri,omitempty"`
+	FeaturedURI     string                      `bson:"featuredUri,omitempty"`
+	FeaturedNoteIDs []string                    `bson:"featuredNoteIds,omitempty"`
+	MovedToURI      string                      `bson:"movedToUri,omitempty"`
+	AlsoKnownAs     []string                    `bson:"alsoKnownAs,omitempty"`
+	MovedAt         *time.Time                  `bson:"movedAt,omitempty"`
+	LastFetchedAt   time.Time                   `bson:"lastFetchedAt,omitempty"`
+	PublicKeyID     string                      `bson:"publicKeyId"`
+	PublicKeyPEM    string                      `bson:"publicKeyPem"`
+	PrivateKeyPEM   string                      `bson:"privateKeyPem,omitempty"`
+	IsSuspended     bool                        `bson:"isSuspended"`
+	DeletedAt       *time.Time                  `bson:"deletedAt,omitempty"`
 }
 
 type actorProfileFieldDocument struct {
@@ -237,35 +238,36 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	doc := fromActor(actor)
 	doc.LastFetchedAt = time.Now().UTC()
 	fields := bson.M{
-		"username":       doc.Username,
-		"usernameLower":  doc.UsernameLower,
-		"name":           doc.Name,
-		"summary":        doc.Summary,
-		"url":            doc.URL,
-		"profileFields":  doc.ProfileFields,
-		"birthday":       doc.Birthday,
-		"location":       doc.Location,
-		"avatarUrl":      doc.AvatarURL,
-		"bannerUrl":      doc.BannerURL,
-		"tags":           doc.Tags,
-		"emojiNames":     doc.EmojiNames,
-		"isBot":          doc.IsBot,
-		"isCat":          doc.IsCat,
-		"isLocked":       doc.IsLocked,
-		"isDiscoverable": doc.IsDiscoverable,
-		"type":           doc.Type,
-		"host":           doc.Host,
-		"inbox":          doc.Inbox,
-		"sharedInbox":    doc.SharedInbox,
-		"followersUri":   doc.FollowersURI,
-		"followingUri":   doc.FollowingURI,
-		"featuredUri":    doc.FeaturedURI,
-		"movedToUri":     doc.MovedToURI,
-		"alsoKnownAs":    doc.AlsoKnownAs,
-		"lastFetchedAt":  doc.LastFetchedAt,
-		"publicKeyId":    doc.PublicKeyID,
-		"publicKeyPem":   doc.PublicKeyPEM,
-		"isSuspended":    doc.IsSuspended,
+		"username":        doc.Username,
+		"usernameLower":   doc.UsernameLower,
+		"name":            doc.Name,
+		"summary":         doc.Summary,
+		"url":             doc.URL,
+		"profileFields":   doc.ProfileFields,
+		"birthday":        doc.Birthday,
+		"location":        doc.Location,
+		"avatarUrl":       doc.AvatarURL,
+		"bannerUrl":       doc.BannerURL,
+		"tags":            doc.Tags,
+		"emojiNames":      doc.EmojiNames,
+		"isBot":           doc.IsBot,
+		"isCat":           doc.IsCat,
+		"isLocked":        doc.IsLocked,
+		"isDiscoverable":  doc.IsDiscoverable,
+		"type":            doc.Type,
+		"host":            doc.Host,
+		"inbox":           doc.Inbox,
+		"sharedInbox":     doc.SharedInbox,
+		"followersUri":    doc.FollowersURI,
+		"followingUri":    doc.FollowingURI,
+		"featuredUri":     doc.FeaturedURI,
+		"featuredNoteIds": doc.FeaturedNoteIDs,
+		"movedToUri":      doc.MovedToURI,
+		"alsoKnownAs":     doc.AlsoKnownAs,
+		"lastFetchedAt":   doc.LastFetchedAt,
+		"publicKeyId":     doc.PublicKeyID,
+		"publicKeyPem":    doc.PublicKeyPEM,
+		"isSuspended":     doc.IsSuspended,
 	}
 	// movedAt records Rosmarinus' validation decision, not remote profile data.
 	// Ordinary Actor refreshes must not clear a previously accepted migration.
@@ -308,81 +310,83 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		return nil, err
 	}
 	return &actors.Actor{
-		ID:             doc.ID,
-		OwnerAccountID: doc.OwnerAccountID,
-		IsSystemActor:  doc.IsSystemActor,
-		Username:       doc.Username,
-		UsernameLower:  doc.UsernameLower,
-		Name:           doc.Name,
-		Summary:        doc.Summary,
-		URL:            doc.URL,
-		ProfileFields:  profileFieldsFromDocuments(doc.ProfileFields),
-		Birthday:       doc.Birthday,
-		Location:       doc.Location,
-		AvatarURL:      doc.AvatarURL,
-		BannerURL:      doc.BannerURL,
-		Tags:           doc.Tags,
-		EmojiNames:     doc.EmojiNames,
-		IsBot:          doc.IsBot,
-		IsCat:          doc.IsCat,
-		IsLocked:       doc.IsLocked,
-		IsDiscoverable: doc.IsDiscoverable,
-		Type:           doc.Type,
-		Host:           doc.Host,
-		URI:            doc.URI,
-		Inbox:          doc.Inbox,
-		SharedInbox:    doc.SharedInbox,
-		FollowersURI:   doc.FollowersURI,
-		FollowingURI:   doc.FollowingURI,
-		FeaturedURI:    doc.FeaturedURI,
-		MovedToURI:     doc.MovedToURI,
-		AlsoKnownAs:    doc.AlsoKnownAs,
-		MovedAt:        doc.MovedAt,
-		LastFetchedAt:  doc.LastFetchedAt,
-		PublicKeyID:    doc.PublicKeyID,
-		PublicKeyPEM:   doc.PublicKeyPEM,
-		PrivateKeyPEM:  doc.PrivateKeyPEM,
-		IsSuspended:    doc.IsSuspended,
+		ID:              doc.ID,
+		OwnerAccountID:  doc.OwnerAccountID,
+		IsSystemActor:   doc.IsSystemActor,
+		Username:        doc.Username,
+		UsernameLower:   doc.UsernameLower,
+		Name:            doc.Name,
+		Summary:         doc.Summary,
+		URL:             doc.URL,
+		ProfileFields:   profileFieldsFromDocuments(doc.ProfileFields),
+		Birthday:        doc.Birthday,
+		Location:        doc.Location,
+		AvatarURL:       doc.AvatarURL,
+		BannerURL:       doc.BannerURL,
+		Tags:            doc.Tags,
+		EmojiNames:      doc.EmojiNames,
+		IsBot:           doc.IsBot,
+		IsCat:           doc.IsCat,
+		IsLocked:        doc.IsLocked,
+		IsDiscoverable:  doc.IsDiscoverable,
+		Type:            doc.Type,
+		Host:            doc.Host,
+		URI:             doc.URI,
+		Inbox:           doc.Inbox,
+		SharedInbox:     doc.SharedInbox,
+		FollowersURI:    doc.FollowersURI,
+		FollowingURI:    doc.FollowingURI,
+		FeaturedURI:     doc.FeaturedURI,
+		FeaturedNoteIDs: doc.FeaturedNoteIDs,
+		MovedToURI:      doc.MovedToURI,
+		AlsoKnownAs:     doc.AlsoKnownAs,
+		MovedAt:         doc.MovedAt,
+		LastFetchedAt:   doc.LastFetchedAt,
+		PublicKeyID:     doc.PublicKeyID,
+		PublicKeyPEM:    doc.PublicKeyPEM,
+		PrivateKeyPEM:   doc.PrivateKeyPEM,
+		IsSuspended:     doc.IsSuspended,
 	}, nil
 }
 
 func fromActor(actor actors.Actor) actorDocument {
 	return actorDocument{
-		ID:             actor.ID,
-		OwnerAccountID: actor.OwnerAccountID,
-		IsSystemActor:  actor.IsSystemActor,
-		Username:       actor.Username,
-		UsernameLower:  actor.UsernameLower,
-		Name:           actor.Name,
-		Summary:        actor.Summary,
-		URL:            actor.URL,
-		ProfileFields:  profileFieldDocuments(actor.ProfileFields),
-		Birthday:       actor.Birthday,
-		Location:       actor.Location,
-		AvatarURL:      actor.AvatarURL,
-		BannerURL:      actor.BannerURL,
-		Tags:           actor.Tags,
-		EmojiNames:     actor.EmojiNames,
-		IsBot:          actor.IsBot,
-		IsCat:          actor.IsCat,
-		IsLocked:       actor.IsLocked,
-		IsDiscoverable: actor.IsDiscoverable,
-		Type:           actor.Type,
-		Host:           actor.Host,
-		URI:            actor.URI,
-		Inbox:          actor.Inbox,
-		SharedInbox:    actor.SharedInbox,
-		FollowersURI:   actor.FollowersURI,
-		FollowingURI:   actor.FollowingURI,
-		FeaturedURI:    actor.FeaturedURI,
-		MovedToURI:     actor.MovedToURI,
-		AlsoKnownAs:    actor.AlsoKnownAs,
-		MovedAt:        actor.MovedAt,
-		LastFetchedAt:  actor.LastFetchedAt,
-		PublicKeyID:    actor.PublicKeyID,
-		PublicKeyPEM:   actor.PublicKeyPEM,
-		PrivateKeyPEM:  actor.PrivateKeyPEM,
-		IsSuspended:    actor.IsSuspended,
+		ID:              actor.ID,
+		OwnerAccountID:  actor.OwnerAccountID,
+		IsSystemActor:   actor.IsSystemActor,
+		Username:        actor.Username,
+		UsernameLower:   actor.UsernameLower,
+		Name:            actor.Name,
+		Summary:         actor.Summary,
+		URL:             actor.URL,
+		ProfileFields:   profileFieldDocuments(actor.ProfileFields),
+		Birthday:        actor.Birthday,
+		Location:        actor.Location,
+		AvatarURL:       actor.AvatarURL,
+		BannerURL:       actor.BannerURL,
+		Tags:            actor.Tags,
+		EmojiNames:      actor.EmojiNames,
+		IsBot:           actor.IsBot,
+		IsCat:           actor.IsCat,
+		IsLocked:        actor.IsLocked,
+		IsDiscoverable:  actor.IsDiscoverable,
+		Type:            actor.Type,
+		Host:            actor.Host,
+		URI:             actor.URI,
+		Inbox:           actor.Inbox,
+		SharedInbox:     actor.SharedInbox,
+		FollowersURI:    actor.FollowersURI,
+		FollowingURI:    actor.FollowingURI,
+		FeaturedURI:     actor.FeaturedURI,
+		FeaturedNoteIDs: actor.FeaturedNoteIDs,
+		MovedToURI:      actor.MovedToURI,
+		AlsoKnownAs:     actor.AlsoKnownAs,
+		MovedAt:         actor.MovedAt,
+		LastFetchedAt:   actor.LastFetchedAt,
+		PublicKeyID:     actor.PublicKeyID,
+		PublicKeyPEM:    actor.PublicKeyPEM,
+		PrivateKeyPEM:   actor.PrivateKeyPEM,
+		IsSuspended:     actor.IsSuspended,
 	}
 }
 

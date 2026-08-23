@@ -330,6 +330,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Project the explicit remote Actor profile fields documented in the
       integration contract; render converted summary/property text safely and
       distinguish remote avatar/banner source URLs from cached media.
+- [ ] Render remote featured posts by joining Actor `featuredNoteIds` to
+      `notes._id`; preserve the stored order and tolerate missing/deleted Notes.
 - [ ] Model eventual consistency in loading and post-command UI states.
 - [ ] Keep presentation fields and preferences in Salvia-owned collections.
 - [ ] Verify the Salvia runtime MongoDB role cannot mutate a Rosmarinus

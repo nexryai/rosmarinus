@@ -116,6 +116,30 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 		}
 		return nil, fmt.Errorf("actor fetcher is not configured")
 	}
+	unlock, err := r.acquireObjectLock(ctx, uri)
+	if err != nil {
+		if existing != nil {
+			return existing, nil
+		}
+		return nil, err
+	}
+	if unlock != nil {
+		defer func() {
+			unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = unlock(unlockCtx)
+		}()
+		latest, err := r.repo.FindByURI(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		if actorIsFresh(latest) {
+			return latest, nil
+		}
+		if latest != nil {
+			existing = latest
+		}
+	}
 	object, err := r.fetcher.FetchObject(ctx, uri, r.signer)
 	if err != nil {
 		if existing != nil {
@@ -130,7 +154,65 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 		}
 		return nil, err
 	}
+	if existing != nil {
+		actor.FeaturedNoteIDs = existing.FeaturedNoteIDs
+	}
+	stored, err := r.repo.UpsertRemoteActor(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	featuredIDs, err := r.resolveFeaturedNotes(ctx, actor.FeaturedURI)
+	if err != nil {
+		return stored, nil
+	}
+	actor.FeaturedNoteIDs = featuredIDs
 	return r.repo.UpsertRemoteActor(ctx, actor)
+}
+
+func actorIsFresh(actor *actors.Actor) bool {
+	return actor != nil && (actor.Host == nil || (!actor.LastFetchedAt.IsZero() && time.Since(actor.LastFetchedAt) < remoteActorRefreshInterval))
+}
+
+func (r *Resolver) resolveFeaturedNotes(ctx context.Context, collectionURI string) ([]string, error) {
+	if collectionURI == "" || r.notes == nil {
+		return nil, nil
+	}
+	collection, err := r.fetcher.FetchObject(ctx, collectionURI, r.signer)
+	if err != nil {
+		return nil, err
+	}
+	if !aptypes.IsCollectionOrOrderedCollection(collection) {
+		return nil, fmt.Errorf("featured object is not a collection")
+	}
+	items := collection["items"]
+	if aptypes.IsOrderedCollection(collection) {
+		items = collection["orderedItems"]
+	}
+	values := aptypes.ToArray(items)
+	if len(values) > 5 {
+		values = values[:5]
+	}
+	ids := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		uri, err := aptypes.GetAPID(value)
+		if err != nil {
+			return nil, err
+		}
+		note, err := r.ResolveNote(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		if note == nil {
+			continue
+		}
+		if _, ok := seen[note.ID]; ok {
+			continue
+		}
+		seen[note.ID] = struct{}{}
+		ids = append(ids, note.ID)
+	}
+	return ids, nil
 }
 
 func (r *Resolver) ResolveNote(ctx context.Context, uri string) (*domainnotes.Note, error) {

@@ -31,10 +31,12 @@ document and must not maintain a separately writable remote-profile copy.
 The read-only remote profile projection includes `summary`, `url`,
 `profileFields`, `birthday`, `location`, `avatarUrl`, `bannerUrl`, `tags`,
 `emojiNames`, `isBot`, `isCat`, `isLocked`, `isDiscoverable`, and
-`lastFetchedAt`. Rosmarinus converts ActivityPub HTML summaries and property
-values to its MFM-compatible text representation before storing them. The
-avatar and banner values are validated HTTPS source URLs; Salvia should not
-treat them as proof that media has been cached locally.
+`lastFetchedAt`. `featuredNoteIds` contains up to five resolved `notes._id`
+values from the Actor's current ActivityPub featured collection. Rosmarinus
+converts ActivityPub HTML summaries and property values to its MFM-compatible
+text representation before storing them. The avatar and banner values are
+validated HTTPS source URLs; Salvia should not treat them as proof that media
+has been cached locally.
 
 Remote Actor documents may contain additive account-migration fields owned by
 Rosmarinus:

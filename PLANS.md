@@ -289,7 +289,8 @@ the same style as current Misskey.
       names where available.
 - [x] Refresh remote actors when stale after 24 hours, retaining the last
       validated Actor if a refresh temporarily fails.
-- [ ] Update featured notes from remote `featured` collections.
+- [x] Update up to five resolved featured Note IDs from remote `featured`
+      collections without failing an otherwise valid Actor refresh.
 
 ### Note Resolution And Creation
 
@@ -457,7 +458,7 @@ flags, but that is an operational option, not the default architecture.
       applying federation side effects, and release it with an independent
       bounded context.
 - [x] AP object lock by URI for note and Announce target resolution.
-- [ ] Extend AP object locking to forced Actor refresh paths.
+- [x] Extend AP object locking to missing/stale Actor refresh paths.
 - [ ] Instance metadata lock by host.
 - [ ] Public key cache keyed by `keyId`.
 - [ ] Actor URI cache.

@@ -6,41 +6,42 @@ import (
 )
 
 type Actor struct {
-	ID             string
-	OwnerAccountID string
-	IsSystemActor  bool
-	Username       string
-	UsernameLower  string
-	Name           string
-	Summary        string
-	URL            string
-	ProfileFields  []ProfileField
-	Birthday       string
-	Location       string
-	AvatarURL      string
-	BannerURL      string
-	Tags           []string
-	EmojiNames     []string
-	IsBot          bool
-	IsCat          bool
-	IsLocked       bool
-	IsDiscoverable bool
-	Type           string
-	Host           *string
-	URI            string
-	Inbox          string
-	SharedInbox    string
-	FollowersURI   string
-	FollowingURI   string
-	FeaturedURI    string
-	MovedToURI     string
-	AlsoKnownAs    []string
-	MovedAt        *time.Time
-	LastFetchedAt  time.Time
-	PublicKeyID    string
-	PublicKeyPEM   string
-	PrivateKeyPEM  string
-	IsSuspended    bool
+	ID              string
+	OwnerAccountID  string
+	IsSystemActor   bool
+	Username        string
+	UsernameLower   string
+	Name            string
+	Summary         string
+	URL             string
+	ProfileFields   []ProfileField
+	Birthday        string
+	Location        string
+	AvatarURL       string
+	BannerURL       string
+	Tags            []string
+	EmojiNames      []string
+	IsBot           bool
+	IsCat           bool
+	IsLocked        bool
+	IsDiscoverable  bool
+	Type            string
+	Host            *string
+	URI             string
+	Inbox           string
+	SharedInbox     string
+	FollowersURI    string
+	FollowingURI    string
+	FeaturedURI     string
+	FeaturedNoteIDs []string
+	MovedToURI      string
+	AlsoKnownAs     []string
+	MovedAt         *time.Time
+	LastFetchedAt   time.Time
+	PublicKeyID     string
+	PublicKeyPEM    string
+	PrivateKeyPEM   string
+	IsSuspended     bool
 }
 
 type ProfileField struct {
