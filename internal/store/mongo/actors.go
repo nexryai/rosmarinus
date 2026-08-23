@@ -220,6 +220,37 @@ func (r *ActorRepository) FindByURI(ctx context.Context, uri string) (*actors.Ac
 	})
 }
 
+func (r *ActorRepository) FindAnyByURI(ctx context.Context, uri string) (*actors.Actor, error) {
+	return r.findOne(ctx, bson.M{"uri": uri})
+}
+
+func (r *ActorRepository) FilterActiveRemoteIDs(ctx context.Context, ids []string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	if len(ids) == 0 {
+		return result, nil
+	}
+	cursor, err := r.collection.Find(ctx, bson.M{
+		"_id":         bson.M{"$in": ids},
+		"host":        bson.M{"$ne": nil},
+		"isSuspended": false,
+		"deletedAt":   nil,
+	}, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	for cursor.Next(ctx) {
+		var document struct {
+			ID string `bson:"_id"`
+		}
+		if err := cursor.Decode(&document); err != nil {
+			return nil, err
+		}
+		result[document.ID] = struct{}{}
+	}
+	return result, cursor.Err()
+}
+
 func (r *ActorRepository) FindByPublicKeyID(ctx context.Context, keyID string) (*actors.Actor, error) {
 	return r.findOne(ctx, bson.M{
 		"publicKeyId": keyID,

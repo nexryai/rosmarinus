@@ -88,6 +88,27 @@ func (f *fakeRepo) FindByURI(ctx context.Context, uri string) (*actors.Actor, er
 	return nil, nil
 }
 
+func (f *fakeRepo) FindAnyByURI(ctx context.Context, uri string) (*actors.Actor, error) {
+	return f.FindByURI(ctx, uri)
+}
+
+func (f *fakeRepo) FilterActiveRemoteIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	for _, id := range ids {
+		candidates := []*actors.Actor{f.remote}
+		for _, actor := range f.remotes {
+			candidates = append(candidates, actor)
+		}
+		for _, actor := range candidates {
+			if actor != nil && actor.ID == id && actor.Host != nil && !actor.IsSuspended {
+				result[id] = struct{}{}
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
 func (f *fakeRepo) FindByPublicKeyID(ctx context.Context, keyID string) (*actors.Actor, error) {
 	if f.remote != nil && f.remote.PublicKeyID == keyID {
 		return f.remote, nil
@@ -1347,10 +1368,12 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	}
 	q := &fakeQueue{}
 	connectorPublisher := &fakeConnectorPublisher{}
+	remoteAlice := &actors.Actor{ID: "remote-follower", Host: &remoteHost, URI: "https://remote.example/users/alice"}
+	remoteBob := &actors.Actor{ID: "remote-follower-2", Host: &remoteHost, URI: "https://remote.example/users/bob"}
 	h := New(config.Config{
 		PublicURL:    "https://rosmarinus.example",
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
-	}, nil, &fakeRepo{local: local}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remotes: map[string]*actors.Actor{remoteAlice.URI: remoteAlice, remoteBob.URI: remoteBob}}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	h.SetConnectorPublisher(connectorPublisher)
 	post, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID:    "relay",
@@ -1439,9 +1462,10 @@ func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	}
 }
 
-func TestCreatePostSkipsBlockedAndFederationBlockedFollowers(t *testing.T) {
+func TestCreatePostSkipsBlockedAndSuspendedFollowers(t *testing.T) {
 	remoteHost := "remote.example"
 	blockedHost := "social.blocked.example"
+	suspendedHost := "suspended.example"
 	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
 	followRepo := &fakeFollowRepo{}
 	for _, follower := range []struct {
@@ -1450,6 +1474,7 @@ func TestCreatePostSkipsBlockedAndFederationBlockedFollowers(t *testing.T) {
 	}{
 		{id: "relationship-blocked", inbox: "https://remote.example/inbox", host: &remoteHost},
 		{id: "host-blocked", inbox: "https://social.blocked.example/inbox", host: &blockedHost},
+		{id: "suspended", inbox: "https://suspended.example/inbox", host: &suspendedHost},
 	} {
 		_, _ = followRepo.Upsert(context.Background(), follows.Follow{
 			ID: follower.id, FollowerID: follower.id, FolloweeID: local.ID,
@@ -1459,9 +1484,14 @@ func TestCreatePostSkipsBlockedAndFederationBlockedFollowers(t *testing.T) {
 	blockRepo := &fakeBlockRepo{}
 	_, _ = blockRepo.Upsert(context.Background(), blocks.Block{BlockerID: "relationship-blocked", BlockeeID: local.ID})
 	q := &fakeQueue{}
+	activeBlocked := &actors.Actor{ID: "relationship-blocked", URI: "https://remote.example/users/blocked", Host: &remoteHost}
+	activeHostBlocked := &actors.Actor{ID: "host-blocked", URI: "https://social.blocked.example/users/alice", Host: &blockedHost}
+	suspended := &actors.Actor{ID: "suspended", URI: "https://suspended.example/users/alice", Host: &suspendedHost, IsSuspended: true}
 	h := New(config.Config{
 		PublicURL: "https://rosmarinus.example", FederationBlockedHosts: []string{"blocked.example"},
-	}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remotes: map[string]*actors.Actor{
+		activeBlocked.URI: activeBlocked, activeHostBlocked.URI: activeHostBlocked, suspended.URI: suspended,
+	}}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 
 	if _, err := h.CreatePost(context.Background(), connector.PostCreateCommand{ActorID: local.ID, NoteID: "blocked-fanout", Text: "hello"}); err != nil {
 		t.Fatalf("CreatePost returned error: %v", err)

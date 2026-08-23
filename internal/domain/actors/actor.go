@@ -61,6 +61,8 @@ type Repository interface {
 	SuspendOwnedLocalActors(context.Context, string) (int64, error)
 	ListOwnedAccountIDs(context.Context) ([]string, error)
 	FindByURI(context.Context, string) (*Actor, error)
+	FindAnyByURI(context.Context, string) (*Actor, error)
+	FilterActiveRemoteIDs(context.Context, []string) (map[string]struct{}, error)
 	FindByPublicKeyID(context.Context, string) (*Actor, error)
 	UpsertRemoteActor(context.Context, Actor) (*Actor, error)
 	MarkRemoteActorDeleted(context.Context, string) error

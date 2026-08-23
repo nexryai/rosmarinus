@@ -100,9 +100,12 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 	if r.policy != nil && r.policy.IsFederationHostBlocked(host) {
 		return nil, fmt.Errorf("actor host is blocked: %s", host)
 	}
-	existing, err := r.repo.FindByURI(ctx, uri)
+	existing, err := r.repo.FindAnyByURI(ctx, uri)
 	if err != nil {
 		return nil, err
+	}
+	if existing != nil && existing.IsSuspended {
+		return nil, fmt.Errorf("actor is suspended: %s", uri)
 	}
 	if existing != nil && (existing.Host == nil || (!existing.LastFetchedAt.IsZero() && time.Since(existing.LastFetchedAt) < remoteActorRefreshInterval)) {
 		return existing, nil
@@ -129,7 +132,7 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 			defer cancel()
 			_ = unlock(unlockCtx)
 		}()
-		latest, err := r.repo.FindByURI(ctx, uri)
+		latest, err := r.repo.FindAnyByURI(ctx, uri)
 		if err != nil {
 			return nil, err
 		}

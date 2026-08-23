@@ -470,6 +470,23 @@ func (r *resolverActorRepository) FindByURI(context.Context, string) (*actors.Ac
 	return r.existing, nil
 }
 
+func (r *resolverActorRepository) FindAnyByURI(context.Context, string) (*actors.Actor, error) {
+	return r.existing, nil
+}
+
+func (r *resolverActorRepository) FilterActiveRemoteIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
+	result := make(map[string]struct{})
+	if r.existing == nil || r.existing.Host == nil || r.existing.IsSuspended {
+		return result, nil
+	}
+	for _, id := range ids {
+		if id == r.existing.ID {
+			result[id] = struct{}{}
+		}
+	}
+	return result, nil
+}
+
 func (r *resolverActorRepository) FindByPublicKeyID(context.Context, string) (*actors.Actor, error) {
 	return nil, nil
 }

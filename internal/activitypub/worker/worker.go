@@ -1326,7 +1326,22 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 		if err != nil {
 			return fmt.Errorf("list followers for post delivery: %w", err)
 		}
+		remoteIDs := make([]string, 0, len(followers))
 		for _, follow := range followers {
+			if follow.FollowerHost != nil {
+				remoteIDs = append(remoteIDs, follow.FollowerID)
+			}
+		}
+		activeRemoteIDs, err := h.repo.FilterActiveRemoteIDs(ctx, remoteIDs)
+		if err != nil {
+			return fmt.Errorf("filter active post recipients: %w", err)
+		}
+		for _, follow := range followers {
+			if follow.FollowerHost != nil {
+				if _, active := activeRemoteIDs[follow.FollowerID]; !active {
+					continue
+				}
+			}
 			if follow.FollowerHost != nil && h.cfg.IsFederationHostBlocked(*follow.FollowerHost) {
 				continue
 			}

@@ -376,7 +376,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Prefer `sharedInbox` for follower fan-out and deduplicate destinations;
       retain individual inboxes for direct activities.
 - [x] Skip configured blocked hosts and Actor block relationships.
-- [ ] Skip suspended Actors/instances retained in existing relationships.
+- [x] Skip suspended Actors retained in existing relationships and prevent
+      resolver refresh from resurrecting tombstoned Actors.
 - [ ] Update instance send stats on success and failure.
 - [ ] Suspend delivery to instances that have failed for a long period.
 
