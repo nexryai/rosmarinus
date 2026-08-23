@@ -285,7 +285,8 @@ the same style as current Misskey.
       additive fields in Salvia's read-only Actor projection.
 - [ ] Store bot/cat flags, discoverability, profile fields, birthday, location,
       avatar, banner, and custom emoji names where available.
-- [ ] Refresh remote actors when stale, initially after 24 hours.
+- [x] Refresh remote actors when stale after 24 hours, retaining the last
+      validated Actor if a refresh temporarily fails.
 - [ ] Update featured notes from remote `featured` collections.
 
 ### Note Resolution And Creation

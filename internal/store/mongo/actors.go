@@ -40,6 +40,7 @@ type actorDocument struct {
 	MovedToURI     string     `bson:"movedToUri,omitempty"`
 	AlsoKnownAs    []string   `bson:"alsoKnownAs,omitempty"`
 	MovedAt        *time.Time `bson:"movedAt,omitempty"`
+	LastFetchedAt  time.Time  `bson:"lastFetchedAt,omitempty"`
 	PublicKeyID    string     `bson:"publicKeyId"`
 	PublicKeyPEM   string     `bson:"publicKeyPem"`
 	PrivateKeyPEM  string     `bson:"privateKeyPem,omitempty"`
@@ -216,6 +217,7 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	}
 	actor.UsernameLower = strings.ToLower(actor.Username)
 	doc := fromActor(actor)
+	doc.LastFetchedAt = time.Now().UTC()
 	fields := bson.M{
 		"username":      doc.Username,
 		"usernameLower": doc.UsernameLower,
@@ -229,6 +231,7 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 		"featuredUri":   doc.FeaturedURI,
 		"movedToUri":    doc.MovedToURI,
 		"alsoKnownAs":   doc.AlsoKnownAs,
+		"lastFetchedAt": doc.LastFetchedAt,
 		"publicKeyId":   doc.PublicKeyID,
 		"publicKeyPem":  doc.PublicKeyPEM,
 		"isSuspended":   doc.IsSuspended,
@@ -291,6 +294,7 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		MovedToURI:     doc.MovedToURI,
 		AlsoKnownAs:    doc.AlsoKnownAs,
 		MovedAt:        doc.MovedAt,
+		LastFetchedAt:  doc.LastFetchedAt,
 		PublicKeyID:    doc.PublicKeyID,
 		PublicKeyPEM:   doc.PublicKeyPEM,
 		PrivateKeyPEM:  doc.PrivateKeyPEM,
@@ -317,6 +321,7 @@ func fromActor(actor actors.Actor) actorDocument {
 		MovedToURI:     actor.MovedToURI,
 		AlsoKnownAs:    actor.AlsoKnownAs,
 		MovedAt:        actor.MovedAt,
+		LastFetchedAt:  actor.LastFetchedAt,
 		PublicKeyID:    actor.PublicKeyID,
 		PublicKeyPEM:   actor.PublicKeyPEM,
 		PrivateKeyPEM:  actor.PrivateKeyPEM,

@@ -23,6 +23,7 @@ type Actor struct {
 	MovedToURI     string
 	AlsoKnownAs    []string
 	MovedAt        *time.Time
+	LastFetchedAt  time.Time
 	PublicKeyID    string
 	PublicKeyPEM   string
 	PrivateKeyPEM  string

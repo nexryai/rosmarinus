@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -32,6 +33,8 @@ type Resolver struct {
 	webFinger WebFinger
 	policy    FederationPolicy
 }
+
+const remoteActorRefreshInterval = 24 * time.Hour
 
 func (r *Resolver) SetFederationPolicy(policy FederationPolicy) {
 	r.policy = policy
@@ -71,18 +74,30 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
+	if existing != nil && (existing.Host == nil || (!existing.LastFetchedAt.IsZero() && time.Since(existing.LastFetchedAt) < remoteActorRefreshInterval)) {
 		return existing, nil
 	}
 	if r.policy != nil && r.policy.IsSelfFederationURL(uri) {
 		return nil, fmt.Errorf("local actor not found: %s", uri)
 	}
+	if r.fetcher == nil {
+		if existing != nil {
+			return existing, nil
+		}
+		return nil, fmt.Errorf("actor fetcher is not configured")
+	}
 	object, err := r.fetcher.FetchObject(ctx, uri, r.signer)
 	if err != nil {
+		if existing != nil {
+			return existing, nil
+		}
 		return nil, err
 	}
 	actor, err := ParseRemoteActor(object, uri)
 	if err != nil {
+		if existing != nil {
+			return existing, nil
+		}
 		return nil, err
 	}
 	return r.repo.UpsertRemoteActor(ctx, actor)

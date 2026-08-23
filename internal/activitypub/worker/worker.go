@@ -164,6 +164,11 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 		if err != nil {
 			return "", fmt.Errorf("resolve actor: %w", err)
 		}
+	} else {
+		authActor, err = h.resolver.ResolveActor(ctx, authActor.URI)
+		if err != nil {
+			return "", fmt.Errorf("refresh actor: %w", err)
+		}
 	}
 	if authActor == nil {
 		return "skip: failed to resolve user", nil

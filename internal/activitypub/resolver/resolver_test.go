@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -75,6 +76,40 @@ func TestResolveActorRejectsFragment(t *testing.T) {
 	_, err := resolver.ResolveActor(context.Background(), "https://remote.example/users/alice#key")
 	if err == nil || fetcher.calls != 0 {
 		t.Fatalf("err=%v fetch calls=%d", err, fetcher.calls)
+	}
+}
+
+func TestResolveActorRefreshesStaleRemoteActor(t *testing.T) {
+	host := "remote.example"
+	uri := "https://remote.example/users/alice"
+	repo := &resolverActorRepository{existing: &actors.Actor{
+		ID: "remote", URI: uri, Host: &host, LastFetchedAt: time.Now().Add(-25 * time.Hour),
+	}}
+	fetcher := &countingResolverFetcher{object: map[string]any{
+		"@context": "https://www.w3.org/ns/activitystreams",
+		"id":       uri, "type": "Person", "preferredUsername": "alice",
+		"name": "Refreshed", "inbox": uri + "/inbox",
+	}}
+	resolver := New(repo, fetcher, nil)
+
+	resolved, err := resolver.ResolveActor(context.Background(), uri)
+	if err != nil {
+		t.Fatalf("ResolveActor returned error: %v", err)
+	}
+	if fetcher.calls != 1 || repo.upserted == nil || resolved.Name != "Refreshed" {
+		t.Fatalf("resolved=%+v fetch calls=%d upserted=%+v", resolved, fetcher.calls, repo.upserted)
+	}
+}
+
+func TestResolveActorKeepsFreshRemoteActor(t *testing.T) {
+	host := "remote.example"
+	existing := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	fetcher := &countingResolverFetcher{}
+	resolver := New(&resolverActorRepository{existing: existing}, fetcher, nil)
+
+	resolved, err := resolver.ResolveActor(context.Background(), existing.URI)
+	if err != nil || resolved != existing || fetcher.calls != 0 {
+		t.Fatalf("resolved=%+v err=%v fetch calls=%d", resolved, err, fetcher.calls)
 	}
 }
 
@@ -294,12 +329,13 @@ func (resolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[
 }
 
 type countingResolverFetcher struct {
-	calls int
+	calls  int
+	object map[string]any
 }
 
 func (f *countingResolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[string]any, error) {
 	f.calls++
-	return nil, nil
+	return f.object, nil
 }
 
 type resolverWebFinger struct {
