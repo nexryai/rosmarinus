@@ -123,6 +123,10 @@ Remote Note relationships expose both federation URIs (`inReplyToUri`,
 for MongoDB joins and thread rendering. Treat URI fields as read-only
 ActivityPub source data, not database foreign keys.
 
+An accepted ActivityPub Block removes pending/active follow relationships in
+both directions. Recompute UI relationship state from Rosmarinus-owned
+`blocks` and `follows`; do not preserve or repair a separate Salvia follow flag.
+
 ## Account and Actor Identity
 
 An Ably `clientId` identifies one authenticated local account. It does not

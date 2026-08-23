@@ -66,6 +66,11 @@ Salvia should join thread/quote views by `replyId` and `quoteId`. The URI fields
 are federation source data and remain useful for diagnostics and outbound
 rendering; they are not MongoDB foreign keys.
 
+When Rosmarinus accepts an ActivityPub `Block`, it stores the block and
+soft-deletes active/pending `follows` in both directions for that Actor pair.
+Salvia must derive the resulting relationship state from the current `blocks`
+and `follows` documents rather than preserving a UI-only follow flag.
+
 ### MongoDB role bootstrap
 
 [`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom

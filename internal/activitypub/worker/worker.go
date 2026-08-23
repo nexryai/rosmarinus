@@ -439,6 +439,13 @@ func (h *Handler) enqueueOutgoingFollow(ctx context.Context, follower, followee 
 	if followee == nil || followee.Host == nil {
 		return "", fmt.Errorf("follow target must be a remote actor")
 	}
+	blocked, err := h.isBlockedPair(ctx, follower.ID, followee.ID)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return "", fmt.Errorf("follow target is blocked")
+	}
 	existing, err := h.follows.Find(ctx, follower.ID, followee.ID)
 	if err != nil {
 		return "", err
@@ -865,6 +872,13 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 	if h.follows == nil {
 		return "skip: follow repository is not configured", nil
 	}
+	blocked, err := h.isBlockedPair(ctx, follower.ID, followee.ID)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return "skip: follow is blocked", nil
+	}
 	activityID, _ := activity["id"].(string)
 	follow, err := h.follows.Upsert(ctx, follows.Follow{
 		FollowerID:          follower.ID,
@@ -904,6 +918,13 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	}
 	if h.queue == nil {
 		return "skip: queue is not configured", nil
+	}
+	blocked, err := h.isBlockedPair(ctx, followerID, followeeID)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return "skip: follow is blocked", nil
 	}
 	follow, err := h.follows.Approve(ctx, followerID, followeeID)
 	if err != nil {
@@ -1032,7 +1053,7 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	mentionURIs := command.MentionURIs
 	var specifiedRecipients []*actors.Actor
 	if visibility == domainnotes.VisibilitySpecified {
-		specifiedRecipients, mentionURIs, err = h.resolveSpecifiedRecipients(ctx, command.MentionURIs)
+		specifiedRecipients, mentionURIs, err = h.resolveSpecifiedRecipients(ctx, actor, command.MentionURIs)
 		if err != nil {
 			return connector.PostCreated{}, err
 		}
@@ -1198,6 +1219,10 @@ func (h *Handler) DeleteReaction(ctx context.Context, command connector.Reaction
 }
 
 func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) (bool, error) {
+	blocked, err := h.isBlockedPair(ctx, actor.ID, note.AuthorID)
+	if err != nil || blocked {
+		return false, err
+	}
 	switch note.Visibility {
 	case domainnotes.VisibilityPublic, domainnotes.VisibilityHome:
 		return true, nil
@@ -1217,7 +1242,7 @@ func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note 
 	return false, nil
 }
 
-func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, mentionURIs []string) ([]*actors.Actor, []string, error) {
+func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, actor *actors.Actor, mentionURIs []string) ([]*actors.Actor, []string, error) {
 	if h.resolver == nil {
 		return nil, nil, fmt.Errorf("actor resolver is not configured")
 	}
@@ -1235,6 +1260,13 @@ func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, mentionURIs []
 		recipient, err := h.resolver.ResolveActor(ctx, uri)
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve specified recipient %s: %w", uri, err)
+		}
+		blocked, err := h.isBlockedPair(ctx, actor.ID, recipient.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if blocked {
+			continue
 		}
 		seen[uri] = struct{}{}
 		uris = append(uris, uri)
@@ -1254,6 +1286,16 @@ func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, acto
 	destinations := make(map[string]struct{}, len(recipients))
 	for _, recipient := range recipients {
 		if recipient == nil || recipient.Host == nil {
+			continue
+		}
+		if h.cfg.IsFederationHostBlocked(*recipient.Host) {
+			continue
+		}
+		blocked, err := h.isBlockedPair(ctx, actor.ID, recipient.ID)
+		if err != nil {
+			return err
+		}
+		if blocked {
 			continue
 		}
 		inbox := strings.TrimSpace(recipient.Inbox)
@@ -1285,6 +1327,16 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 			return fmt.Errorf("list followers for post delivery: %w", err)
 		}
 		for _, follow := range followers {
+			if follow.FollowerHost != nil && h.cfg.IsFederationHostBlocked(*follow.FollowerHost) {
+				continue
+			}
+			blocked, err := h.isBlockedPair(ctx, actor.ID, follow.FollowerID)
+			if err != nil {
+				return err
+			}
+			if blocked {
+				continue
+			}
 			inbox := strings.TrimSpace(follow.FollowerSharedInbox)
 			if inbox == "" {
 				inbox = strings.TrimSpace(follow.FollowerInbox)
@@ -1433,6 +1485,14 @@ func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activ
 	}); err != nil {
 		return "", err
 	}
+	if h.follows != nil {
+		if err := h.follows.Delete(ctx, blocker.ID, blockee.ID, ""); err != nil {
+			return "", err
+		}
+		if err := h.follows.Delete(ctx, blockee.ID, blocker.ID, ""); err != nil {
+			return "", err
+		}
+	}
 	return "ok", nil
 }
 
@@ -1501,6 +1561,13 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 	if note == nil {
 		return fmt.Sprintf("skip: target note not found %s", targetURI), nil
 	}
+	blocked, err := h.isBlockedPair(ctx, actor.ID, note.AuthorID)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return "skip: reaction is blocked", nil
+	}
 	reaction := reactionFromActivity(activity)
 	existing, err := h.reactions.Find(ctx, note.ID, actor.ID)
 	if err != nil {
@@ -1551,6 +1618,13 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 	if target == nil {
 		return fmt.Sprintf("skip: announce target not found %s", targetURI), nil
 	}
+	blocked, err := h.isBlockedPair(ctx, actor.ID, target.AuthorID)
+	if err != nil {
+		return "", err
+	}
+	if blocked {
+		return "skip: announce is blocked", nil
+	}
 	note := domainnotes.Note{
 		URI:          activityID,
 		AttributedTo: actor.URI,
@@ -1566,6 +1640,22 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		return "", err
 	}
 	return "ok: announce created", nil
+}
+
+func (h *Handler) isBlockedPair(ctx context.Context, firstID, secondID string) (bool, error) {
+	if h.blocks == nil || firstID == "" || secondID == "" || firstID == secondID {
+		return false, nil
+	}
+	for _, pair := range [][2]string{{firstID, secondID}, {secondID, firstID}} {
+		block, err := h.blocks.Find(ctx, pair[0], pair[1])
+		if err != nil {
+			return false, err
+		}
+		if block != nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (h *Handler) resolveAnnounceTarget(ctx context.Context, targetURI string) (*domainnotes.Note, error) {

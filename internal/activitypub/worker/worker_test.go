@@ -1439,6 +1439,52 @@ func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	}
 }
 
+func TestCreatePostSkipsBlockedAndFederationBlockedFollowers(t *testing.T) {
+	remoteHost := "remote.example"
+	blockedHost := "social.blocked.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	followRepo := &fakeFollowRepo{}
+	for _, follower := range []struct {
+		id, inbox string
+		host      *string
+	}{
+		{id: "relationship-blocked", inbox: "https://remote.example/inbox", host: &remoteHost},
+		{id: "host-blocked", inbox: "https://social.blocked.example/inbox", host: &blockedHost},
+	} {
+		_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+			ID: follower.id, FollowerID: follower.id, FolloweeID: local.ID,
+			FollowerHost: follower.host, FollowerSharedInbox: follower.inbox, Status: follows.StatusAccepted,
+		})
+	}
+	blockRepo := &fakeBlockRepo{}
+	_, _ = blockRepo.Upsert(context.Background(), blocks.Block{BlockerID: "relationship-blocked", BlockeeID: local.ID})
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example", FederationBlockedHosts: []string{"blocked.example"},
+	}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+
+	if _, err := h.CreatePost(context.Background(), connector.PostCreateCommand{ActorID: local.ID, NoteID: "blocked-fanout", Text: "hello"}); err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	if len(q.tasks) != 0 {
+		t.Fatalf("blocked followers received deliveries: %+v", q.tasks)
+	}
+}
+
+func TestCreateFollowRejectsBlockedRelationship(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &host, Inbox: "https://remote.example/inbox", LastFetchedAt: time.Now()}
+	blockRepo := &fakeBlockRepo{}
+	_, _ = blockRepo.Upsert(context.Background(), blocks.Block{BlockerID: remote.ID, BlockeeID: local.ID})
+	h := New(config.Config{PublicURL: "https://local.example"}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	_, err := h.CreateFollow(context.Background(), local.ID, remote.URI)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("expected blocked follow error, got %v", err)
+	}
+}
+
 func TestCreatePostDeliversSpecifiedPostToRemoteActorInbox(t *testing.T) {
 	remoteHost := "remote.example"
 	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
@@ -1860,7 +1906,10 @@ func TestProcessInboxBlockStoresBlock(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	blockRepo := &fakeBlockRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{FollowerID: remote.ID, FolloweeID: local.ID, Status: follows.StatusAccepted})
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{FollowerID: local.ID, FolloweeID: remote.ID, Status: follows.StatusAccepted})
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -1889,6 +1938,11 @@ func TestProcessInboxBlockStoresBlock(t *testing.T) {
 	}
 	if block == nil || block.BlockerURI != remote.URI || block.BlockeeURI != local.URI {
 		t.Fatalf("block was not stored: %+v", block)
+	}
+	for _, pair := range [][2]string{{remote.ID, local.ID}, {local.ID, remote.ID}} {
+		if follow, _ := followRepo.Find(context.Background(), pair[0], pair[1]); follow != nil {
+			t.Fatalf("blocked follow was retained: %+v", follow)
+		}
 	}
 }
 

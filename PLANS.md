@@ -236,7 +236,8 @@ the same style as current Misskey.
 - [x] `Follow`: basic internal approval path transitions a pending request into
       an accepted relationship and enqueues `Accept(Follow)`.
 - [x] `Follow`: expose a Connector command for user-facing approval via Next.js.
-- [ ] `Follow`: block/request persistence logic.
+- [x] `Follow`: reject blocked pairs, persist pending requests, and prevent
+      approval after either direction becomes blocked.
 - [x] `Accept`: accept local outgoing follow requests.
 - [x] `Reject`: reject local outgoing follow requests.
 - [x] `Undo`: support remote `Undo(Follow)` for remote follower -> local
@@ -370,9 +371,12 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Use `(request-target) date host digest` for POST signing strings.
 - [x] Use current Misskey's `(request-target) date host` list for GET signing
       while continuing to send the unsigned `Accept` header.
-- [ ] Build delivery inbox lists from followers and direct recipients.
-- [ ] Prefer `sharedInbox` and deduplicate inboxes.
-- [ ] Skip blocked and suspended hosts.
+- [x] Build paginated delivery inbox lists from followers and direct
+      recipients.
+- [x] Prefer `sharedInbox` for follower fan-out and deduplicate destinations;
+      retain individual inboxes for direct activities.
+- [x] Skip configured blocked hosts and Actor block relationships.
+- [ ] Skip suspended Actors/instances retained in existing relationships.
 - [ ] Update instance send stats on success and failure.
 - [ ] Suspend delivery to instances that have failed for a long period.
 
@@ -901,7 +905,9 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
 - [ ] Implement Announce visibility/counter/notification side effects.
 - [x] Implement basic inbound block and unblock.
-- [ ] Apply stored blocks to follow, delivery, and visibility decisions.
+- [x] Apply stored blocks bidirectionally to follow approval/creation,
+      reactions, announces, specified recipients, and follower fan-out; remove
+      both follow directions when a Block is accepted.
 - [ ] Add tests for local/remote follow direction combinations.
 
 ### Phase 6: Updates, Deletes, Polls, And Media

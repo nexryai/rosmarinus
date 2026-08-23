@@ -324,6 +324,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       following, reactions, and notifications where applicable.
 - [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
+- [ ] Make relationship views tolerate Block-driven soft deletion of either
+      follow direction and rebuild state from `blocks` plus active `follows`.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the
       UI needs moved-account labels or navigation; treat them as read-only and
       trust `movedAt`, not an unverified URI alone, as the accepted-move signal.
