@@ -22,6 +22,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -155,10 +156,16 @@ func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 }
 
 type fakeConnectorPublisher struct {
-	post      *connector.PostCreated
-	requested *connector.FollowApproval
-	completed *connector.FollowApproval
-	rejected  *connector.FollowApproval
+	post         *connector.PostCreated
+	notification *connector.NotificationCreated
+	requested    *connector.FollowApproval
+	completed    *connector.FollowApproval
+	rejected     *connector.FollowApproval
+}
+
+func (f *fakeConnectorPublisher) PublishNotificationCreated(_ context.Context, payload connector.NotificationCreated) error {
+	f.notification = &payload
+	return nil
 }
 
 func (f *fakeConnectorPublisher) PublishPostCreated(ctx context.Context, payload connector.PostCreated) error {
@@ -311,6 +318,56 @@ func (f *fakeBlockRepo) Delete(ctx context.Context, blockerID, blockeeID, remote
 
 type fakeNoteRepo struct {
 	notes map[string]*domainnotes.Note
+}
+
+type fakeNotificationRepo struct {
+	notifications map[string]*notifications.Notification
+}
+
+func (r *fakeNotificationRepo) Upsert(_ context.Context, notification notifications.Notification) (*notifications.Notification, error) {
+	if r.notifications == nil {
+		r.notifications = map[string]*notifications.Notification{}
+	}
+	key := notification.RecipientActorID + "\x00" + notification.Kind + "\x00" + notification.RemoteActivityID
+	if existing := r.notifications[key]; existing != nil {
+		return existing, nil
+	}
+	if notification.ID == "" {
+		notification.ID = fmt.Sprintf("notification-%d", len(r.notifications)+1)
+	}
+	r.notifications[key] = &notification
+	return &notification, nil
+}
+
+func (r *fakeNotificationRepo) MarkRead(_ context.Context, accountID, actorID, notificationID string) (*notifications.Notification, error) {
+	for _, notification := range r.notifications {
+		if notification.ID == notificationID && notification.RecipientAccountID == accountID && notification.RecipientActorID == actorID {
+			notification.IsRead = true
+			return notification, nil
+		}
+	}
+	return nil, nil
+}
+
+func TestMarkNotificationReadScopesRecipientAccountAndActor(t *testing.T) {
+	repo := &fakeNotificationRepo{notifications: map[string]*notifications.Notification{
+		"key": {
+			ID:                 "notification-1",
+			RecipientAccountID: "account-1",
+			RecipientActorID:   "actor-1",
+		},
+	}}
+	h := &Handler{notifications: repo}
+	if _, err := h.MarkNotificationRead(context.Background(), "account-1", "actor-2", "notification-1"); err == nil {
+		t.Fatal("cross-Actor notification update succeeded")
+	}
+	result, err := h.MarkNotificationRead(context.Background(), "account-1", "actor-1", "notification-1")
+	if err != nil {
+		t.Fatalf("MarkNotificationRead returned error: %v", err)
+	}
+	if result.NotificationID != "notification-1" || !result.IsRead {
+		t.Fatalf("unexpected result: %+v", result)
+	}
 }
 
 func (f *fakeNoteRepo) FindByID(ctx context.Context, id string) (*domainnotes.Note, error) {
@@ -607,6 +664,36 @@ func TestPerformCollectionRejectsExcessiveNesting(t *testing.T) {
 	}
 }
 
+func TestPerformCreatePersistsReplyNotificationWithoutDuplicateMention(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &host, LastFetchedAt: time.Now()}
+	replyURI := "https://local.example/notes/root"
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		replyURI: {ID: "local-root", URI: replyURI, AuthorID: local.ID, AttributedTo: local.URI},
+	}}
+	notificationRepo := &fakeNotificationRepo{}
+	connectorPublisher := &fakeConnectorPublisher{}
+	h := New(config.Config{PublicURL: "https://local.example"}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetNotificationRepository(notificationRepo)
+	h.SetConnectorPublisher(connectorPublisher)
+
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/create", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/notes/reply", "type": "Note", "attributedTo": remote.URI,
+			"inReplyTo": replyURI, "content": "reply", "to": apnotes.PublicAudience,
+			"tag": []any{map[string]any{"type": "Mention", "href": local.URI, "name": "@alice@local.example"}},
+		},
+	})
+	if err != nil || result != "ok: note created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindReply {
+		t.Fatalf("reply notification was not deduplicated: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)
+	}
+}
+
 func TestPerformMoveValidatesAliasAndMigratesLocalFollowers(t *testing.T) {
 	sourceHost := "old.example"
 	destinationHost := "new.example"
@@ -726,10 +813,11 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 	host := "remote.example"
 	local := &actors.Actor{
-		ID:          "relay",
-		Username:    "relay",
-		URI:         "https://rosmarinus.example/users/relay",
-		PublicKeyID: "https://rosmarinus.example/users/relay#main-key",
+		ID:             "relay",
+		OwnerAccountID: "account-1",
+		Username:       "relay",
+		URI:            "https://rosmarinus.example/users/relay",
+		PublicKeyID:    "https://rosmarinus.example/users/relay#main-key",
 	}
 	remote := &actors.Actor{
 		ID:           "remote_alice",
@@ -747,6 +835,8 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	h := New(config.Config{
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
 	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	notificationRepo := &fakeNotificationRepo{}
+	h.SetNotificationRepository(notificationRepo)
 	locker := &fakeActivityLocker{acquired: true}
 	h.SetActivityLocker(locker)
 	h.SetConnectorPublisher(connectorPublisher)
@@ -790,6 +880,9 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 	if connectorPublisher.requested.FollowerID != remote.ID || connectorPublisher.requested.FolloweeID != local.ID {
 		t.Fatalf("unexpected approval request payload: %+v", connectorPublisher.requested)
+	}
+	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindFollowRequest {
+		t.Fatalf("follow notification was not persisted/published: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)
 	}
 	if !strings.HasPrefix(locker.name, "activity:") || !locker.unlocked {
 		t.Fatalf("activity lock was not used and released: %+v", locker)
@@ -2381,6 +2474,7 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 		PublicKeyID:  "https://remote.example/users/alice#main-key",
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
+	local := &actors.Actor{ID: "relay", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/relay"}
 	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
 		"https://rosmarinus.example/notes/1": {
 			ID:           "note-id",
@@ -2392,7 +2486,11 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 		},
 	}}
 	reactionRepo := &fakeReactionRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	notificationRepo := &fakeNotificationRepo{}
+	connectorPublisher := &fakeConnectorPublisher{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetNotificationRepository(notificationRepo)
+	h.SetConnectorPublisher(connectorPublisher)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -2430,6 +2528,9 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 	}
 	if reaction.Reaction != ":party@example.com:" || reaction.RemoteActivityID != "https://remote.example/activities/like" {
 		t.Fatalf("unexpected reaction payload: %+v", reaction)
+	}
+	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindReaction {
+		t.Fatalf("reaction notification was not persisted/published: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)
 	}
 }
 

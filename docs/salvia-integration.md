@@ -12,7 +12,7 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
 Use separate MongoDB users with collection-scoped custom roles. The Salvia role
@@ -65,6 +65,27 @@ quoteId        Rosmarinus Note `_id` after successful recursive resolution
 Salvia should join thread/quote views by `replyId` and `quoteId`. The URI fields
 are federation source data and remain useful for diagnostics and outbound
 rendering; they are not MongoDB foreign keys.
+
+Local user-facing federation notifications are durable documents in the
+Rosmarinus-owned `notifications` collection:
+
+```text
+_id                 stable opaque notification ID
+recipientAccountId  owning Salvia account ID
+recipientActorId    local Actor receiving the notification
+kind                followRequest | reaction | renote | reply | mention
+sourceActorId        remote Actor that caused the notification
+noteId               related Note ID when applicable
+remoteActivityId     source ActivityPub activity ID used for deduplication
+createdAt            notification creation timestamp
+isRead               authoritative read state
+readAt               timestamp set when marked read
+```
+
+Salvia scopes notification queries by the authenticated account and, for an
+Actor-specific view, `recipientActorId`. Sort by `createdAt` descending with
+`_id` as the stable pagination tie-breaker. Salvia reads these documents
+directly but changes read state only through the Connector command below.
 
 When Rosmarinus accepts an ActivityPub `Block`, it stores the block and
 soft-deletes active/pending `follows` in both directions for that Actor pair.
@@ -265,6 +286,20 @@ recipient list and must contain at least one Actor URI. Rosmarinus resolves
 every recipient before storing the note, places the deduplicated Actor URIs in
 the ActivityPub `to` audience, and delivers remote recipients to their
 individual inboxes rather than a shared inbox.
+
+To mark a notification read, publish `notification.mark_read` with the owned
+recipient Actor in `actor_id` and `notification_id` in `data`. A successful
+result contains `notification_id` and `is_read: true`. Rosmarinus updates a
+notification only when both `recipientAccountId` and `recipientActorId` match
+the authenticated command; unknown or cross-Actor IDs fail without revealing
+the notification.
+
+Rosmarinus publishes `notification.created` to the recipient account event
+channel after persisting the notification. Its `data` contains
+`recipient_actor_id`, `notification_id`, `kind`, and optional
+`source_actor_id` and `note_id`. Activity retries can republish the same event,
+so Salvia deduplicates by `notification_id` and refreshes the durable MongoDB
+document rather than treating the event as canonical state.
 
 ## Account invalidation and recovery
 

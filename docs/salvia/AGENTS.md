@@ -219,6 +219,8 @@ Use these Ably message names and payloads:
 - `follow.approve`: `data` contains `follower_id`; top-level `actor_id` is the
   local followee Actor.
 - `follow.reject`: the same addressing rules as `follow.approve`.
+- `notification.mark_read`: `data` contains `notification_id`; top-level
+  `actor_id` must be the owned local recipient Actor.
 
 Generate `request_id` in Salvia before the first publish. A retry of the same
 logical operation must reuse it. Do not insert account IDs or user IDs into
@@ -247,6 +249,12 @@ Handle at least `command.succeeded`, `command.failed`, `actor.created`,
 account can receive the same event, so event handlers and UI notifications must
 be idempotent. Use `request_id` to correlate a response, but do not assume that
 receiving an event means the browser's local state is canonical.
+
+Read notifications from the Rosmarinus-owned `notifications` collection,
+scoped by the authenticated account and recipient Actor. Never update
+`isRead` directly. Publish `notification.mark_read` with the owned Actor ID and
+notification ID, and deduplicate repeated `notification.created` events by
+`notification_id` before refreshing MongoDB state.
 
 The current Rosmarinus handler can reject malformed, unauthenticated, or
 unauthorized commands before it creates a receipt and publishes a result. A

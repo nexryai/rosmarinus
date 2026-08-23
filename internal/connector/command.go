@@ -59,6 +59,7 @@ type CommandExecutor interface {
 	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
 	DeleteReaction(context.Context, ReactionDeleteCommand) (ReactionDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
+	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
 }
 
 type CommandResultPublisher interface {
@@ -170,6 +171,15 @@ type ActorCreateData struct {
 	Type     string `json:"type,omitempty"`
 }
 
+type NotificationMarkReadData struct {
+	NotificationID string `json:"notification_id"`
+}
+
+type NotificationRead struct {
+	NotificationID string `json:"notification_id" bson:"notification_id"`
+	IsRead         bool   `json:"is_read" bson:"is_read"`
+}
+
 type ActorCreateCommand struct {
 	Username string
 	Name     string
@@ -203,7 +213,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -445,6 +455,16 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			NoteID:  command.NoteID,
 		})
 		return result, actorID, err
+	case CommandNotificationMarkRead:
+		var command NotificationMarkReadData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.NotificationID) == "" {
+			return nil, actorID, fmt.Errorf("notification_id is required")
+		}
+		result, err := h.executor.MarkNotificationRead(ctx, accountID, actorID, command.NotificationID)
+		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -492,7 +512,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
 		return true
 	default:
 		return false

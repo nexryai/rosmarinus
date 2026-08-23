@@ -338,8 +338,9 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Store resolved `replyId` and `quoteId` alongside their AP URIs.
 - [ ] Store cached files, polls, URL, visible users, and denormalized author
       fields.
-- [ ] Update reply counts, renote counts, hashtags, and local notifications
-      where Rosmarinus owns those writes.
+- [ ] Update reply counts, renote counts, and hashtags where Rosmarinus owns
+      those writes.
+- [x] Persist local notifications for inbound federation activities.
 
 ### Custom Emoji
 
@@ -606,7 +607,8 @@ when an Ably notification is missed.
 - [x] Publish follow approval completion events when Rosmarinus accepts a
       pending follow and sends `Accept(Follow)`.
 - [x] Publish post events for Next.js-owned compose/post workflows.
-- [ ] Publish notification events for local user-facing notifications.
+- [x] Persist local user-facing Follow, reaction, renote, reply, and mention
+      notifications and publish `notification.created` refresh events.
 - [x] Handle Next.js-driven `follow.approve` commands through the existing
       follow approval path.
 - [x] Handle Next.js-driven `follow.reject` commands by deleting the pending
@@ -630,7 +632,7 @@ when an Ably notification is missed.
 - [x] Paginate local post fan-out beyond the initial follower batch.
 - [x] Deliver specified-visibility posts only to their resolved remote
       recipients.
-- [ ] Handle Next.js-driven notification read state commands.
+- [x] Handle account- and Actor-scoped `notification.mark_read` commands.
 
 ## Shared MongoDB Ownership Boundary
 
@@ -654,7 +656,8 @@ workflow may require both services to update the same document or collection.
 
 ### Rosmarinus-Owned Collections
 
-- [x] `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`, and
+- [x] `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`,
+      `notifications`, and
       all other federation collections: Rosmarinus writes; Salvia reads for UI
       queries.
 - [x] `connector_command_receipts`: Rosmarinus-owned command deduplication and
@@ -698,6 +701,7 @@ workflow may require both services to update the same document or collection.
 - [ ] `media`
 - [ ] `instances`
 - [x] `abuse_reports`
+- [x] `notifications`
 - [x] `connector_command_receipts`
 - [x] No account-reconciliation checkpoint collection is required by the
       current periodic full-scan implementation.
@@ -725,6 +729,9 @@ workflow may require both services to update the same document or collection.
 - [x] `abuse_reports`: unique sparse `remoteActivityId`
 - [x] `abuse_reports`: basic `{ targetUserId, createdAt }` and
       `{ reporterId, createdAt }`
+- [x] `notifications`: `{ recipientActorId, createdAt, _id }` and
+      `{ recipientAccountId, isRead, createdAt, _id }`
+- [x] `notifications`: unique `{ recipientActorId, kind, remoteActivityId }`
 - [ ] `emojis`: unique `{ name, host }`
 - [ ] `instances`: unique `host`
 - [ ] `media`: unique sparse `uri`, and content hash if available
@@ -901,10 +908,11 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement follow request storage without unlocked-account auto-accept.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
-- [ ] Implement reaction emoji extraction, counts, notifications, and local
-      reaction delivery.
+- [ ] Implement reaction emoji extraction and counts.
+- [x] Implement durable reaction notifications and local reaction delivery.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
-- [ ] Implement Announce visibility/counter/notification side effects.
+- [ ] Implement Announce visibility and counter side effects.
+- [x] Implement durable Announce notifications for local Note authors.
 - [x] Implement basic inbound block and unblock.
 - [x] Apply stored blocks bidirectionally to follow approval/creation,
       reactions, announces, specified recipients, and follower fan-out; remove

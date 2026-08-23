@@ -161,5 +161,22 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetExpireAfterSeconds(0),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("notifications").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notifications_recipient_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "recipientAccountId", Value: 1}, {Key: "isRead", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notifications_account_read_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "kind", Value: 1}, {Key: "remoteActivityId", Value: 1}},
+			Options: options.Index().SetName("uniq_notifications_recipient_kind_activity").SetUnique(true),
+		},
+	})
 	return err
 }

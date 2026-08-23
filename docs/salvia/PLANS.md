@@ -275,6 +275,8 @@ idempotently retryable Ably command and never a direct database write.
       telemetry to detect a contract mismatch.
 - [ ] Deduplicate notifications and command completion effects across repeated
       deliveries and multiple tabs.
+- [ ] Treat `notification.created` as an invalidation hint, deduplicate it by
+      `notification_id`, and refresh the durable `notifications` document.
 - [ ] Add tests for malformed events, duplicates, out-of-order result/domain
       events, unknown types, and missed-event DB rebuild.
 
@@ -322,6 +324,10 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Scope all local-Actor queries through authenticated account ownership.
 - [ ] Add stable pagination and deterministic sorting for notes, followers,
       following, reactions, and notifications where applicable.
+- [ ] Read `notifications` through an account-scoped projection; filter Actor
+      views by `recipientActorId` and sort by `createdAt` plus `_id`.
+- [ ] Mark notifications read only through `notification.mark_read`; never
+      write Rosmarinus-owned notification documents from Salvia.
 - [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
 - [ ] Make relationship views tolerate Block-driven soft deletion of either

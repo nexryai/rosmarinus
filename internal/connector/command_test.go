@@ -58,6 +58,7 @@ type fakeCommandExecutor struct {
 	reactionCalls       int
 	reactionDelete      ReactionDeleteCommand
 	reactionDeleteCalls int
+	notificationID      string
 	err                 error
 }
 
@@ -126,6 +127,11 @@ func (f *fakeCommandExecutor) DeleteReaction(ctx context.Context, command Reacti
 func (f *fakeCommandExecutor) CreateActor(ctx context.Context, accountID string, command ActorCreateCommand) (ActorCreated, error) {
 	_ = ctx
 	return ActorCreated{ActorID: "actor-created", URI: "https://example.test/users/actor-created", Username: command.Username}, f.err
+}
+
+func (f *fakeCommandExecutor) MarkNotificationRead(_ context.Context, accountID, actorID, notificationID string) (NotificationRead, error) {
+	f.notificationID = notificationID
+	return NotificationRead{NotificationID: notificationID, IsRead: true}, f.err
 }
 
 type publishedCommandResult struct {
@@ -234,7 +240,7 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 8 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandReactionCreate || source.names[6] != CommandReactionDelete || source.names[7] != CommandActorCreate {
+	if len(source.names) != 9 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandReactionCreate || source.names[6] != CommandReactionDelete || source.names[7] != CommandActorCreate || source.names[8] != CommandNotificationMarkRead {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
@@ -276,6 +282,22 @@ func TestCommandHandlerDeletesReactionAsOwnedActor(t *testing.T) {
 		t.Fatalf("reaction delete command = %+v calls=%d", executor.reactionDelete, executor.reactionDeleteCalls)
 	}
 	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandReactionDelete {
+		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerMarksOwnedActorNotificationRead(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandNotificationMarkRead, "request-notification-read", "actor-2", NotificationMarkReadData{NotificationID: "notification-1"})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.notificationID != "notification-1" {
+		t.Fatalf("notification id = %q", executor.notificationID)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandNotificationMarkRead {
 		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -52,26 +53,28 @@ type ActivityLocker interface {
 
 type ConnectorPublisher interface {
 	PublishPostCreated(context.Context, connector.PostCreated) error
+	PublishNotificationCreated(context.Context, connector.NotificationCreated) error
 	PublishFollowApprovalRequested(context.Context, connector.FollowApproval) error
 	PublishFollowApprovalCompleted(context.Context, connector.FollowApproval) error
 	PublishFollowApprovalRejected(context.Context, connector.FollowApproval) error
 }
 
 type Handler struct {
-	cfg        config.Config
-	logger     *log.Logger
-	repo       actors.Repository
-	notes      domainnotes.Repository
-	follows    follows.Repository
-	blocks     blocks.Repository
-	reactions  reactions.Repository
-	reports    reports.Repository
-	queue      QueueClient
-	client     APClient
-	connector  ConnectorPublisher
-	locker     ActivityLocker
-	resolver   *apresolver.Resolver
-	localActor *actors.Actor
+	cfg           config.Config
+	logger        *log.Logger
+	repo          actors.Repository
+	notes         domainnotes.Repository
+	follows       follows.Repository
+	blocks        blocks.Repository
+	reactions     reactions.Repository
+	reports       reports.Repository
+	notifications notifications.Repository
+	queue         QueueClient
+	client        APClient
+	connector     ConnectorPublisher
+	locker        ActivityLocker
+	resolver      *apresolver.Resolver
+	localActor    *actors.Actor
 }
 
 func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
@@ -96,6 +99,24 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 
 func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 	h.connector = publisher
+}
+
+func (h *Handler) SetNotificationRepository(repository notifications.Repository) {
+	h.notifications = repository
+}
+
+func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
+	if h.notifications == nil {
+		return connector.NotificationRead{}, fmt.Errorf("notification repository is not configured")
+	}
+	notification, err := h.notifications.MarkRead(ctx, strings.TrimSpace(accountID), strings.TrimSpace(actorID), strings.TrimSpace(notificationID))
+	if err != nil {
+		return connector.NotificationRead{}, err
+	}
+	if notification == nil {
+		return connector.NotificationRead{}, fmt.Errorf("notification not found")
+	}
+	return connector.NotificationRead{NotificationID: notification.ID, IsRead: notification.IsRead}, nil
 }
 
 func (h *Handler) SetActivityLocker(locker ActivityLocker) {
@@ -831,7 +852,12 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if quote != nil {
 		note.QuoteID = quote.ID
 	}
-	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
+	stored, err := h.notes.UpsertRemoteNote(ctx, note)
+	if err != nil {
+		return "", err
+	}
+	activityID, _ := activity["id"].(string)
+	if err := h.createNoteNotifications(ctx, actor, stored, reply, activityID); err != nil {
 		return "", err
 	}
 	return "ok: note created", nil
@@ -896,6 +922,9 @@ func (h *Handler) performFollow(ctx context.Context, follower *actors.Actor, act
 		RemoteActivityID:    activityID,
 	})
 	if err != nil {
+		return "", err
+	}
+	if err := h.createNotification(ctx, followee, notifications.KindFollowRequest, follower, "", activityID); err != nil {
 		return "", err
 	}
 	if h.connector != nil {
@@ -1604,6 +1633,13 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 	}); err != nil {
 		return "", err
 	}
+	recipient, err := h.repo.FindLocalByID(ctx, note.AuthorID)
+	if err != nil {
+		return "", err
+	}
+	if err := h.createNotification(ctx, recipient, notifications.KindReaction, actor, note.ID, activityID); err != nil {
+		return "", err
+	}
 	return "ok: reaction created", nil
 }
 
@@ -1651,10 +1687,80 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		CreatedAt:    time.Now().UTC(),
 		PublishedAt:  publishedAt(activity),
 	}
-	if _, err := h.notes.UpsertRemoteNote(ctx, note); err != nil {
+	_, err = h.notes.UpsertRemoteNote(ctx, note)
+	if err != nil {
+		return "", err
+	}
+	recipient, err := h.repo.FindLocalByID(ctx, target.AuthorID)
+	if err != nil {
+		return "", err
+	}
+	if err := h.createNotification(ctx, recipient, notifications.KindRenote, actor, target.ID, activityID); err != nil {
 		return "", err
 	}
 	return "ok: announce created", nil
+}
+
+func (h *Handler) createNoteNotifications(ctx context.Context, source *actors.Actor, note, reply *domainnotes.Note, activityID string) error {
+	seen := map[string]struct{}{}
+	if reply != nil {
+		recipient, err := h.repo.FindLocalByID(ctx, reply.AuthorID)
+		if err != nil {
+			return err
+		}
+		if recipient != nil {
+			if err := h.createNotification(ctx, recipient, notifications.KindReply, source, note.ID, activityID); err != nil {
+				return err
+			}
+			seen[recipient.ID] = struct{}{}
+		}
+	}
+	for _, uri := range note.MentionURIs {
+		recipient, err := h.repo.FindByURI(ctx, uri)
+		if err != nil {
+			return err
+		}
+		if recipient == nil || recipient.Host != nil || recipient.IsSuspended {
+			continue
+		}
+		if _, exists := seen[recipient.ID]; exists {
+			continue
+		}
+		if err := h.createNotification(ctx, recipient, notifications.KindMention, source, note.ID, activityID); err != nil {
+			return err
+		}
+		seen[recipient.ID] = struct{}{}
+	}
+	return nil
+}
+
+func (h *Handler) createNotification(ctx context.Context, recipient *actors.Actor, kind string, source *actors.Actor, noteID, activityID string) error {
+	if h.notifications == nil || recipient == nil || recipient.Host != nil || recipient.OwnerAccountID == "" || recipient.IsSuspended || source == nil {
+		return nil
+	}
+	notification, err := h.notifications.Upsert(ctx, notifications.Notification{
+		RecipientAccountID: recipient.OwnerAccountID,
+		RecipientActorID:   recipient.ID,
+		Kind:               kind,
+		SourceActorID:      source.ID,
+		NoteID:             noteID,
+		RemoteActivityID:   activityID,
+		CreatedAt:          time.Now().UTC(),
+	})
+	if err != nil {
+		return err
+	}
+	if h.connector != nil {
+		return h.connector.PublishNotificationCreated(ctx, connector.NotificationCreated{
+			AccountID:        notification.RecipientAccountID,
+			RecipientActorID: notification.RecipientActorID,
+			NotificationID:   notification.ID,
+			Kind:             notification.Kind,
+			SourceActorID:    notification.SourceActorID,
+			NoteID:           notification.NoteID,
+		})
+	}
+	return nil
 }
 
 func (h *Handler) isBlockedPair(ctx context.Context, firstID, secondID string) (bool, error) {

@@ -24,6 +24,7 @@ const rosmarinusCollections = [
   "media",
   "instances",
   "abuse_reports",
+  "notifications",
   "connector_command_receipts",
 ];
 

@@ -42,6 +42,7 @@ type App struct {
 	blocks                      *mongostore.BlockRepository
 	reactions                   *mongostore.ReactionRepository
 	reports                     *mongostore.ReportRepository
+	notifications               *mongostore.NotificationRepository
 	salviaAccounts              *mongostore.SalviaAccountRepository
 	connectorReceipts           *mongostore.ConnectorReceiptRepository
 	localActor                  *actors.Actor
@@ -108,6 +109,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
+	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
 	connectorReceiptRepo := mongostore.NewConnectorReceiptRepository(mongoDB)
 	var localActor *actors.Actor
@@ -142,6 +144,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)
+	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
 	var connectorCommands *connector.CommandHandler
@@ -201,6 +204,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		blocks:                     blockRepo,
 		reactions:                  reactionRepo,
 		reports:                    reportRepo,
+		notifications:              notificationRepo,
 		salviaAccounts:             salviaAccountRepo,
 		connectorReceipts:          connectorReceiptRepo,
 		localActor:                 localActor,
