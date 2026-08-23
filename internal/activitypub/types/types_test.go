@@ -47,4 +47,7 @@ func TestPredicates(t *testing.T) {
 	if !IsActor(map[string]any{"type": "Service"}) {
 		t.Fatalf("Service was not detected as actor")
 	}
+	if !IsMove(map[string]any{"type": "Move"}) {
+		t.Fatalf("Move was not detected")
+	}
 }

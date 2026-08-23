@@ -37,6 +37,9 @@ type actorDocument struct {
 	FollowersURI   string     `bson:"followersUri,omitempty"`
 	FollowingURI   string     `bson:"followingUri,omitempty"`
 	FeaturedURI    string     `bson:"featuredUri,omitempty"`
+	MovedToURI     string     `bson:"movedToUri,omitempty"`
+	AlsoKnownAs    []string   `bson:"alsoKnownAs,omitempty"`
+	MovedAt        *time.Time `bson:"movedAt,omitempty"`
 	PublicKeyID    string     `bson:"publicKeyId"`
 	PublicKeyPEM   string     `bson:"publicKeyPem"`
 	PrivateKeyPEM  string     `bson:"privateKeyPem,omitempty"`
@@ -213,22 +216,30 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	}
 	actor.UsernameLower = strings.ToLower(actor.Username)
 	doc := fromActor(actor)
+	fields := bson.M{
+		"username":      doc.Username,
+		"usernameLower": doc.UsernameLower,
+		"name":          doc.Name,
+		"type":          doc.Type,
+		"host":          doc.Host,
+		"inbox":         doc.Inbox,
+		"sharedInbox":   doc.SharedInbox,
+		"followersUri":  doc.FollowersURI,
+		"followingUri":  doc.FollowingURI,
+		"featuredUri":   doc.FeaturedURI,
+		"movedToUri":    doc.MovedToURI,
+		"alsoKnownAs":   doc.AlsoKnownAs,
+		"publicKeyId":   doc.PublicKeyID,
+		"publicKeyPem":  doc.PublicKeyPEM,
+		"isSuspended":   doc.IsSuspended,
+	}
+	// movedAt records Rosmarinus' validation decision, not remote profile data.
+	// Ordinary Actor refreshes must not clear a previously accepted migration.
+	if doc.MovedAt != nil {
+		fields["movedAt"] = doc.MovedAt
+	}
 	_, err := r.collection.UpdateOne(ctx, bson.M{"uri": actor.URI}, bson.M{
-		"$set": bson.M{
-			"username":      doc.Username,
-			"usernameLower": doc.UsernameLower,
-			"name":          doc.Name,
-			"type":          doc.Type,
-			"host":          doc.Host,
-			"inbox":         doc.Inbox,
-			"sharedInbox":   doc.SharedInbox,
-			"followersUri":  doc.FollowersURI,
-			"followingUri":  doc.FollowingURI,
-			"featuredUri":   doc.FeaturedURI,
-			"publicKeyId":   doc.PublicKeyID,
-			"publicKeyPem":  doc.PublicKeyPEM,
-			"isSuspended":   doc.IsSuspended,
-		},
+		"$set": fields,
 		"$setOnInsert": bson.M{
 			"_id": doc.ID,
 			"uri": doc.URI,
@@ -277,6 +288,9 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		FollowersURI:   doc.FollowersURI,
 		FollowingURI:   doc.FollowingURI,
 		FeaturedURI:    doc.FeaturedURI,
+		MovedToURI:     doc.MovedToURI,
+		AlsoKnownAs:    doc.AlsoKnownAs,
+		MovedAt:        doc.MovedAt,
 		PublicKeyID:    doc.PublicKeyID,
 		PublicKeyPEM:   doc.PublicKeyPEM,
 		PrivateKeyPEM:  doc.PrivateKeyPEM,
@@ -300,6 +314,9 @@ func fromActor(actor actors.Actor) actorDocument {
 		FollowersURI:   actor.FollowersURI,
 		FollowingURI:   actor.FollowingURI,
 		FeaturedURI:    actor.FeaturedURI,
+		MovedToURI:     actor.MovedToURI,
+		AlsoKnownAs:    actor.AlsoKnownAs,
+		MovedAt:        actor.MovedAt,
 		PublicKeyID:    actor.PublicKeyID,
 		PublicKeyPEM:   actor.PublicKeyPEM,
 		PrivateKeyPEM:  actor.PrivateKeyPEM,

@@ -114,6 +114,8 @@ func TestParseRemoteActor(t *testing.T) {
 		"followers":         "https://remote.example/users/alice/followers",
 		"following":         map[string]any{"id": "https://remote.example/users/alice/following"},
 		"featured":          "https://remote.example/users/alice/collections/featured",
+		"movedTo":           "https://new.example/users/alice",
+		"alsoKnownAs":       []any{"https://old.example/users/alice"},
 		"preferredUsername": "alice",
 		"name":              "Alice",
 		"endpoints": map[string]any{
@@ -138,6 +140,9 @@ func TestParseRemoteActor(t *testing.T) {
 	}
 	if actor.FeaturedURI != "https://remote.example/users/alice/collections/featured" {
 		t.Fatalf("FeaturedURI = %q", actor.FeaturedURI)
+	}
+	if actor.MovedToURI != "https://new.example/users/alice" || len(actor.AlsoKnownAs) != 1 || actor.AlsoKnownAs[0] != "https://old.example/users/alice" {
+		t.Fatalf("unexpected move metadata: %+v", actor)
 	}
 	if actor.Host == nil || *actor.Host != "remote.example" {
 		t.Fatalf("unexpected host: %+v", actor.Host)

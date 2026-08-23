@@ -290,6 +290,8 @@ func (h *Handler) performOneActivity(ctx context.Context, actor *actors.Actor, a
 		return h.performRejectFollow(ctx, actor, activity)
 	case aptypes.IsUpdate(activity):
 		return h.performUpdate(ctx, actor, activity)
+	case aptypes.IsMove(activity):
+		return h.performMove(ctx, actor, activity)
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
 	}
@@ -366,6 +368,16 @@ func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (
 	if followee == nil || followee.Host == nil {
 		return "", fmt.Errorf("follow target must be a remote actor")
 	}
+	return h.enqueueOutgoingFollow(ctx, follower, followee)
+}
+
+func (h *Handler) enqueueOutgoingFollow(ctx context.Context, follower, followee *actors.Actor) (string, error) {
+	if follower == nil || follower.Host != nil {
+		return "", fmt.Errorf("follower must be a local actor")
+	}
+	if followee == nil || followee.Host == nil {
+		return "", fmt.Errorf("follow target must be a remote actor")
+	}
 	existing, err := h.follows.Find(ctx, follower.ID, followee.ID)
 	if err != nil {
 		return "", err
@@ -410,6 +422,149 @@ func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (
 		return "", err
 	}
 	return "ok: follow delivery enqueued", nil
+}
+
+func (h *Handler) performMove(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	targetURI := activityHref(activity["target"])
+	if targetURI == "" {
+		return "skip: invalid activity target", nil
+	}
+	if targetURI == actor.URI {
+		return "skip: movedTo itself", nil
+	}
+
+	source, err := h.refreshRemoteActor(ctx, actor.URI)
+	if err != nil {
+		return "", fmt.Errorf("refresh move source: %w", err)
+	}
+	if source.MovedToURI != targetURI {
+		return "skip: source movedTo does not match activity target", nil
+	}
+	destination, err := h.resolveMoveDestination(ctx, targetURI)
+	if err != nil {
+		return "", fmt.Errorf("resolve move destination: %w", err)
+	}
+	if destination == nil {
+		return "skip: move destination not found", nil
+	}
+	if destination.MovedToURI == actor.URI {
+		return "skip: circular move", nil
+	}
+	if !containsString(destination.AlsoKnownAs, actor.URI) {
+		return "skip: destination alsoKnownAs does not include source", nil
+	}
+
+	now := time.Now().UTC()
+	source.MovedAt = &now
+	if _, err := h.repo.UpsertRemoteActor(ctx, *source); err != nil {
+		return "", err
+	}
+	migrated, err := h.migrateLocalFollowers(ctx, source, destination)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("ok: actor moved followers=%d", migrated), nil
+}
+
+func (h *Handler) refreshRemoteActor(ctx context.Context, uri string) (*actors.Actor, error) {
+	if h.client == nil {
+		return nil, fmt.Errorf("actor resolver is not configured")
+	}
+	object, err := h.client.FetchObject(ctx, uri, h.localActor)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := apresolver.ParseRemoteActor(object, uri)
+	if err != nil {
+		return nil, err
+	}
+	return h.repo.UpsertRemoteActor(ctx, actor)
+}
+
+func (h *Handler) resolveMoveDestination(ctx context.Context, uri string) (*actors.Actor, error) {
+	existing, err := h.repo.FindByURI(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.Host == nil {
+		return existing, nil
+	}
+	return h.refreshRemoteActor(ctx, uri)
+}
+
+func (h *Handler) migrateLocalFollowers(ctx context.Context, source, destination *actors.Actor) (int, error) {
+	if h.follows == nil {
+		return 0, fmt.Errorf("follow repository is not configured")
+	}
+	const pageSize = 100
+	migrated := 0
+	afterID := ""
+	for {
+		page, err := h.follows.ListFollowersPage(ctx, source.ID, afterID, pageSize)
+		if err != nil {
+			return migrated, err
+		}
+		for _, oldFollow := range page {
+			if oldFollow.FollowerHost != nil {
+				continue
+			}
+			follower, err := h.repo.FindLocalByID(ctx, oldFollow.FollowerID)
+			if err != nil {
+				return migrated, err
+			}
+			if follower == nil {
+				continue
+			}
+			if destination.Host == nil {
+				if _, err := h.follows.Upsert(ctx, follows.Follow{
+					FollowerID:  follower.ID,
+					FolloweeID:  destination.ID,
+					FollowerURI: follower.URI,
+					FolloweeURI: destination.URI,
+					Status:      follows.StatusAccepted,
+					CreatedAt:   time.Now().UTC(),
+				}); err != nil {
+					return migrated, err
+				}
+			} else if _, err := h.enqueueOutgoingFollow(ctx, follower, destination); err != nil {
+				return migrated, err
+			}
+			migrated++
+		}
+		if len(page) < pageSize {
+			return migrated, nil
+		}
+		nextAfterID := page[len(page)-1].ID
+		if nextAfterID == "" || nextAfterID == afterID {
+			return migrated, fmt.Errorf("follow pagination did not advance")
+		}
+		afterID = nextAfterID
+	}
+}
+
+func activityHref(value any) string {
+	items := aptypes.ToArray(value)
+	if len(items) == 0 {
+		return ""
+	}
+	switch first := items[0].(type) {
+	case string:
+		return first
+	case map[string]any:
+		href, _ := first["href"].(string)
+		return href
+	default:
+		return ""
+	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) DeleteFollow(ctx context.Context, command connector.FollowDeleteCommand) (connector.FollowDeleted, error) {

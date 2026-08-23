@@ -30,6 +30,7 @@ import (
 type fakeRepo struct {
 	local            *actors.Actor
 	remote           *actors.Actor
+	remotes          map[string]*actors.Actor
 	deletedRemoteURI string
 }
 
@@ -81,6 +82,9 @@ func (f *fakeRepo) FindByURI(ctx context.Context, uri string) (*actors.Actor, er
 	if f.remote != nil && f.remote.URI == uri {
 		return f.remote, nil
 	}
+	if f.remotes != nil {
+		return f.remotes[uri], nil
+	}
 	return nil, nil
 }
 
@@ -88,10 +92,23 @@ func (f *fakeRepo) FindByPublicKeyID(ctx context.Context, keyID string) (*actors
 	if f.remote != nil && f.remote.PublicKeyID == keyID {
 		return f.remote, nil
 	}
+	for _, actor := range f.remotes {
+		if actor.PublicKeyID == keyID {
+			return actor, nil
+		}
+	}
 	return nil, nil
 }
 
 func (f *fakeRepo) UpsertRemoteActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
+	if f.remotes != nil {
+		if existing := f.remotes[actor.URI]; existing != nil && existing.ID != "" {
+			actor.ID = existing.ID
+		}
+		copy := actor
+		f.remotes[actor.URI] = &copy
+		return &copy, nil
+	}
 	f.remote = &actor
 	return f.remote, nil
 }
@@ -490,6 +507,112 @@ func TestPerformCollectionRejectsForeignActivityAndLargeCollection(t *testing.T)
 	})
 	if err != nil || result != "skip: collection would surpass recursion limit" {
 		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestPerformMoveValidatesAliasAndMigratesLocalFollowers(t *testing.T) {
+	sourceHost := "old.example"
+	destinationHost := "new.example"
+	sourceURI := "https://old.example/users/alice"
+	destinationURI := "https://new.example/users/alice"
+	local := &actors.Actor{ID: "local-bob", URI: "https://rosmarinus.example/users/bob"}
+	source := &actors.Actor{ID: "remote-source", URI: sourceURI, Host: &sourceHost}
+	destination := &actors.Actor{ID: "remote-destination", URI: destinationURI, Host: &destinationHost}
+	repo := &fakeRepo{
+		local: local,
+		remotes: map[string]*actors.Actor{
+			sourceURI:      source,
+			destinationURI: destination,
+		},
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID:          "follow-old",
+		FollowerID:  local.ID,
+		FolloweeID:  source.ID,
+		FollowerURI: local.URI,
+		FolloweeURI: source.URI,
+		Status:      follows.StatusAccepted,
+	})
+	client := &fakeClient{objects: map[string]map[string]any{
+		sourceURI: {
+			"id":                sourceURI,
+			"type":              "Person",
+			"preferredUsername": "alice",
+			"inbox":             sourceURI + "/inbox",
+			"movedTo":           destinationURI,
+		},
+		destinationURI: {
+			"id":                destinationURI,
+			"type":              "Person",
+			"preferredUsername": "alice",
+			"inbox":             destinationURI + "/inbox",
+			"alsoKnownAs":       []any{sourceURI},
+		},
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL:    "https://rosmarinus.example",
+		DeliverQueue: config.QueueConfig{MaxRetry: 11, Timeout: time.Minute},
+	}, nil, repo, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, client, local)
+
+	result, err := h.performActivity(context.Background(), source, map[string]any{
+		"id":     "https://old.example/activities/move",
+		"type":   "Move",
+		"actor":  sourceURI,
+		"object": sourceURI,
+		"target": destinationURI,
+	})
+	if err != nil || result != "ok: actor moved followers=1" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	updatedSource := repo.remotes[sourceURI]
+	if updatedSource.MovedToURI != destinationURI || updatedSource.MovedAt == nil {
+		t.Fatalf("source move metadata = %+v", updatedSource)
+	}
+	newFollow, _ := followRepo.Find(context.Background(), local.ID, repo.remotes[destinationURI].ID)
+	if newFollow == nil || newFollow.Status != follows.StatusPending {
+		t.Fatalf("destination follow = %+v", newFollow)
+	}
+	if q.task.Type != queue.TaskDeliver {
+		t.Fatalf("move did not enqueue follow: %+v", q.task)
+	}
+	deliver := q.task.Payload.(queue.DeliverPayload)
+	if deliver.Object["type"] != "Follow" || deliver.Object["object"] != destinationURI {
+		t.Fatalf("unexpected move follow activity: %+v", deliver.Object)
+	}
+}
+
+func TestPerformMoveRejectsDestinationWithoutReciprocalAlias(t *testing.T) {
+	sourceHost := "old.example"
+	destinationHost := "new.example"
+	sourceURI := "https://old.example/users/alice"
+	destinationURI := "https://new.example/users/alice"
+	source := &actors.Actor{ID: "remote-source", URI: sourceURI, Host: &sourceHost}
+	repo := &fakeRepo{remotes: map[string]*actors.Actor{
+		sourceURI:      source,
+		destinationURI: {ID: "remote-destination", URI: destinationURI, Host: &destinationHost},
+	}}
+	client := &fakeClient{objects: map[string]map[string]any{
+		sourceURI: {
+			"id": sourceURI, "type": "Person", "preferredUsername": "alice",
+			"inbox": sourceURI + "/inbox", "movedTo": destinationURI,
+		},
+		destinationURI: {
+			"id": destinationURI, "type": "Person", "preferredUsername": "alice",
+			"inbox": destinationURI + "/inbox",
+		},
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, client, nil)
+	result, err := h.performActivity(context.Background(), source, map[string]any{
+		"id": "https://old.example/activities/move", "type": "Move", "actor": sourceURI, "target": destinationURI,
+	})
+	if err != nil || result != "skip: destination alsoKnownAs does not include source" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if q.task.Type != "" {
+		t.Fatalf("unverified move enqueued delivery: %+v", q.task)
 	}
 }
 

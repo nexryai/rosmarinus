@@ -168,6 +168,10 @@ func IsFlag(value any) bool {
 	return IsType(value, "Flag")
 }
 
+func IsMove(value any) bool {
+	return IsType(value, "Move")
+}
+
 func IsPost(value any) bool {
 	typ, err := GetAPType(value)
 	if err != nil {

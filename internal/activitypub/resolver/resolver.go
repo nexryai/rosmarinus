@@ -107,6 +107,8 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 		return actors.Actor{}, err
 	}
 	featuredURI := optionalAPID(object["featured"])
+	movedToURI := optionalAPID(object["movedTo"])
+	alsoKnownAs := aptypes.GetAPIDs(object["alsoKnownAs"])
 	username, ok := object["preferredUsername"].(string)
 	if !ok || !validRemoteUsername(username) {
 		return actors.Actor{}, fmt.Errorf("invalid actor: wrong username")
@@ -133,6 +135,8 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 		FollowersURI:  followersURI,
 		FollowingURI:  followingURI,
 		FeaturedURI:   featuredURI,
+		MovedToURI:    movedToURI,
+		AlsoKnownAs:   alsoKnownAs,
 		PublicKeyID:   publicKeyID,
 		PublicKeyPEM:  publicKeyPEM,
 		IsSuspended:   false,

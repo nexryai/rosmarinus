@@ -322,6 +322,9 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Scope all local-Actor queries through authenticated account ownership.
 - [ ] Add stable pagination and deterministic sorting for notes, followers,
       following, reactions, and notifications where applicable.
+- [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the
+      UI needs moved-account labels or navigation; treat them as read-only and
+      trust `movedAt`, not an unverified URI alone, as the accepted-move signal.
 - [ ] Model eventual consistency in loading and post-command UI states.
 - [ ] Keep presentation fields and preferences in Salvia-owned collections.
 - [ ] Verify the Salvia runtime MongoDB role cannot mutate a Rosmarinus

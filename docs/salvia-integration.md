@@ -28,6 +28,20 @@ Remote documents in `actors` are refreshed by Rosmarinus after it verifies a
 signed ActivityPub `Update(Person)`. Salvia should render the current shared
 document and must not maintain a separately writable remote-profile copy.
 
+Remote Actor documents may contain additive account-migration fields owned by
+Rosmarinus:
+
+```text
+movedToUri    destination ActivityPub Actor URI claimed by the remote Actor
+alsoKnownAs   Actor URIs claimed as aliases by the remote Actor
+movedAt       timestamp when Rosmarinus accepted the verified Move
+```
+
+Salvia may use these fields to redirect profile navigation or label a remote
+account as moved. It must not infer a valid migration from `movedToUri` alone:
+Rosmarinus writes `movedAt` only after fetching both Actors, confirming the
+source claim, and finding the source URI in the destination's `alsoKnownAs`.
+
 ### MongoDB role bootstrap
 
 [`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom

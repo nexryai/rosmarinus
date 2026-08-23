@@ -104,6 +104,12 @@ Typical Salvia-only collections include `salvia_ui_settings` and
 `salvia_actor_settings`. UI preferences for a Rosmarinus Actor belong there;
 do not add UI-only fields to the Rosmarinus Actor document.
 
+Rosmarinus-owned remote Actor documents can add `movedToUri`, `alsoKnownAs`,
+and `movedAt` after validating an ActivityPub account migration. Treat these as
+read-only federation state. A non-null `movedAt` is the signal that Rosmarinus
+accepted the reciprocal alias proof; Salvia must not validate or write account
+migrations itself.
+
 ## Account and Actor Identity
 
 An Ably `clientId` identifies one authenticated local account. It does not

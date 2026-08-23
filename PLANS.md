@@ -128,7 +128,7 @@ as final:
       Misskey instead of retaining the historical ID-less allowance.
 - [x] Replace blanket Collection/OrderedCollection refusal with current
       Misskey's bounded, signer-host-checked ingestion behavior.
-- [ ] Implement and test `Move` with alias validation and following migration
+- [x] Implement and test `Move` with alias validation and following migration
       semantics appropriate to Rosmarinus ownership boundaries.
 - [ ] Port current Misskey resolver protections: recursion limits, local-object
       resolution, blocked-host enforcement, redirect/final-ID consistency, and
@@ -256,7 +256,8 @@ the same style as current Misskey.
 - [x] Ingest `Collection` / `OrderedCollection` activities only when they stay
       below the current Misskey recursion limit, resolving and processing each
       signer-hosted activity independently.
-- [ ] `Move`: validate actor aliases and migrate eligible remote-following
+- [x] `Move`: validate reciprocal Actor aliases and migrate eligible local-to-
+      remote following
       relationships without violating local Actor ownership.
 
 ### Actor Resolution
@@ -276,6 +277,8 @@ the same style as current Misskey.
 - [x] Store remote public keys by `keyId`.
 - [x] Store `inbox`, `sharedInbox`, `followersUri`, `followingUri`, and
       `featured`.
+- [x] Store `movedToUri`, `alsoKnownAs`, and `movedAt`, and expose them as
+      additive fields in Salvia's read-only Actor projection.
 - [ ] Store bot/cat flags, discoverability, profile fields, birthday, location,
       avatar, banner, and custom emoji names where available.
 - [ ] Refresh remote actors when stale, initially after 24 hours.

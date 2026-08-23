@@ -1,6 +1,9 @@
 package actors
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Actor struct {
 	ID             string
@@ -17,6 +20,9 @@ type Actor struct {
 	FollowersURI   string
 	FollowingURI   string
 	FeaturedURI    string
+	MovedToURI     string
+	AlsoKnownAs    []string
+	MovedAt        *time.Time
 	PublicKeyID    string
 	PublicKeyPEM   string
 	PrivateKeyPEM  string
