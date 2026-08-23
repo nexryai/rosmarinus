@@ -28,7 +28,7 @@ func TestResolveActorHandleRequiresWebFinger(t *testing.T) {
 	}
 }
 
-func TestConcordeMinimumActor(t *testing.T) {
+func TestCurrentMisskeyMinimumActorAllowsMissingOutbox(t *testing.T) {
 	host := "https://host1.test"
 	preferredUsername := "AliceTest"
 	actorID := host + "/users/alicetest"
@@ -38,7 +38,6 @@ func TestConcordeMinimumActor(t *testing.T) {
 		"type":              "Person",
 		"preferredUsername": preferredUsername,
 		"inbox":             actorID + "/inbox",
-		"outbox":            actorID + "/outbox",
 	}, actorID)
 	if err != nil {
 		t.Fatalf("ParseRemoteActor returned error: %v", err)
@@ -51,6 +50,37 @@ func TestConcordeMinimumActor(t *testing.T) {
 	}
 	if actor.Inbox != actorID+"/inbox" {
 		t.Fatalf("Inbox = %q", actor.Inbox)
+	}
+}
+
+func TestParseRemoteActorRejectsWrongOutboxHostWhenPresent(t *testing.T) {
+	_, err := ParseRemoteActor(map[string]any{
+		"type":              "Person",
+		"id":                "https://remote.example/users/alice",
+		"inbox":             "https://remote.example/users/alice/inbox",
+		"outbox":            "https://evil.example/users/alice/outbox",
+		"preferredUsername": "alice",
+	}, "https://remote.example/users/alice")
+	if err == nil {
+		t.Fatal("ParseRemoteActor should reject a wrong outbox host")
+	}
+}
+
+func TestParseRemoteActorIgnoresInvalidSharedInbox(t *testing.T) {
+	actor, err := ParseRemoteActor(map[string]any{
+		"type":              "Person",
+		"id":                "https://remote.example/users/alice",
+		"inbox":             "https://remote.example/users/alice/inbox",
+		"preferredUsername": "alice",
+		"endpoints": map[string]any{
+			"sharedInbox": "https://evil.example/inbox",
+		},
+	}, "https://remote.example/users/alice")
+	if err != nil {
+		t.Fatalf("ParseRemoteActor returned error: %v", err)
+	}
+	if actor.SharedInbox != "" || actor.Inbox != "https://remote.example/users/alice/inbox" {
+		t.Fatalf("unexpected inboxes: %+v", actor)
 	}
 }
 

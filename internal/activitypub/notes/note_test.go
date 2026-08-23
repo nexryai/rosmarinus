@@ -1,6 +1,9 @@
 package notes
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestConcordeMinimumNote(t *testing.T) {
 	host := "https://host1.test"
@@ -251,5 +254,56 @@ func TestConcordeNoteRejectsWrongAttributedToHost(t *testing.T) {
 	}, "https://host1.test/notes/1")
 	if err == nil {
 		t.Fatalf("ValidateNote should reject wrong attributedTo host")
+	}
+}
+
+func TestCurrentMisskeyNoteValidationRejectsUnsafePublishedTimestamp(t *testing.T) {
+	for _, published := range []any{"not-a-date", "1999-12-31T23:59:59Z", 1} {
+		err := ValidateNote(map[string]any{
+			"id":           "https://host1.test/notes/1",
+			"type":         "Note",
+			"attributedTo": "https://host1.test/users/alice",
+			"published":    published,
+		}, "https://host1.test/notes/1")
+		if err == nil {
+			t.Fatalf("ValidateNote accepted published=%v", published)
+		}
+	}
+}
+
+func TestCurrentMisskeyNoteValidationRequiresHTTPSURL(t *testing.T) {
+	for _, noteURL := range []any{
+		"http://host1.test/notes/1",
+		map[string]any{"href": "http://host1.test/notes/1"},
+	} {
+		err := ValidateNote(map[string]any{
+			"id":           "https://host1.test/notes/1",
+			"type":         "Note",
+			"attributedTo": "https://host1.test/users/alice",
+			"url":          noteURL,
+		}, "https://host1.test/notes/1")
+		if err == nil {
+			t.Fatalf("ValidateNote accepted url=%v", noteURL)
+		}
+	}
+}
+
+func TestCurrentMisskeyNoteValidationLimitsRawMentions(t *testing.T) {
+	tags := make([]any, 0, maxRemoteNoteMentions+2)
+	for i := 0; i <= maxRemoteNoteMentions; i++ {
+		tags = append(tags, map[string]any{
+			"type": "Mention",
+			"href": fmt.Sprintf("https://host2.test/users/%d", i),
+		})
+	}
+	tags = append(tags, tags[0])
+	err := ValidateNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"tag":          tags,
+	}, "https://host1.test/notes/1")
+	if err == nil {
+		t.Fatal("ValidateNote accepted more than 20 unique mentions")
 	}
 }

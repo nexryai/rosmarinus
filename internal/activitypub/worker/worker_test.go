@@ -773,7 +773,7 @@ func TestPerformUpdateRejectsDifferentActorOnSameHost(t *testing.T) {
 	}
 }
 
-func TestProcessInboxAcceptWithoutIDMatchesLatestMisskey(t *testing.T) {
+func TestProcessInboxRejectsAcceptWithoutIDLikeCurrentMisskey(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatalf("GenerateKey returned error: %v", err)
@@ -823,12 +823,12 @@ func TestProcessInboxAcceptWithoutIDMatchesLatestMisskey(t *testing.T) {
 			"signingString": signingString,
 		},
 	})
-	if err != nil || result != "ok: outgoing follow accepted" {
+	if err != nil || result != "skip: activity.id is not a string" {
 		t.Fatalf("result=%q err=%v", result, err)
 	}
 	follow, _ := followRepo.Find(context.Background(), local.ID, remote.ID)
-	if follow == nil || follow.Status != follows.StatusAccepted {
-		t.Fatalf("follow was not accepted: %+v", follow)
+	if follow == nil || follow.Status != follows.StatusPending {
+		t.Fatalf("id-less accept changed follow state: %+v", follow)
 	}
 }
 

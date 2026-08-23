@@ -13,6 +13,10 @@ import (
 
 const PublicAudience = "https://www.w3.org/ns/activitystreams#Public"
 
+const maxRemoteNoteMentions = 20
+
+var earliestSafePublishedAt = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+
 type Visibility string
 
 const (
@@ -87,7 +91,62 @@ func ValidateNote(object map[string]any, entryURI string) error {
 	if actorID, err := aptypes.GetOneAPID(object["attributedTo"]); err == nil && hostOf(actorID) != expectHost {
 		return fmt.Errorf("invalid Note: attributedTo has different host. expected: %s, actual: %s", expectHost, hostOf(actorID))
 	}
+	if rawPublished, exists := object["published"]; exists && rawPublished != nil && rawPublished != "" {
+		published, ok := rawPublished.(string)
+		if !ok {
+			return fmt.Errorf("invalid Note: published timestamp is malformed")
+		}
+		parsed, err := time.Parse(time.RFC3339, published)
+		if err != nil || parsed.Before(earliestSafePublishedAt) {
+			return fmt.Errorf("invalid Note: published timestamp is malformed")
+		}
+	}
+	if rawURL, exists := object["url"]; exists && rawURL != nil {
+		noteURL := firstAPHref(rawURL)
+		if noteURL == "" || !isHTTPSURL(noteURL) {
+			return fmt.Errorf("unexpected schema of note url: %s", noteURL)
+		}
+	}
+	if countUniqueMentionHrefs(object["tag"]) > maxRemoteNoteMentions {
+		return fmt.Errorf("invalid Note: too many mentions")
+	}
 	return nil
+}
+
+func firstAPHref(value any) string {
+	items := aptypes.ToArray(value)
+	if len(items) == 0 {
+		return ""
+	}
+	switch first := items[0].(type) {
+	case string:
+		return first
+	case map[string]any:
+		href, _ := first["href"].(string)
+		return href
+	default:
+		return ""
+	}
+}
+
+func isHTTPSURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != ""
+}
+
+func countUniqueMentionHrefs(tags any) int {
+	seen := map[string]struct{}{}
+	for _, item := range aptypes.ToArray(tags) {
+		tag, ok := item.(map[string]any)
+		if !ok || !aptypes.IsType(tag, "Mention") {
+			continue
+		}
+		href, ok := tag["href"].(string)
+		if ok && href != "" {
+			seen[href] = struct{}{}
+		}
+	}
+	return len(seen)
 }
 
 func ParseVisibility(actorURI string, to, cc any) Visibility {

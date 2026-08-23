@@ -124,9 +124,8 @@ as final:
 - [x] Align signed GET with current Misskey's
       `(request-target) date host` header list; retain `Accept` as an unsigned
       request header.
-- [ ] Revisit the existing ID-less `Accept`/`Reject` allowance. Current Misskey
-      requires a string activity ID; retain the allowance only as a documented,
-      fixture-backed interoperability exception.
+- [x] Require a string activity ID for `Accept` and `Reject`, matching current
+      Misskey instead of retaining the historical ID-less allowance.
 - [ ] Replace blanket Collection/OrderedCollection refusal with current
       Misskey's bounded, signer-host-checked ingestion behavior.
 - [ ] Implement and test `Move` with alias validation and following migration
@@ -134,10 +133,10 @@ as final:
 - [ ] Port current Misskey resolver protections: recursion limits, local-object
       resolution, blocked-host enforcement, redirect/final-ID consistency, and
       federation-loop URL restrictions.
-- [ ] Reconcile Actor validation differences, including optional outbox values
+- [x] Reconcile Actor validation differences, including optional outbox values
       and ignoring an invalid shared inbox while retaining the individual
       inbox, rather than rejecting an otherwise usable Actor.
-- [ ] Reconcile Note validation differences, including published timestamp
+- [x] Reconcile Note validation differences, including published timestamp
       safety, sender/attribution equality, HTTPS note URLs, and raw AP mention
       limits.
 - [x] Align inbox/delivery retry defaults and exponential backoff with current
@@ -210,10 +209,8 @@ the same style as current Misskey.
 - [x] Reject old `acct:` key IDs.
 - [x] Verify signature using the actor public key.
 - [x] Require signer actor URI to match `activity.actor`.
-- [x] Require `activity.id` host to match signer host when present; the current
-      implementation also accepts `Accept`/`Reject` without an ID.
-- [ ] Reconcile the ID-less exception with current Misskey's requirement that
-      every processed activity have a string ID.
+- [x] Require every `activity.id` to be a string and its host to match the
+      verified signer host, including for `Accept` and `Reject`.
 - [ ] Update instance communication stats after accepted requests.
 - [x] Enqueue the activity and return `202 Accepted`.
 
@@ -269,8 +266,10 @@ the same style as current Misskey.
 - [x] Resolve remote actors using signed GET when possible.
 - [x] Validate actor type: `Person`, `Service`, `Group`, `Organization`,
       `Application`.
-- [x] Require actor `id`, `inbox`, and `outbox` to belong to the expected host.
-- [x] Validate `sharedInbox` and public key host.
+- [x] Require Actor `id` and `inbox` to belong to the expected host; validate
+      an optional `outbox` when present.
+- [x] Validate the public key host and ignore an invalid `sharedInbox` so
+      delivery safely falls back to the individual inbox.
 - [x] Validate `followers` and `following` host.
 - [x] Validate `preferredUsername` against current Misskey-compatible rules.
 - [x] Truncate display name to current Misskey-compatible limits.

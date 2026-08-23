@@ -94,13 +94,10 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	if err != nil {
 		return actors.Actor{}, err
 	}
-	if _, err := requiredSameHostID(object["outbox"], expectHost, "outbox"); err != nil {
+	if _, err := optionalSameHostID(object["outbox"], expectHost, "outbox"); err != nil {
 		return actors.Actor{}, err
 	}
-	sharedInbox, err := optionalSharedInbox(object, expectHost)
-	if err != nil {
-		return actors.Actor{}, err
-	}
+	sharedInbox := optionalSharedInbox(object, expectHost)
 	followersURI, err := optionalSameHostID(object["followers"], expectHost, "followers")
 	if err != nil {
 		return actors.Actor{}, err
@@ -154,7 +151,7 @@ func requiredSameHostID(value any, expectHost, field string) (string, error) {
 	return id, nil
 }
 
-func optionalSharedInbox(object map[string]any, expectHost string) (string, error) {
+func optionalSharedInbox(object map[string]any, expectHost string) string {
 	value := object["sharedInbox"]
 	if value == nil {
 		if endpoints, ok := object["endpoints"].(map[string]any); ok {
@@ -162,9 +159,15 @@ func optionalSharedInbox(object map[string]any, expectHost string) (string, erro
 		}
 	}
 	if value == nil {
-		return "", nil
+		return ""
 	}
-	return requiredSameHostID(value, expectHost, "shared inbox")
+	sharedInbox, err := requiredSameHostID(value, expectHost, "shared inbox")
+	if err != nil {
+		// A shared inbox is only an optimization. Falling back to the validated
+		// individual inbox preserves federation without trusting a foreign host.
+		return ""
+	}
+	return sharedInbox
 }
 
 func optionalSameHostID(value any, expectHost, field string) (string, error) {
