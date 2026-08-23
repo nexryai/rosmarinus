@@ -11,9 +11,11 @@ import (
 	"encoding/pem"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -408,6 +410,87 @@ func (f *fakeClient) FetchObject(ctx context.Context, uri string, signer *actors
 
 func (f *fakeClient) Deliver(ctx context.Context, target string, signer actors.Actor, object map[string]any) error {
 	return nil
+}
+
+func TestPerformCollectionProcessesBoundedSignerHostedActivities(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &host}
+	noteRepo := &fakeNoteRepo{}
+	client := &fakeClient{objects: map[string]map[string]any{
+		"https://remote.example/activities/2": {
+			"id":    "https://remote.example/activities/2",
+			"type":  "Create",
+			"actor": remote.URI,
+			"object": map[string]any{
+				"id":           "https://remote.example/notes/2",
+				"type":         "Note",
+				"attributedTo": remote.URI,
+				"to":           apnotes.PublicAudience,
+				"content":      "second",
+			},
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id":   "https://remote.example/collections/inbox",
+		"type": "OrderedCollection",
+		"orderedItems": []any{
+			map[string]any{
+				"id":    "https://remote.example/activities/1",
+				"type":  "Create",
+				"actor": remote.URI,
+				"object": map[string]any{
+					"id":           "https://remote.example/notes/1",
+					"type":         "Note",
+					"attributedTo": remote.URI,
+					"to":           apnotes.PublicAudience,
+					"content":      "first",
+				},
+			},
+			"https://remote.example/activities/2",
+		},
+	})
+	if err != nil || result != "ok: collection processed" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(noteRepo.notes) != 2 {
+		t.Fatalf("stored notes = %#v", noteRepo.notes)
+	}
+}
+
+func TestPerformCollectionRejectsForeignActivityAndLargeCollection(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &host}
+	noteRepo := &fakeNoteRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id":   "https://remote.example/collections/inbox",
+		"type": "Collection",
+		"items": []any{map[string]any{
+			"id":    "https://evil.example/activities/1",
+			"type":  "Create",
+			"actor": remote.URI,
+		}},
+	})
+	if err != nil || !strings.Contains(result, "activity id host mismatches signer") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(noteRepo.notes) != 0 {
+		t.Fatalf("foreign activity stored notes: %#v", noteRepo.notes)
+	}
+
+	items := make([]any, collectionActivityLimit)
+	for i := range items {
+		items[i] = map[string]any{"id": fmt.Sprintf("https://remote.example/activities/%d", i), "type": "Like"}
+	}
+	result, err = h.performActivity(context.Background(), remote, map[string]any{
+		"id":    "https://remote.example/collections/large",
+		"type":  "Collection",
+		"items": items,
+	})
+	if err != nil || result != "skip: collection would surpass recursion limit" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
 }
 
 func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {

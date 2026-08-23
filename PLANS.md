@@ -126,7 +126,7 @@ as final:
       request header.
 - [x] Require a string activity ID for `Accept` and `Reject`, matching current
       Misskey instead of retaining the historical ID-less allowance.
-- [ ] Replace blanket Collection/OrderedCollection refusal with current
+- [x] Replace blanket Collection/OrderedCollection refusal with current
       Misskey's bounded, signer-host-checked ingestion behavior.
 - [ ] Implement and test `Move` with alias validation and following migration
       semantics appropriate to Rosmarinus ownership boundaries.
@@ -253,10 +253,9 @@ the same style as current Misskey.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
 - [ ] `Add` and `Remove`: inspect current Misskey handling before deciding exact scope.
-- [x] The current implementation refuses to ingest `Collection` /
-      `OrderedCollection` as a single activity.
-- [ ] Implement current Misskey-compatible bounded collection ingestion with
-      recursion and signer-host checks.
+- [x] Ingest `Collection` / `OrderedCollection` activities only when they stay
+      below the current Misskey recursion limit, resolving and processing each
+      signer-hosted activity independently.
 - [ ] `Move`: validate actor aliases and migrate eligible remote-following
       relationships without violating local Actor ownership.
 

@@ -36,7 +36,10 @@ type APClient interface {
 	Deliver(context.Context, string, actors.Actor, map[string]any) error
 }
 
-const postDeliveryFollowerLimit = 100
+const (
+	postDeliveryFollowerLimit = 100
+	collectionActivityLimit   = 256
+)
 
 type QueueClient interface {
 	Enqueue(context.Context, queue.Task) error
@@ -188,8 +191,82 @@ func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, acti
 		return "skip: suspended actor", nil
 	}
 	if aptypes.IsCollectionOrOrderedCollection(activity) {
-		return "skip: refusing to ingest collection as activity", nil
+		return h.performCollection(ctx, actor, activity)
 	}
+	return h.performOneActivity(ctx, actor, activity)
+}
+
+func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, collection map[string]any) (string, error) {
+	items := collection["items"]
+	if aptypes.IsOrderedCollection(collection) {
+		items = collection["orderedItems"]
+	}
+	activities := aptypes.ToArray(items)
+	if len(activities) >= collectionActivityLimit {
+		return "skip: collection would surpass recursion limit", nil
+	}
+	actorHost, err := hostOf(actor.URI)
+	if err != nil {
+		return "skip: collection actor uri host is invalid", nil
+	}
+
+	reasons := make([]string, 0)
+	for _, item := range activities {
+		activity, err := h.resolveCollectionActivity(ctx, item)
+		if err != nil {
+			reasons = append(reasons, fmt.Sprintf("%v: %v", item, err))
+			continue
+		}
+		activityID, err := aptypes.GetAPID(activity)
+		if err != nil {
+			reasons = append(reasons, "unknown: activity id is missing")
+			continue
+		}
+		activityHost, err := hostOf(activityID)
+		if err != nil || activityHost != actorHost {
+			reasons = append(reasons, activityID+": activity id host mismatches signer")
+			continue
+		}
+		result, err := h.performOneActivity(ctx, actor, activity)
+		if err != nil {
+			if h.logger != nil {
+				h.logger.Printf("inbox: collection item failed id=%s err=%v", activityID, err)
+			}
+			reasons = append(reasons, activityID+": "+err.Error())
+			continue
+		}
+		if result != "" && !strings.HasPrefix(result, "ok") {
+			reasons = append(reasons, activityID+": "+result)
+		}
+	}
+	if len(reasons) > 0 {
+		return strings.Join(reasons, "\n"), nil
+	}
+	return "ok: collection processed", nil
+}
+
+func (h *Handler) resolveCollectionActivity(ctx context.Context, value any) (map[string]any, error) {
+	if activity, ok := value.(map[string]any); ok {
+		return activity, nil
+	}
+	activityID, err := aptypes.GetAPID(value)
+	if err != nil {
+		return nil, fmt.Errorf("collection item is invalid: %w", err)
+	}
+	if h.client == nil {
+		return nil, fmt.Errorf("collection item resolver is not configured")
+	}
+	activity, err := h.client.FetchObject(ctx, activityID, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve collection item: %w", err)
+	}
+	if activity == nil {
+		return nil, fmt.Errorf("resolved collection item is empty")
+	}
+	return activity, nil
+}
+
+func (h *Handler) performOneActivity(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
 	switch {
 	case aptypes.IsCreate(activity):
 		return h.performCreate(ctx, actor, activity)
