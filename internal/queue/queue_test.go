@@ -65,12 +65,33 @@ func TestNewAccountDeleteTask(t *testing.T) {
 }
 
 func TestAPBackoffRange(t *testing.T) {
-	got := APBackoff(1, nil, nil)
-	if got < 16*time.Second || got > 20*time.Second {
-		t.Fatalf("attempt 1 backoff = %s", got)
+	got := APBackoff(0, nil, nil)
+	if got < time.Minute || got > 72*time.Second {
+		t.Fatalf("first retry backoff = %s", got)
 	}
-	got = APBackoff(100, nil, nil)
+	got = APBackoff(1, nil, nil)
+	if got < 3*time.Minute || got > 216*time.Second {
+		t.Fatalf("second retry backoff = %s", got)
+	}
+	got = APBackoff(8, nil, nil)
 	if got < 8*time.Hour || got > 8*time.Hour+96*time.Minute {
 		t.Fatalf("capped backoff = %s", got)
+	}
+}
+
+func TestAPBackoffBaseMatchesCurrentMisskeyAttempts(t *testing.T) {
+	tests := []struct {
+		retriesCompleted int
+		want             time.Duration
+	}{
+		{retriesCompleted: 0, want: time.Minute},
+		{retriesCompleted: 1, want: 3 * time.Minute},
+		{retriesCompleted: 2, want: 7 * time.Minute},
+		{retriesCompleted: 8, want: 8 * time.Hour},
+	}
+	for _, tt := range tests {
+		if got := apBackoffBase(tt.retriesCompleted); got != tt.want {
+			t.Fatalf("apBackoffBase(%d) = %s, want %s", tt.retriesCompleted, got, tt.want)
+		}
 	}
 }

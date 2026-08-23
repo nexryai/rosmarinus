@@ -121,7 +121,7 @@ as final:
 - [ ] Compare all completed inbox, resolver, renderer, and delivery behavior
       against the pinned current Misskey commit and add focused regression
       tests for every material difference.
-- [ ] Align signed GET with current Misskey's
+- [x] Align signed GET with current Misskey's
       `(request-target) date host` header list; retain `Accept` as an unsigned
       request header.
 - [ ] Revisit the existing ID-less `Accept`/`Reject` allowance. Current Misskey
@@ -140,7 +140,7 @@ as final:
 - [ ] Reconcile Note validation differences, including published timestamp
       safety, sender/attribution equality, HTTPS note URLs, and raw AP mention
       limits.
-- [ ] Align inbox/delivery retry defaults and exponential backoff with current
+- [x] Align inbox/delivery retry defaults and exponential backoff with current
       Misskey, accounting explicitly for Asynq's attempt numbering.
 - [ ] Mine current Misskey's `test/unit/activitypub.ts`, `test/unit/ap-request.ts`,
       and `test-federation/test` cases as the primary compatibility fixtures.
@@ -355,10 +355,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
       `github.com/go-fed/httpsig`, while preserving current Misskey-compatible header
       lists and signing string shape.
 - [x] Use `(request-target) date host digest` for POST signing strings.
-- [x] The current implementation uses `(request-target) date host accept` for
-      GET signing strings.
-- [ ] Align GET signing with current Misskey's `(request-target) date host`
-      list while continuing to send the unsigned `Accept` header.
+- [x] Use current Misskey's `(request-target) date host` list for GET signing
+      while continuing to send the unsigned `Accept` header.
 - [ ] Build delivery inbox lists from followers and direct recipients.
 - [ ] Prefer `sharedInbox` and deduplicate inboxes.
 - [ ] Skip blocked and suspended hosts.
@@ -430,16 +428,11 @@ flags, but that is an operational option, not the default architecture.
 - [x] Worker concurrency per queue.
 - [ ] Per-second rate limits:
       `deliver` defaults to 128/sec, `inbox` defaults to 16/sec.
-- [x] The current implementation defaults retry attempts to 17 for `deliver`
-      and 10 for `inbox`.
-- [ ] Align retry defaults with current Misskey's 12 attempts for `deliver`
-      and 8 for `inbox`, unless deployment evidence justifies a documented
-      Rosmarinus override.
-- [x] The current implementation retains Concorde's AP backoff:
-      `(attempts^4 + 15) * 1s`, capped at 8 hours, plus up to 20% jitter.
-- [ ] Align HTTP-related backoff with current Misskey:
+- [x] Default to 11 `deliver` retries and 7 `inbox` retries in Asynq, equivalent
+      to current Misskey's 12 and 8 total attempts including the initial run.
+- [x] Use current Misskey's HTTP-related backoff:
       `(2^attempts - 1) * 1m`, capped at 8 hours, plus up to 20% jitter; verify
-      the equivalent Asynq attempt index and update retry-default tests.
+      the equivalent Asynq attempt index in focused tests.
 - [x] Job timeout:
       `deliver` defaults to 1 minute, `inbox` defaults to 5 minutes.
 - [ ] Dead-letter or failed-job inspection.

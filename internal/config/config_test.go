@@ -19,7 +19,7 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.RunHTTP || !cfg.RunWorkers {
 		t.Fatalf("default run flags should be true")
 	}
-	if cfg.InboxQueue.MaxRetry != 10 || cfg.DeliverQueue.MaxRetry != 17 {
+	if cfg.InboxQueue.MaxRetry != 7 || cfg.DeliverQueue.MaxRetry != 11 {
 		t.Fatalf("unexpected retry defaults: inbox=%d deliver=%d", cfg.InboxQueue.MaxRetry, cfg.DeliverQueue.MaxRetry)
 	}
 	if cfg.InboxQueue.Timeout != 5*time.Minute || cfg.DeliverQueue.Timeout != time.Minute {

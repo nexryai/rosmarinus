@@ -43,8 +43,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		MongoDatabase: envRequired(t, "MONGO_DATABASE"),
 		RedisAddr:     envRequired(t, "REDIS_ADDR"),
 		UserAgent:     "rosmarinus-federation-test/1.0",
-		InboxQueue:    config.QueueConfig{Name: queue.QueueInbox, MaxRetry: 10, Timeout: 5 * time.Minute},
-		DeliverQueue:  config.QueueConfig{Name: queue.QueueDeliver, MaxRetry: 17, Timeout: time.Minute},
+		InboxQueue:    config.QueueConfig{Name: queue.QueueInbox, MaxRetry: 7, Timeout: 5 * time.Minute},
+		DeliverQueue:  config.QueueConfig{Name: queue.QueueDeliver, MaxRetry: 11, Timeout: time.Minute},
 	}
 
 	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))

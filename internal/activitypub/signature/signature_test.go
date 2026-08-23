@@ -28,7 +28,7 @@ func TestDigestHeaderAndVerify(t *testing.T) {
 	}
 }
 
-func TestPostSigningStringMatchesConcordeShape(t *testing.T) {
+func TestPostSigningStringMatchesCurrentMisskeyShape(t *testing.T) {
 	req := Request{
 		URL:    "https://remote.example/inbox?ignored=true",
 		Method: "POST",
@@ -51,7 +51,7 @@ func TestPostSigningStringMatchesConcordeShape(t *testing.T) {
 	}
 }
 
-func TestGetSigningStringMatchesConcordeShape(t *testing.T) {
+func TestGetSigningStringMatchesCurrentMisskeyShape(t *testing.T) {
 	req := Request{
 		URL:    "https://remote.example/users/alice",
 		Method: "GET",
@@ -61,14 +61,13 @@ func TestGetSigningStringMatchesConcordeShape(t *testing.T) {
 			"Host":   "remote.example",
 		},
 	}
-	got, err := SigningString(req, []string{"(request-target)", "date", "host", "accept"})
+	got, err := SigningString(req, []string{"(request-target)", "date", "host"})
 	if err != nil {
 		t.Fatalf("SigningString returned error: %v", err)
 	}
 	want := "(request-target): get /users/alice\n" +
 		"date: Mon, 06 Jul 2026 00:00:00 GMT\n" +
-		"host: remote.example\n" +
-		"accept: application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\""
+		"host: remote.example"
 	if got != want {
 		t.Fatalf("SigningString = %q, want %q", got, want)
 	}
@@ -135,7 +134,7 @@ func TestParseRequestAndVerifyRSA(t *testing.T) {
 	}
 }
 
-func TestConcordeCreateSignedPostWithVerify(t *testing.T) {
+func TestCurrentMisskeyCreateSignedPostWithVerify(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatalf("GenerateKey returned error: %v", err)
@@ -144,7 +143,7 @@ func TestConcordeCreateSignedPostWithVerify(t *testing.T) {
 	req, err := CreateSignedPost(PrivateKey{
 		KeyID:         "x",
 		PrivateKeyPEM: privateKeyPEM(privateKey),
-	}, "https://example.com/inbox", body, map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
+	}, "https://example.com:8443/inbox", body, map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("CreateSignedPost returned error: %v", err)
 	}
@@ -158,9 +157,12 @@ func TestConcordeCreateSignedPostWithVerify(t *testing.T) {
 	if got := req.Headers["digest"]; got != DigestHeader(body) {
 		t.Fatalf("Digest = %q", got)
 	}
+	if got := req.Headers["host"]; got != "example.com:8443" {
+		t.Fatalf("Host = %q", got)
+	}
 }
 
-func TestConcordeCreateSignedGetWithVerify(t *testing.T) {
+func TestCurrentMisskeyCreateSignedGetWithVerify(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
 		t.Fatalf("GenerateKey returned error: %v", err)
@@ -168,7 +170,7 @@ func TestConcordeCreateSignedGetWithVerify(t *testing.T) {
 	req, err := CreateSignedGet(PrivateKey{
 		KeyID:         "x",
 		PrivateKeyPEM: privateKeyPEM(privateKey),
-	}, "https://example.com/outbox", map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
+	}, "https://example.com:8443/outbox", map[string]string{"User-Agent": "UA"}, time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("CreateSignedGet returned error: %v", err)
 	}
@@ -181,6 +183,22 @@ func TestConcordeCreateSignedGetWithVerify(t *testing.T) {
 	}
 	if got := req.Headers["accept"]; got != ActivityAccept {
 		t.Fatalf("Accept = %q", got)
+	}
+	if got := req.Headers["host"]; got != "example.com:8443" {
+		t.Fatalf("Host = %q", got)
+	}
+	parsed, err := ParseHeader(req.SignatureHeader)
+	if err != nil {
+		t.Fatalf("ParseHeader returned error: %v", err)
+	}
+	wantHeaders := []string{"(request-target)", "date", "host"}
+	if len(parsed.Headers) != len(wantHeaders) {
+		t.Fatalf("signed headers = %#v", parsed.Headers)
+	}
+	for i := range wantHeaders {
+		if parsed.Headers[i] != wantHeaders[i] {
+			t.Fatalf("signed headers = %#v", parsed.Headers)
+		}
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
 	"time"
 
@@ -128,14 +127,30 @@ func (s *AsynqServer) Shutdown() {
 }
 
 func APBackoff(attemptsMade int, err error, task *asynq.Task) time.Duration {
-	const baseDelay = time.Second
+	backoff := apBackoffBase(attemptsMade)
+	jitter := time.Duration(rand.Float64() * 0.2 * float64(backoff))
+	return backoff + jitter
+}
+
+func apBackoffBase(retriesCompleted int) time.Duration {
+	const baseDelay = time.Minute
 	const maxBackoff = 8 * time.Hour
-	backoff := time.Duration(math.Pow(float64(attemptsMade), 4)+15) * baseDelay
+
+	// BullMQ passes one-based attemptsMade to Misskey's strategy. Asynq passes
+	// the number of retries already completed, which is zero on the first
+	// failure, so advance it once to preserve the wire-retry schedule.
+	attemptsMade := retriesCompleted + 1
+	if attemptsMade < 1 {
+		attemptsMade = 1
+	}
+	if attemptsMade >= 9 {
+		return maxBackoff
+	}
+	backoff := time.Duration((1<<attemptsMade)-1) * baseDelay
 	if backoff > maxBackoff {
 		backoff = maxBackoff
 	}
-	jitter := time.Duration(rand.Float64() * 0.2 * float64(backoff))
-	return backoff + jitter
+	return backoff
 }
 
 func redisOpt(redis RedisConfig) asynq.RedisClientOpt {

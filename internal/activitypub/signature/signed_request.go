@@ -33,7 +33,7 @@ func CreateSignedPost(key PrivateKey, targetURL string, body []byte, additionalH
 	}
 	headers := mergeHeaders(map[string]string{
 		"Date":         now.UTC().Format(http.TimeFormat),
-		"Host":         u.Hostname(),
+		"Host":         u.Host,
 		"Content-Type": "application/activity+json",
 	}, additionalHeaders)
 	include := []string{"(request-target)", "date", "host", "digest"}
@@ -48,9 +48,9 @@ func CreateSignedGet(key PrivateKey, targetURL string, additionalHeaders map[str
 	headers := mergeHeaders(map[string]string{
 		"Accept": ActivityAccept,
 		"Date":   now.UTC().Format(http.TimeFormat),
-		"Host":   u.Hostname(),
+		"Host":   u.Host,
 	}, additionalHeaders)
-	include := []string{"(request-target)", "date", "host", "accept"}
+	include := []string{"(request-target)", "date", "host"}
 	return signRequest(key, targetURL, "GET", headers, include, nil)
 }
 

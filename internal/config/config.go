@@ -90,13 +90,13 @@ func Load(lookup LookupFunc) (Config, error) {
 		WorkerQueues:                      splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
-			MaxRetry:      getInt(lookup, "INBOX_MAX_RETRY", 10),
+			MaxRetry:      getInt(lookup, "INBOX_MAX_RETRY", 7),
 			Timeout:       getDuration(lookup, "INBOX_TIMEOUT", 5*time.Minute),
 			RatePerSecond: getInt(lookup, "INBOX_RATE_PER_SECOND", 16),
 		},
 		DeliverQueue: QueueConfig{
 			Name:          "deliver",
-			MaxRetry:      getInt(lookup, "DELIVER_MAX_RETRY", 17),
+			MaxRetry:      getInt(lookup, "DELIVER_MAX_RETRY", 11),
 			Timeout:       getDuration(lookup, "DELIVER_TIMEOUT", time.Minute),
 			RatePerSecond: getInt(lookup, "DELIVER_RATE_PER_SECOND", 128),
 		},
