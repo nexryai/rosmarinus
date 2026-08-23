@@ -130,9 +130,12 @@ as final:
       Misskey's bounded, signer-host-checked ingestion behavior.
 - [x] Implement and test `Move` with alias validation and following migration
       semantics appropriate to Rosmarinus ownership boundaries.
-- [ ] Port current Misskey resolver protections: recursion limits, local-object
-      resolution, blocked-host enforcement, redirect/final-ID consistency, and
-      federation-loop URL restrictions.
+- [x] Port current Misskey's remote-fetch protections: blocked-host
+      enforcement (including subdomains and redirects), strict request/final/
+      object-ID consistency, ActivityStreams context checks, HTTPS downgrade
+      refusal, and federation-loop fragment restrictions.
+- [ ] Add per-resolution duplicate/recursion tracking and finish local-object
+      resolution without issuing HTTP requests back to Rosmarinus.
 - [x] Reconcile Actor validation differences, including optional outbox values
       and ignoring an invalid shared inbox while retaining the individual
       inbox, rather than rejecting an otherwise usable Actor.

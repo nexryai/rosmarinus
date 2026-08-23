@@ -142,8 +142,12 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 	if strings.HasPrefix(strings.ToLower(sig.KeyID), "acct:") {
 		return "skip: old acct keyId is not supported", nil
 	}
-	if _, err := url.ParseRequestURI(sig.KeyID); err != nil {
+	keyURL, err := url.ParseRequestURI(sig.KeyID)
+	if err != nil || keyURL.Hostname() == "" {
 		return "skip: keyId is not a URL", nil
+	}
+	if h.cfg.IsFederationHostBlocked(keyURL.Hostname()) {
+		return fmt.Sprintf("skip: blocked request host=%s", keyURL.Hostname()), nil
 	}
 	actorID, err := aptypes.GetAPID(payload.Activity["actor"])
 	if err != nil {

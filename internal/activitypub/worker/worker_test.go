@@ -694,6 +694,27 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 }
 
+func TestProcessInboxRejectsBlockedSignatureHost(t *testing.T) {
+	h := New(config.Config{FederationBlockedHosts: []string{"blocked.example"}}, nil, &fakeRepo{}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id":    "https://social.blocked.example/activities/1",
+			"type":  "Create",
+			"actor": "https://social.blocked.example/users/alice",
+		},
+		Signature: map[string]any{
+			"keyId":         "https://social.blocked.example/users/alice#main-key",
+			"algorithm":     "rsa-sha256",
+			"signature":     "AA==",
+			"signingString": "(request-target): post /inbox",
+		},
+	})
+	if err != nil || result != "skip: blocked request host=social.blocked.example" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
 func TestApproveFollowEnqueuesAccept(t *testing.T) {
 	host := "remote.example"
 	local := &actors.Actor{

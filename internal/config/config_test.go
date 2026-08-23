@@ -34,6 +34,33 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour || cfg.ConnectorAccountReconcileInterval != 5*time.Minute {
 		t.Fatalf("unexpected Salvia/receipt config: %+v", cfg)
 	}
+	if len(cfg.FederationBlockedHosts) != 0 {
+		t.Fatalf("unexpected blocked hosts: %v", cfg.FederationBlockedHosts)
+	}
+}
+
+func TestLoadNormalizesFederationBlockedHosts(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		if key == "FEDERATION_BLOCKED_HOSTS" {
+			return "Bad.Example., sub.example, bad.example.", true
+		}
+		return "", false
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	want := []string{"bad.example", "sub.example"}
+	if len(cfg.FederationBlockedHosts) != len(want) {
+		t.Fatalf("FederationBlockedHosts = %v", cfg.FederationBlockedHosts)
+	}
+	for i := range want {
+		if cfg.FederationBlockedHosts[i] != want[i] {
+			t.Fatalf("FederationBlockedHosts = %v", cfg.FederationBlockedHosts)
+		}
+	}
+	if !cfg.IsFederationHostBlocked("social.BAD.example.") || cfg.IsFederationHostBlocked("notbad.example") {
+		t.Fatalf("unexpected blocked-host matching for %v", cfg.FederationBlockedHosts)
+	}
 }
 
 func TestLoadRejectsInvalidPublicURL(t *testing.T) {

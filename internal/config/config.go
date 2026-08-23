@@ -14,10 +14,11 @@ const (
 )
 
 type Config struct {
-	Host      string
-	PublicURL string
-	HTTPAddr  string
-	UserAgent string
+	Host                   string
+	PublicURL              string
+	HTTPAddr               string
+	UserAgent              string
+	FederationBlockedHosts []string
 
 	LocalActorUsername    string
 	LocalActorID          string
@@ -87,6 +88,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		ConnectorReceiptTTL:               getDuration(lookup, "CONNECTOR_RECEIPT_TTL", 7*24*time.Hour),
 		ConnectorAccountReconcileInterval: getDuration(lookup, "CONNECTOR_ACCOUNT_RECONCILE_INTERVAL", 5*time.Minute),
 		UserAgent:                         get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
+		FederationBlockedHosts:            normalizeHosts(splitCSV(get(lookup, "FEDERATION_BLOCKED_HOSTS", ""))),
 		WorkerQueues:                      splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
@@ -132,6 +134,20 @@ func (c Config) AccountEventPublishAPIKey() string {
 
 func (c Config) AccountControlSubscribeAPIKey() string {
 	return firstNonEmpty(c.AblyAccountControlSubscribeAPIKey, c.AblyServiceAPIKey)
+}
+
+func (c Config) IsFederationHostBlocked(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	for _, blocked := range c.FederationBlockedHosts {
+		blocked = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(blocked)), ".")
+		if blocked == "" {
+			continue
+		}
+		if host == blocked || strings.HasSuffix(host, "."+blocked) {
+			return true
+		}
+	}
+	return false
 }
 
 func firstNonEmpty(values ...string) string {
@@ -260,6 +276,23 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func normalizeHosts(hosts []string) []string {
+	result := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+		if host == "" {
+			continue
+		}
+		if _, ok := seen[host]; ok {
+			continue
+		}
+		seen[host] = struct{}{}
+		result = append(result, host)
+	}
+	return result
 }
 
 func validLocalUsername(username string) bool {
