@@ -510,6 +510,64 @@ func TestPerformCollectionRejectsForeignActivityAndLargeCollection(t *testing.T)
 	}
 }
 
+func TestPerformCollectionTracksNestedAndDuplicateResolution(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &host}
+	noteRepo := &fakeNoteRepo{}
+	activityURI := "https://remote.example/activities/fetched"
+	client := &fakeClient{objects: map[string]map[string]any{
+		activityURI: {
+			"id": activityURI, "type": "Create", "actor": remote.URI,
+			"object": map[string]any{
+				"id": "https://remote.example/notes/fetched", "type": "Note",
+				"attributedTo": remote.URI, "to": apnotes.PublicAudience, "content": "fetched",
+			},
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/collections/outer", "type": "Collection",
+		"items": []any{
+			map[string]any{
+				"id": "https://remote.example/collections/nested", "type": "OrderedCollection",
+				"orderedItems": []any{map[string]any{
+					"id": "https://remote.example/activities/embedded", "type": "Create", "actor": remote.URI,
+					"object": map[string]any{
+						"id": "https://remote.example/notes/embedded", "type": "Note",
+						"attributedTo": remote.URI, "to": apnotes.PublicAudience, "content": "embedded",
+					},
+				}},
+			},
+			activityURI,
+			activityURI,
+		},
+	})
+	if err != nil || !strings.Contains(result, "cannot resolve already resolved activity") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(noteRepo.notes) != 2 {
+		t.Fatalf("stored notes = %#v", noteRepo.notes)
+	}
+}
+
+func TestPerformCollectionRejectsExcessiveNesting(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &host}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	activity := map[string]any{"id": "https://remote.example/activities/leaf", "type": "Unknown"}
+	for i := 0; i <= collectionActivityLimit; i++ {
+		activity = map[string]any{
+			"id":    fmt.Sprintf("https://remote.example/collections/%d", i),
+			"type":  "Collection",
+			"items": []any{activity},
+		}
+	}
+	result, err := h.performActivity(context.Background(), remote, activity)
+	if err != nil || !strings.Contains(result, "collection would surpass recursion limit") {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
 func TestPerformMoveValidatesAliasAndMigratesLocalFollowers(t *testing.T) {
 	sourceHost := "old.example"
 	destinationHost := "new.example"

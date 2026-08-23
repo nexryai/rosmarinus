@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
 
@@ -25,6 +26,55 @@ func TestResolveActorHandleRequiresWebFinger(t *testing.T) {
 	resolver := New(&resolverActorRepository{}, resolverFetcher{}, nil)
 	if _, err := resolver.ResolveActorHandle(context.Background(), "alice@remote.example"); err == nil {
 		t.Fatal("ResolveActorHandle should require WebFinger")
+	}
+}
+
+func TestResolveActorUsesLocalRepositoryWithoutHTTP(t *testing.T) {
+	local := &actors.Actor{ID: "local-alice", URI: "https://local.example/users/alice"}
+	repo := &resolverActorRepository{existing: local}
+	fetcher := &countingResolverFetcher{}
+	resolver := New(repo, fetcher, nil)
+	resolver.SetFederationPolicy(config.Config{PublicURL: "https://local.example"})
+
+	resolved, err := resolver.ResolveActor(context.Background(), local.URI)
+	if err != nil {
+		t.Fatalf("ResolveActor returned error: %v", err)
+	}
+	if resolved != local || fetcher.calls != 0 {
+		t.Fatalf("resolved=%+v fetch calls=%d", resolved, fetcher.calls)
+	}
+}
+
+func TestResolveActorDoesNotFetchMissingLocalActor(t *testing.T) {
+	fetcher := &countingResolverFetcher{}
+	resolver := New(&resolverActorRepository{}, fetcher, nil)
+	resolver.SetFederationPolicy(config.Config{PublicURL: "https://local.example"})
+
+	_, err := resolver.ResolveActor(context.Background(), "https://local.example/users/missing")
+	if err == nil || !strings.Contains(err.Error(), "local actor not found") || fetcher.calls != 0 {
+		t.Fatalf("err=%v fetch calls=%d", err, fetcher.calls)
+	}
+}
+
+func TestResolveActorRejectsBlockedCachedActor(t *testing.T) {
+	host := "social.blocked.example"
+	repo := &resolverActorRepository{existing: &actors.Actor{ID: "remote", URI: "https://social.blocked.example/users/alice", Host: &host}}
+	fetcher := &countingResolverFetcher{}
+	resolver := New(repo, fetcher, nil)
+	resolver.SetFederationPolicy(config.Config{FederationBlockedHosts: []string{"blocked.example"}})
+
+	_, err := resolver.ResolveActor(context.Background(), repo.existing.URI)
+	if err == nil || !strings.Contains(err.Error(), "blocked") || fetcher.calls != 0 {
+		t.Fatalf("err=%v fetch calls=%d", err, fetcher.calls)
+	}
+}
+
+func TestResolveActorRejectsFragment(t *testing.T) {
+	fetcher := &countingResolverFetcher{}
+	resolver := New(&resolverActorRepository{}, fetcher, nil)
+	_, err := resolver.ResolveActor(context.Background(), "https://remote.example/users/alice#key")
+	if err == nil || fetcher.calls != 0 {
+		t.Fatalf("err=%v fetch calls=%d", err, fetcher.calls)
 	}
 }
 
@@ -187,6 +237,7 @@ func TestParseRemoteActorRejectsWrongCollectionHosts(t *testing.T) {
 
 type resolverActorRepository struct {
 	upserted *actors.Actor
+	existing *actors.Actor
 }
 
 func (r *resolverActorRepository) FindLocalByID(context.Context, string) (*actors.Actor, error) {
@@ -214,7 +265,7 @@ func (r *resolverActorRepository) ListOwnedAccountIDs(context.Context) ([]string
 }
 
 func (r *resolverActorRepository) FindByURI(context.Context, string) (*actors.Actor, error) {
-	return nil, nil
+	return r.existing, nil
 }
 
 func (r *resolverActorRepository) FindByPublicKeyID(context.Context, string) (*actors.Actor, error) {
@@ -240,6 +291,15 @@ func (resolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[
 		"outbox":            "https://remote.example/users/alice/outbox",
 		"preferredUsername": "alice",
 	}, nil
+}
+
+type countingResolverFetcher struct {
+	calls int
+}
+
+func (f *countingResolverFetcher) FetchObject(context.Context, string, *actors.Actor) (map[string]any, error) {
+	f.calls++
+	return nil, nil
 }
 
 type resolverWebFinger struct {

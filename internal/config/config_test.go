@@ -61,6 +61,9 @@ func TestLoadNormalizesFederationBlockedHosts(t *testing.T) {
 	if !cfg.IsFederationHostBlocked("social.BAD.example.") || cfg.IsFederationHostBlocked("notbad.example") {
 		t.Fatalf("unexpected blocked-host matching for %v", cfg.FederationBlockedHosts)
 	}
+	if !cfg.IsSelfFederationURL("http://localhost:3000/users/alice") || cfg.IsSelfFederationURL("http://localhost:3001/users/alice") {
+		t.Fatal("default PUBLIC_URL host should be self")
+	}
 }
 
 func TestLoadRejectsInvalidPublicURL(t *testing.T) {

@@ -69,6 +69,8 @@ type Handler struct {
 }
 
 func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
+	actorResolver := apresolver.NewWithWebFinger(repo, apClient, localActor, apwebfinger.New(nil, cfg.UserAgent))
+	actorResolver.SetFederationPolicy(cfg)
 	return &Handler{
 		cfg:        cfg,
 		logger:     logger,
@@ -80,7 +82,7 @@ func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo
 		reports:    reportRepo,
 		queue:      queueClient,
 		client:     apClient,
-		resolver:   apresolver.NewWithWebFinger(repo, apClient, localActor, apwebfinger.New(nil, cfg.UserAgent)),
+		resolver:   actorResolver,
 		localActor: localActor,
 	}
 }
@@ -191,16 +193,30 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 }
 
 func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
+	return h.performActivityWithResolution(ctx, actor, activity, &activityResolution{fetched: map[string]struct{}{}})
+}
+
+type activityResolution struct {
+	fetched map[string]struct{}
+	depth   int
+}
+
+func (h *Handler) performActivityWithResolution(ctx context.Context, actor *actors.Actor, activity map[string]any, resolution *activityResolution) (string, error) {
 	if actor.IsSuspended {
 		return "skip: suspended actor", nil
 	}
 	if aptypes.IsCollectionOrOrderedCollection(activity) {
-		return h.performCollection(ctx, actor, activity)
+		if resolution.depth >= collectionActivityLimit {
+			return "skip: collection would surpass recursion limit", nil
+		}
+		resolution.depth++
+		defer func() { resolution.depth-- }()
+		return h.performCollection(ctx, actor, activity, resolution)
 	}
 	return h.performOneActivity(ctx, actor, activity)
 }
 
-func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, collection map[string]any) (string, error) {
+func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, collection map[string]any, resolution *activityResolution) (string, error) {
 	items := collection["items"]
 	if aptypes.IsOrderedCollection(collection) {
 		items = collection["orderedItems"]
@@ -216,7 +232,7 @@ func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, co
 
 	reasons := make([]string, 0)
 	for _, item := range activities {
-		activity, err := h.resolveCollectionActivity(ctx, item)
+		activity, err := h.resolveCollectionActivity(ctx, item, resolution)
 		if err != nil {
 			reasons = append(reasons, fmt.Sprintf("%v: %v", item, err))
 			continue
@@ -231,7 +247,7 @@ func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, co
 			reasons = append(reasons, activityID+": activity id host mismatches signer")
 			continue
 		}
-		result, err := h.performOneActivity(ctx, actor, activity)
+		result, err := h.performActivityWithResolution(ctx, actor, activity, resolution)
 		if err != nil {
 			if h.logger != nil {
 				h.logger.Printf("inbox: collection item failed id=%s err=%v", activityID, err)
@@ -249,7 +265,7 @@ func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, co
 	return "ok: collection processed", nil
 }
 
-func (h *Handler) resolveCollectionActivity(ctx context.Context, value any) (map[string]any, error) {
+func (h *Handler) resolveCollectionActivity(ctx context.Context, value any, resolution *activityResolution) (map[string]any, error) {
 	if activity, ok := value.(map[string]any); ok {
 		return activity, nil
 	}
@@ -257,6 +273,13 @@ func (h *Handler) resolveCollectionActivity(ctx context.Context, value any) (map
 	if err != nil {
 		return nil, fmt.Errorf("collection item is invalid: %w", err)
 	}
+	if _, ok := resolution.fetched[activityID]; ok {
+		return nil, fmt.Errorf("cannot resolve already resolved activity: %s", activityID)
+	}
+	if len(resolution.fetched) >= collectionActivityLimit {
+		return nil, fmt.Errorf("collection resolution limit reached")
+	}
+	resolution.fetched[activityID] = struct{}{}
 	if h.client == nil {
 		return nil, fmt.Errorf("collection item resolver is not configured")
 	}

@@ -20,11 +20,21 @@ type WebFinger interface {
 	ResolveActor(context.Context, string) (string, error)
 }
 
+type FederationPolicy interface {
+	IsFederationHostBlocked(string) bool
+	IsSelfFederationURL(string) bool
+}
+
 type Resolver struct {
 	repo      actors.Repository
 	fetcher   Fetcher
 	signer    *actors.Actor
 	webFinger WebFinger
+	policy    FederationPolicy
+}
+
+func (r *Resolver) SetFederationPolicy(policy FederationPolicy) {
+	r.policy = policy
 }
 
 func New(repo actors.Repository, fetcher Fetcher, signer *actors.Actor) *Resolver {
@@ -50,12 +60,22 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 	if uri == "" {
 		return nil, fmt.Errorf("actor uri is required")
 	}
+	host, err := resolvableHostOf(uri)
+	if err != nil {
+		return nil, err
+	}
+	if r.policy != nil && r.policy.IsFederationHostBlocked(host) {
+		return nil, fmt.Errorf("actor host is blocked: %s", host)
+	}
 	existing, err := r.repo.FindByURI(ctx, uri)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
 		return existing, nil
+	}
+	if r.policy != nil && r.policy.IsSelfFederationURL(uri) {
+		return nil, fmt.Errorf("local actor not found: %s", uri)
 	}
 	object, err := r.fetcher.FetchObject(ctx, uri, r.signer)
 	if err != nil {
@@ -66,6 +86,14 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 		return nil, err
 	}
 	return r.repo.UpsertRemoteActor(ctx, actor)
+}
+
+func resolvableHostOf(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" {
+		return "", fmt.Errorf("invalid resolvable url: %s", raw)
+	}
+	return strings.ToLower(u.Hostname()), nil
 }
 
 func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {

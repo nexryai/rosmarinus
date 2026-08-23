@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -137,9 +139,9 @@ func (c Config) AccountControlSubscribeAPIKey() string {
 }
 
 func (c Config) IsFederationHostBlocked(host string) bool {
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	host = normalizeHost(host)
 	for _, blocked := range c.FederationBlockedHosts {
-		blocked = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(blocked)), ".")
+		blocked = normalizeHost(blocked)
 		if blocked == "" {
 			continue
 		}
@@ -148,6 +150,18 @@ func (c Config) IsFederationHostBlocked(host string) bool {
 		}
 	}
 	return false
+}
+
+func (c Config) IsSelfFederationURL(raw string) bool {
+	publicURL, err := url.Parse(c.PublicURL)
+	if err != nil || publicURL.Hostname() == "" {
+		return false
+	}
+	targetURL, err := url.Parse(raw)
+	if err != nil || targetURL.Hostname() == "" {
+		return false
+	}
+	return normalizedAuthority(publicURL) == normalizedAuthority(targetURL)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -282,7 +296,7 @@ func normalizeHosts(hosts []string) []string {
 	result := make([]string, 0, len(hosts))
 	seen := make(map[string]struct{}, len(hosts))
 	for _, host := range hosts {
-		host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+		host = normalizeHost(host)
 		if host == "" {
 			continue
 		}
@@ -293,6 +307,27 @@ func normalizeHosts(hosts []string) []string {
 		result = append(result, host)
 	}
 	return result
+}
+
+func normalizeHost(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
+		return ascii
+	}
+	return host
+}
+
+func normalizedAuthority(value *url.URL) string {
+	port := value.Port()
+	if port == "" {
+		switch value.Scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		}
+	}
+	return normalizeHost(value.Hostname()) + ":" + port
 }
 
 func validLocalUsername(username string) bool {

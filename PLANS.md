@@ -134,8 +134,9 @@ as final:
       enforcement (including subdomains and redirects), strict request/final/
       object-ID consistency, ActivityStreams context checks, HTTPS downgrade
       refusal, and federation-loop fragment restrictions.
-- [ ] Add per-resolution duplicate/recursion tracking and finish local-object
-      resolution without issuing HTTP requests back to Rosmarinus.
+- [x] Add per-Collection URL history and nesting-depth limits, and resolve
+      local Actors from MongoDB without issuing HTTP requests back to
+      Rosmarinus.
 - [x] Reconcile Actor validation differences, including optional outbox values
       and ignoring an invalid shared inbox while retaining the individual
       inbox, rather than rejecting an otherwise usable Actor.
