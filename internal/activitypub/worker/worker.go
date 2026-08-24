@@ -26,6 +26,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
+	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -74,6 +75,7 @@ type Handler struct {
 	reports       reports.Repository
 	notifications notifications.Repository
 	polls         polls.Repository
+	cleanup       cleanup.Repository
 	queue         QueueClient
 	client        APClient
 	connector     ConnectorPublisher
@@ -120,6 +122,10 @@ func (h *Handler) SetPollRepository(repository polls.Repository) {
 	h.resolver.SetPollRepository(repository)
 }
 
+func (h *Handler) SetAccountCleanupRepository(repository cleanup.Repository) {
+	h.cleanup = repository
+}
+
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
 	if h.notifications == nil {
 		return connector.NotificationRead{}, fmt.Errorf("notification repository is not configured")
@@ -142,6 +148,38 @@ func (h *Handler) SetActivityLocker(locker ActivityLocker) {
 func (h *Handler) Register(server *queue.AsynqServer) {
 	server.HandleFunc(queue.TaskInbox, h.HandleInboxTask)
 	server.HandleFunc(queue.TaskDeliver, h.HandleDeliverTask)
+	server.HandleFunc(queue.TaskAccountDelete, h.HandleAccountDeleteTask)
+}
+
+func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task) error {
+	var payload queue.AccountDeletePayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("decode account delete task: %w", err)
+	}
+	if payload.Version != 1 || payload.ActorID == "" || payload.ActorURI == "" {
+		return fmt.Errorf("invalid account delete task payload")
+	}
+	if h.cleanup == nil {
+		return fmt.Errorf("account cleanup repository is not configured")
+	}
+	actor, err := h.repo.FindAnyByURI(ctx, payload.ActorURI)
+	if err != nil {
+		return err
+	}
+	if actor == nil {
+		return nil
+	}
+	if actor.ID != payload.ActorID || actor.Host == nil || !actor.IsSuspended {
+		return fmt.Errorf("account delete task actor does not match a deleted remote actor")
+	}
+	result, err := h.cleanup.CleanupRemoteActor(ctx, actor.ID)
+	if err != nil {
+		return err
+	}
+	if h.logger != nil {
+		h.logger.Printf("account-delete: cleaned actor=%s notes=%d reactions=%d follows=%d blocks=%d polls=%d notifications=%d", actor.ID, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Polls, result.Notifications)
+	}
+	return nil
 }
 
 func (h *Handler) HandleInboxTask(ctx context.Context, task *asynq.Task) error {

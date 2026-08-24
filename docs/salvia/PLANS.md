@@ -345,6 +345,9 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the
       UI needs moved-account labels or navigation; treat them as read-only and
       trust `movedAt`, not an unverified URI alone, as the accepted-move signal.
+- [ ] Make remote Actor views tolerate asynchronous removal of Notes,
+      reactions, relationships, polls, and notifications after an
+      authenticated remote account deletion suspends the Actor.
 - [ ] Project the explicit remote Actor profile fields documented in the
       integration contract; render converted summary/property text safely and
       distinguish remote avatar/banner source URLs from cached media.

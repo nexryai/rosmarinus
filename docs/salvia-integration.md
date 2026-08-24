@@ -52,6 +52,13 @@ account as moved. It must not infer a valid migration from `movedToUri` alone:
 Rosmarinus writes `movedAt` only after fetching both Actors, confirming the
 source claim, and finding the source URI in the destination's `alsoKnownAs`.
 
+After an authenticated remote `Delete(Actor)`, Rosmarinus suspends the Actor
+immediately and runs an idempotent `account-delete` job. The job soft-deletes
+the Actor's Notes, its reactions, reactions on its Notes, and Follow/Block
+relationships involving it; it removes the Actor's polls and notifications it
+originated or whose related Note was removed. Salvia must tolerate those
+records disappearing asynchronously after the Actor becomes suspended.
+
 Remote Note documents retain ActivityPub relationship URIs and resolved local
 references together:
 

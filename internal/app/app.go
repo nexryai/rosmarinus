@@ -43,6 +43,7 @@ type App struct {
 	reactions                   *mongostore.ReactionRepository
 	emojis                      *mongostore.EmojiRepository
 	polls                       *mongostore.PollRepository
+	accountCleanup              *mongostore.AccountCleanupRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
 	salviaAccounts              *mongostore.SalviaAccountRepository
@@ -112,6 +113,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
+	accountCleanupRepo := mongostore.NewAccountCleanupRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
@@ -150,6 +152,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetActivityLocker(apLocker)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
+	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
@@ -211,6 +214,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		reactions:                  reactionRepo,
 		emojis:                     emojiRepo,
 		polls:                      pollRepo,
+		accountCleanup:             accountCleanupRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
 		salviaAccounts:             salviaAccountRepo,

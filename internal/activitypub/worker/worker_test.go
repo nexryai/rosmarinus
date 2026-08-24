@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"sort"
@@ -15,11 +16,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hibiken/asynq"
+
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
+	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -341,6 +345,16 @@ type fakeEmojiRepo struct {
 
 type fakePollRepo struct {
 	polls map[string]*domainpolls.Poll
+}
+
+type fakeAccountCleanupRepo struct {
+	actorID string
+	result  cleanup.Result
+}
+
+func (r *fakeAccountCleanupRepo) CleanupRemoteActor(_ context.Context, actorID string) (cleanup.Result, error) {
+	r.actorID = actorID
+	return r.result, nil
 }
 
 func (r *fakePollRepo) FindByNoteID(_ context.Context, noteID string) (*domainpolls.Poll, error) {
@@ -2676,6 +2690,37 @@ func TestProcessInboxDeleteActorQueuesAccountDelete(t *testing.T) {
 	}
 	if payload.Version != 1 || payload.ActorID != remote.ID || payload.ActorURI != remote.URI {
 		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestHandleAccountDeleteTaskCleansSuspendedRemoteActor(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{
+		ID: "remote_alice", URI: "https://remote.example/users/alice", Host: &host, IsSuspended: true,
+	}
+	cleanupRepo := &fakeAccountCleanupRepo{result: cleanup.Result{Notes: 2, Follows: 1}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetAccountCleanupRepository(cleanupRepo)
+	payload, err := json.Marshal(queue.AccountDeletePayload{Version: 1, ActorID: remote.ID, ActorURI: remote.URI})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	if err := h.HandleAccountDeleteTask(context.Background(), asynq.NewTask(queue.TaskAccountDelete, payload)); err != nil {
+		t.Fatalf("HandleAccountDeleteTask returned error: %v", err)
+	}
+	if cleanupRepo.actorID != remote.ID {
+		t.Fatalf("cleanup actor id = %q", cleanupRepo.actorID)
+	}
+}
+
+func TestHandleAccountDeleteTaskRejectsActiveActor(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote_alice", URI: "https://remote.example/users/alice", Host: &host}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetAccountCleanupRepository(&fakeAccountCleanupRepo{})
+	payload, _ := json.Marshal(queue.AccountDeletePayload{Version: 1, ActorID: remote.ID, ActorURI: remote.URI})
+	if err := h.HandleAccountDeleteTask(context.Background(), asynq.NewTask(queue.TaskAccountDelete, payload)); err == nil {
+		t.Fatal("active remote actor cleanup was accepted")
 	}
 }
 

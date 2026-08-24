@@ -426,6 +426,8 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `media`: remote attachment/avatar/banner fetch and cleanup.
 - [ ] `metadata`: remote instance metadata refresh.
 - [x] `account-delete`: remote actor delete cleanup task payload/enqueue path.
+- [x] `account-delete`: validate the tombstoned remote Actor and idempotently
+      clean its Notes, reactions, relationships, polls, and notifications.
 
 ### Single Binary Runtime
 
@@ -948,7 +950,7 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement retryable local note delete delivery.
 - [ ] Implement cascaded delete behavior for dependent records.
 - [x] Implement inbound remote actor delete and account cleanup queue enqueue.
-- [ ] Implement full account cleanup worker behavior.
+- [x] Implement full remote account cleanup worker behavior.
 - [x] Implement poll extraction and authenticated poll count updates.
 - [ ] Implement vote ingestion, delayed poll-ended jobs, and poll update
       delivery.

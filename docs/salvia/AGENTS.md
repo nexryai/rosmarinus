@@ -110,6 +110,11 @@ read-only federation state. A non-null `movedAt` is the signal that Rosmarinus
 accepted the reciprocal alias proof; Salvia must not validate or write account
 migrations itself.
 
+Treat a suspended remote Actor as unavailable immediately. Its Notes,
+reactions, Follow/Block relationships, polls, and related notifications may be
+soft-deleted or removed asynchronously by Rosmarinus account cleanup; do not
+retain a separate Salvia relationship or content-presence flag.
+
 Treat remote Actor `summary`, `url`, `profileFields`, `birthday`, `location`,
 `avatarUrl`, `bannerUrl`, `tags`, `emojiNames`, `isBot`, `isCat`, `isLocked`,
 `isDiscoverable`, and `lastFetchedAt` as read-only federation profile state.

@@ -226,6 +226,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "kind", Value: 1}, {Key: "remoteActivityId", Value: 1}},
 			Options: options.Index().SetName("uniq_notifications_recipient_kind_activity").SetUnique(true),
 		},
+		{
+			Keys:    bson.D{{Key: "sourceActorId", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().SetName("idx_notifications_source_created_at").SetSparse(true),
+		},
 	})
 	return err
 }
