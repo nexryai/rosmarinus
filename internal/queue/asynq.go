@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 )
 
 type RedisConfig struct {
@@ -54,11 +55,12 @@ type AsynqServer struct {
 	server *asynq.Server
 	mux    *asynq.ServeMux
 	logger *log.Logger
+	limits *redis.Client
 }
 
-func NewAsynqServer(redis RedisConfig, concurrency int, queues []string, logger *log.Logger) *AsynqServer {
-	if concurrency <= 0 {
-		concurrency = 10
+func NewAsynqServer(redisConfig RedisConfig, worker WorkerConfig, queues []string, logger *log.Logger) *AsynqServer {
+	if worker.Concurrency <= 0 {
+		worker.Concurrency = 10
 	}
 	queueWeights := make(map[string]int, len(queues))
 	for _, queue := range queues {
@@ -70,14 +72,18 @@ func NewAsynqServer(redis RedisConfig, concurrency int, queues []string, logger 
 		queueWeights[QueueInbox] = 1
 		queueWeights[QueueDeliver] = 1
 	}
+	limitClient := redis.NewClient(&redis.Options{Addr: redisConfig.Addr, Password: redisConfig.Password, DB: redisConfig.DB})
+	mux := asynq.NewServeMux()
+	mux.Use(taskControlsMiddleware(newRedisTaskRateLimiter(limitClient, "rosmarinus:queue-rate"), worker.Tasks))
 	return &AsynqServer{
-		server: asynq.NewServer(redisOpt(redis), asynq.Config{
-			Concurrency:    concurrency,
+		server: asynq.NewServer(redisOpt(redisConfig), asynq.Config{
+			Concurrency:    worker.Concurrency,
 			Queues:         queueWeights,
 			RetryDelayFunc: APBackoff,
 		}),
-		mux:    asynq.NewServeMux(),
+		mux:    mux,
 		logger: logger,
+		limits: limitClient,
 	}
 }
 
@@ -112,6 +118,9 @@ func (s *AsynqServer) Shutdown() {
 		s.logger.Printf("queue: shutting down asynq worker")
 	}
 	s.server.Shutdown()
+	if s.limits != nil {
+		_ = s.limits.Close()
+	}
 }
 
 func APBackoff(attemptsMade int, err error, task *asynq.Task) time.Duration {

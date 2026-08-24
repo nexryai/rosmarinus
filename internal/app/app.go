@@ -156,7 +156,13 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 	queueClient := queue.NewAsynqClient(redisCfg)
 	apClient := apclient.New(cfg, nil)
-	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
+	queueServer := queue.NewAsynqServer(redisCfg, queue.WorkerConfig{
+		Concurrency: cfg.InboxQueue.Concurrency + cfg.DeliverQueue.Concurrency + 32,
+		Tasks: map[string]queue.TaskControls{
+			queue.TaskInbox:   {Concurrency: cfg.InboxQueue.Concurrency, RatePerSecond: cfg.InboxQueue.RatePerSecond},
+			queue.TaskDeliver: {Concurrency: cfg.DeliverQueue.Concurrency, RatePerSecond: cfg.DeliverQueue.RatePerSecond},
+		},
+	}, cfg.WorkerQueues, logger)
 	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
 	apWorker := apworker.New(cfg, logger, cachedActorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)

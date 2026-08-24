@@ -25,6 +25,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InboxQueue.Timeout != 5*time.Minute || cfg.DeliverQueue.Timeout != time.Minute {
 		t.Fatalf("unexpected timeout defaults")
 	}
+	if cfg.InboxQueue.Concurrency != 16 || cfg.DeliverQueue.Concurrency != 128 || cfg.InboxQueue.RatePerSecond != 32 || cfg.DeliverQueue.RatePerSecond != 128 {
+		t.Fatalf("unexpected queue controls: inbox=%+v deliver=%+v", cfg.InboxQueue, cfg.DeliverQueue)
+	}
 	if cfg.ConnectorCommandChannel != "rosmarinus:commands" {
 		t.Fatalf("ConnectorCommandChannel = %q", cfg.ConnectorCommandChannel)
 	}
@@ -65,6 +68,29 @@ func TestLoadMediaConfig(t *testing.T) {
 	}
 	if cfg.MediaMaxBytes != 1048576 || cfg.MediaFetchTimeout != 30*time.Second || len(cfg.MediaAllowedPrivateNetworks) != 2 || cfg.InstanceMetadataTimeout != 15*time.Second {
 		t.Fatalf("unexpected media config: %+v", cfg)
+	}
+}
+
+func TestLoadQueueControls(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		switch key {
+		case "INBOX_CONCURRENCY":
+			return "8", true
+		case "INBOX_RATE_PER_SECOND":
+			return "24", true
+		case "DELIVER_CONCURRENCY":
+			return "64", true
+		case "DELIVER_RATE_PER_SECOND":
+			return "96", true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.InboxQueue.Concurrency != 8 || cfg.InboxQueue.RatePerSecond != 24 || cfg.DeliverQueue.Concurrency != 64 || cfg.DeliverQueue.RatePerSecond != 96 {
+		t.Fatalf("unexpected queue controls: inbox=%+v deliver=%+v", cfg.InboxQueue, cfg.DeliverQueue)
 	}
 }
 

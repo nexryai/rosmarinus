@@ -61,6 +61,7 @@ type Config struct {
 
 type QueueConfig struct {
 	Name          string
+	Concurrency   int
 	MaxRetry      int
 	Timeout       time.Duration
 	RatePerSecond int
@@ -100,12 +101,14 @@ func Load(lookup LookupFunc) (Config, error) {
 		WorkerQueues:                      splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
+			Concurrency:   getInt(lookup, "INBOX_CONCURRENCY", 16),
 			MaxRetry:      getInt(lookup, "INBOX_MAX_RETRY", 7),
 			Timeout:       getDuration(lookup, "INBOX_TIMEOUT", 5*time.Minute),
-			RatePerSecond: getInt(lookup, "INBOX_RATE_PER_SECOND", 16),
+			RatePerSecond: getInt(lookup, "INBOX_RATE_PER_SECOND", 32),
 		},
 		DeliverQueue: QueueConfig{
 			Name:          "deliver",
+			Concurrency:   getInt(lookup, "DELIVER_CONCURRENCY", 128),
 			MaxRetry:      getInt(lookup, "DELIVER_MAX_RETRY", 11),
 			Timeout:       getDuration(lookup, "DELIVER_TIMEOUT", time.Minute),
 			RatePerSecond: getInt(lookup, "DELIVER_RATE_PER_SECOND", 128),
@@ -226,6 +229,12 @@ func (c Config) Validate() error {
 	}
 	if c.InboxQueue.MaxRetry < 0 || c.DeliverQueue.MaxRetry < 0 {
 		return fmt.Errorf("queue retry counts must not be negative")
+	}
+	if c.InboxQueue.Concurrency <= 0 || c.DeliverQueue.Concurrency <= 0 {
+		return fmt.Errorf("queue concurrency must be positive")
+	}
+	if c.InboxQueue.RatePerSecond <= 0 || c.DeliverQueue.RatePerSecond <= 0 {
+		return fmt.Errorf("queue rate limits must be positive")
 	}
 	if c.InboxQueue.Timeout <= 0 || c.DeliverQueue.Timeout <= 0 {
 		return fmt.Errorf("queue timeouts must be positive")

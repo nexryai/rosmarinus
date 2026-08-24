@@ -426,8 +426,8 @@ flags, but that is an operational option, not the default architecture.
 
 ### Queue Names
 
-- [ ] `inbox`: accepted inbound ActivityPub activities.
-- [ ] `deliver`: outbound ActivityPub delivery jobs.
+- [x] `inbox`: accepted inbound ActivityPub activities.
+- [x] `deliver`: outbound ActivityPub delivery jobs.
 - [ ] `system`: scheduled maintenance.
 - [x] `poll-ended`: delayed poll expiration work.
 - [x] `media`: remote attachment/avatar/banner/emoji fetch, GridFS storage, and
@@ -464,8 +464,9 @@ flags, but that is an operational option, not the default architecture.
 - [ ] Idempotent handlers keyed by AP URI for notes, reactions, announces,
       and updates where possible.
 - [x] Worker concurrency per queue.
-- [ ] Per-second rate limits:
-      `deliver` defaults to 128/sec, `inbox` defaults to 16/sec.
+- [x] Redis-backed per-second rate limits matching current Misskey:
+      `deliver` defaults to 128/sec and `inbox` defaults to 32/sec, with
+      independent concurrency defaults of 128 and 16.
 - [x] Default to 11 `deliver` retries and 7 `inbox` retries in Asynq, equivalent
       to current Misskey's 12 and 8 total attempts including the initial run.
 - [x] Use current Misskey's HTTP-related backoff:
@@ -473,8 +474,9 @@ flags, but that is an operational option, not the default architecture.
       the equivalent Asynq attempt index in focused tests.
 - [x] Job timeout:
       `deliver` defaults to 1 minute, `inbox` defaults to 5 minutes.
-- [ ] Dead-letter or failed-job inspection.
-- [ ] Ability to promote delayed `deliver` and `inbox` jobs for operations.
+- [x] Dead-letter or failed-job inspection through the queue operations CLI.
+- [x] Ability to promote delayed, retrying, or archived `deliver` and `inbox`
+      jobs for operations.
 - [x] Structured payload versioning for safe migrations.
 
 ### Redis Locks And Cache
