@@ -60,11 +60,17 @@ inReplyToUri   ActivityPub URI claimed by the remote Note
 replyId        Rosmarinus Note `_id` after successful recursive resolution
 quoteUri       ActivityPub quote URI
 quoteId        Rosmarinus Note `_id` after successful recursive resolution
+visibleUserUris ActivityPub Actor URIs allowed to read a `specified` Note
 ```
 
 Salvia should join thread/quote views by `replyId` and `quoteId`. The URI fields
 are federation source data and remain useful for diagnostics and outbound
 rendering; they are not MongoDB foreign keys.
+
+For `specified` Notes, Salvia must apply `visibleUserUris` in addition to
+Actor/account ownership before returning content to a browser. `mentionUris`
+is a notification/rendering projection and is not itself the authorization
+list.
 
 Local user-facing federation notifications are durable documents in the
 Rosmarinus-owned `notifications` collection:

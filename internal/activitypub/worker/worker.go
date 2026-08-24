@@ -829,22 +829,23 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		return "", err
 	}
 	note := domainnotes.Note{
-		URI:            parsed.URI,
-		AttributedTo:   parsed.AttributedTo,
-		AuthorID:       actor.ID,
-		Text:           parsed.Text,
-		ContentWarning: parsed.ContentWarning,
-		Sensitive:      parsed.Sensitive,
-		InReplyToURI:   parsed.InReplyToURI,
-		QuoteURI:       parsed.QuoteURI,
-		Visibility:     domainnotes.Visibility(parsed.Visibility),
-		MentionURIs:    parsed.MentionURIs,
-		Hashtags:       parsed.Hashtags,
-		Emojis:         parsed.Emojis,
-		Attachments:    parsed.Attachments,
-		Raw:            object,
-		CreatedAt:      time.Now().UTC(),
-		PublishedAt:    publishedAt(object),
+		URI:             parsed.URI,
+		AttributedTo:    parsed.AttributedTo,
+		AuthorID:        actor.ID,
+		Text:            parsed.Text,
+		ContentWarning:  parsed.ContentWarning,
+		Sensitive:       parsed.Sensitive,
+		InReplyToURI:    parsed.InReplyToURI,
+		QuoteURI:        parsed.QuoteURI,
+		Visibility:      domainnotes.Visibility(parsed.Visibility),
+		MentionURIs:     parsed.MentionURIs,
+		VisibleUserURIs: parsed.VisibleUserURIs,
+		Hashtags:        parsed.Hashtags,
+		Emojis:          parsed.Emojis,
+		Attachments:     parsed.Attachments,
+		Raw:             object,
+		CreatedAt:       time.Now().UTC(),
+		PublishedAt:     publishedAt(object),
 	}
 	if reply != nil {
 		note.ReplyID = reply.ID
@@ -1089,21 +1090,26 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	}
 	now := time.Now().UTC()
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
+	visibleUserURIs := []string(nil)
+	if visibility == domainnotes.VisibilitySpecified {
+		visibleUserURIs = mentionURIs
+	}
 	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
-		ID:             command.NoteID,
-		URI:            noteURI,
-		AttributedTo:   actor.URI,
-		AuthorID:       actor.ID,
-		Text:           command.Text,
-		ContentWarning: command.ContentWarning,
-		Sensitive:      command.Sensitive,
-		InReplyToURI:   command.InReplyToURI,
-		QuoteURI:       command.QuoteURI,
-		Visibility:     visibility,
-		MentionURIs:    mentionURIs,
-		Hashtags:       command.Hashtags,
-		CreatedAt:      now,
-		PublishedAt:    &now,
+		ID:              command.NoteID,
+		URI:             noteURI,
+		AttributedTo:    actor.URI,
+		AuthorID:        actor.ID,
+		Text:            command.Text,
+		ContentWarning:  command.ContentWarning,
+		Sensitive:       command.Sensitive,
+		InReplyToURI:    command.InReplyToURI,
+		QuoteURI:        command.QuoteURI,
+		Visibility:      visibility,
+		MentionURIs:     mentionURIs,
+		VisibleUserURIs: visibleUserURIs,
+		Hashtags:        command.Hashtags,
+		CreatedAt:       now,
+		PublishedAt:     &now,
 	})
 	if err != nil {
 		return connector.PostCreated{}, err
@@ -1262,7 +1268,11 @@ func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note 
 		follow, err := h.follows.Find(ctx, actor.ID, note.AuthorID)
 		return err == nil && follow != nil && follow.Status == follows.StatusAccepted, err
 	case domainnotes.VisibilitySpecified:
-		for _, uri := range note.MentionURIs {
+		audience := note.VisibleUserURIs
+		if len(audience) == 0 {
+			audience = note.MentionURIs
+		}
+		for _, uri := range audience {
 			if uri == actor.URI {
 				return true, nil
 			}
@@ -1662,6 +1672,13 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 	if err != nil {
 		return "skip: announce target is invalid", nil
 	}
+	targetHost, err := hostOf(targetURI)
+	if err != nil {
+		return "skip: announce target is invalid", nil
+	}
+	if h.cfg.IsFederationHostBlocked(targetHost) {
+		return "skip: announce target host is blocked", nil
+	}
 	target, err := h.resolveAnnounceTarget(ctx, targetURI)
 	if err != nil {
 		return "", err
@@ -1676,6 +1693,16 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 	if blocked {
 		return "skip: announce is blocked", nil
 	}
+	if target.RenoteID != "" && target.Text == "" && target.InReplyToURI == "" && len(target.Attachments) == 0 {
+		return "skip: cannot announce a pure Announce", nil
+	}
+	if !canAnnounceNote(actor, target) {
+		return "skip: announce target is not shareable", nil
+	}
+	announcedAt := publishedAt(activity)
+	if announcedAt != nil && target.PublishedAt != nil && announcedAt.Before(*target.PublishedAt) {
+		return "skip: malformed announce published timestamp", nil
+	}
 	note := domainnotes.Note{
 		URI:          activityID,
 		AttributedTo: actor.URI,
@@ -1685,7 +1712,7 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		RenoteURI:    target.URI,
 		Raw:          activity,
 		CreatedAt:    time.Now().UTC(),
-		PublishedAt:  publishedAt(activity),
+		PublishedAt:  announcedAt,
 	}
 	_, err = h.notes.UpsertRemoteNote(ctx, note)
 	if err != nil {
@@ -1699,6 +1726,22 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		return "", err
 	}
 	return "ok: announce created", nil
+}
+
+func canAnnounceNote(actor *actors.Actor, note *domainnotes.Note) bool {
+	if actor == nil || note == nil {
+		return false
+	}
+	switch note.Visibility {
+	case domainnotes.VisibilityPublic, domainnotes.VisibilityHome:
+		return true
+	case domainnotes.VisibilityFollowers:
+		return actor.ID == note.AuthorID
+	case domainnotes.VisibilitySpecified:
+		return false
+	default:
+		return false
+	}
 }
 
 func (h *Handler) createNoteNotifications(ctx context.Context, source *actors.Actor, note, reply *domainnotes.Note, activityID string) error {

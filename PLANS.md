@@ -224,8 +224,10 @@ the same style as current Misskey.
       resolve object, and create basic notes.
 - [ ] `Create`: create questions/polls and full note side effects.
 - [x] `Announce`: resolve target note and create a basic renote record.
-- [ ] `Announce`: full visibility checks, blocked-host checks, counters, and
-      notification side effects.
+- [x] `Announce`: reject specified Notes, other Actors' followers-only Notes,
+      pure Announce targets, blocks, and blocked hosts using current Misskey's
+      sharing rules.
+- [ ] `Announce`: update denormalized counters.
 - [x] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note and create
       or replace the actor's reaction using current Misskey-compatible
       `_misskey_reaction || content || name` precedence.
@@ -336,8 +338,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Store basic remote attachment metadata.
 - [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
 - [x] Store resolved `replyId` and `quoteId` alongside their AP URIs.
-- [ ] Store cached files, polls, URL, visible users, and denormalized author
-      fields.
+- [ ] Store cached files, polls, URL, and denormalized author fields.
+- [x] Store the resolved ActivityPub audience URIs for specified Notes.
 - [ ] Update reply counts, renote counts, and hashtags where Rosmarinus owns
       those writes.
 - [x] Persist local notifications for inbound federation activities.
@@ -911,7 +913,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [ ] Implement reaction emoji extraction and counts.
 - [x] Implement durable reaction notifications and local reaction delivery.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
-- [ ] Implement Announce visibility and counter side effects.
+- [x] Implement current-Misskey-compatible Announce visibility checks.
+- [ ] Implement Announce counter side effects.
 - [x] Implement durable Announce notifications for local Note authors.
 - [x] Implement basic inbound block and unblock.
 - [x] Apply stored blocks bidirectionally to follow approval/creation,

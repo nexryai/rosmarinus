@@ -330,6 +330,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       write Rosmarinus-owned notification documents from Salvia.
 - [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
+- [ ] Enforce `visibleUserUris` when projecting `specified` Notes; do not use
+      `mentionUris` as a content-authorization substitute.
 - [ ] Make relationship views tolerate Block-driven soft deletion of either
       follow direction and rebuild state from `blocks` plus active `follows`.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the

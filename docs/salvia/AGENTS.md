@@ -123,6 +123,10 @@ Remote Note relationships expose both federation URIs (`inReplyToUri`,
 for MongoDB joins and thread rendering. Treat URI fields as read-only
 ActivityPub source data, not database foreign keys.
 
+For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
+`visibleUserUris` audience before returning content. Do not substitute
+`mentionUris` as the authorization list.
+
 An accepted ActivityPub Block removes pending/active follow relationships in
 both directions. Recompute UI relationship state from Rosmarinus-owned
 `blocks` and `follows`; do not preserve or repair a separate Salvia follow flag.

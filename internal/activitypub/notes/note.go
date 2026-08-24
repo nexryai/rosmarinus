@@ -27,18 +27,19 @@ const (
 )
 
 type Note struct {
-	URI            string
-	AttributedTo   string
-	Text           string
-	ContentWarning *string
-	Sensitive      bool
-	InReplyToURI   string
-	QuoteURI       string
-	Visibility     Visibility
-	MentionURIs    []string
-	Hashtags       []string
-	Emojis         []domainnotes.Emoji
-	Attachments    []domainnotes.Attachment
+	URI             string
+	AttributedTo    string
+	Text            string
+	ContentWarning  *string
+	Sensitive       bool
+	InReplyToURI    string
+	QuoteURI        string
+	Visibility      Visibility
+	MentionURIs     []string
+	VisibleUserURIs []string
+	Hashtags        []string
+	Emojis          []domainnotes.Emoji
+	Attachments     []domainnotes.Attachment
 }
 
 func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
@@ -60,19 +61,25 @@ func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
 	if hostOf(id) != hostOf(actorID) {
 		return nil, fmt.Errorf("note id host doesn't match actor host")
 	}
+	visibility, audienceURIs := ParseAudience(actorID, object["to"], object["cc"])
+	visibleUserURIs := []string(nil)
+	if visibility == VisibilitySpecified {
+		visibleUserURIs = audienceURIs
+	}
 	return &Note{
-		URI:            id,
-		AttributedTo:   actorID,
-		Text:           noteText(object),
-		ContentWarning: contentWarning(object),
-		Sensitive:      boolField(object, "sensitive"),
-		InReplyToURI:   optionalAPID(object["inReplyTo"]),
-		QuoteURI:       quoteURI(object),
-		Visibility:     ParseVisibility(actorID, object["to"], object["cc"]),
-		MentionURIs:    ExtractMentionURIs(object["tag"]),
-		Hashtags:       ExtractHashtags(object["tag"]),
-		Emojis:         ExtractEmojis(object["tag"]),
-		Attachments:    ExtractAttachments(object["attachment"], boolField(object, "sensitive")),
+		URI:             id,
+		AttributedTo:    actorID,
+		Text:            noteText(object),
+		ContentWarning:  contentWarning(object),
+		Sensitive:       boolField(object, "sensitive"),
+		InReplyToURI:    optionalAPID(object["inReplyTo"]),
+		QuoteURI:        quoteURI(object),
+		Visibility:      visibility,
+		MentionURIs:     mergeUnique(ExtractMentionURIs(object["tag"]), audienceURIs),
+		VisibleUserURIs: visibleUserURIs,
+		Hashtags:        ExtractHashtags(object["tag"]),
+		Emojis:          ExtractEmojis(object["tag"]),
+		Attachments:     ExtractAttachments(object["attachment"], boolField(object, "sensitive")),
 	}, nil
 }
 
@@ -107,7 +114,9 @@ func ValidateNote(object map[string]any, entryURI string) error {
 			return fmt.Errorf("unexpected schema of note url: %s", noteURL)
 		}
 	}
-	if countUniqueMentionHrefs(object["tag"]) > maxRemoteNoteMentions {
+	actorID, _ := aptypes.GetOneAPID(object["attributedTo"])
+	_, audienceURIs := ParseAudience(actorID, object["to"], object["cc"])
+	if len(mergeUnique(ExtractMentionURIs(object["tag"]), audienceURIs)) > maxRemoteNoteMentions {
 		return fmt.Errorf("invalid Note: too many mentions")
 	}
 	return nil
@@ -134,35 +143,63 @@ func isHTTPSURL(raw string) bool {
 	return err == nil && u.Scheme == "https" && u.Host != ""
 }
 
-func countUniqueMentionHrefs(tags any) int {
-	seen := map[string]struct{}{}
-	for _, item := range aptypes.ToArray(tags) {
-		tag, ok := item.(map[string]any)
-		if !ok || !aptypes.IsType(tag, "Mention") {
-			continue
-		}
-		href, ok := tag["href"].(string)
-		if ok && href != "" {
-			seen[href] = struct{}{}
-		}
-	}
-	return len(seen)
+func ParseVisibility(actorURI string, to, cc any) Visibility {
+	visibility, _ := ParseAudience(actorURI, to, cc)
+	return visibility
 }
 
-func ParseVisibility(actorURI string, to, cc any) Visibility {
+func ParseAudience(actorURI string, to, cc any) (Visibility, []string) {
 	toIDs := aptypes.GetAPIDs(to)
 	ccIDs := aptypes.GetAPIDs(cc)
+	audienceURIs := directAudienceURIs(actorURI, toIDs, ccIDs)
 	if containsPublic(toIDs) {
-		return VisibilityPublic
+		return VisibilityPublic, audienceURIs
 	}
 	if containsPublic(ccIDs) {
-		return VisibilityHome
+		return VisibilityHome, audienceURIs
 	}
 	followersURI := strings.TrimRight(actorURI, "/") + "/followers"
 	if contains(toIDs, followersURI) || contains(ccIDs, followersURI) {
-		return VisibilityFollowers
+		return VisibilityFollowers, audienceURIs
 	}
-	return VisibilitySpecified
+	return VisibilitySpecified, audienceURIs
+}
+
+func directAudienceURIs(actorURI string, groups ...[]string) []string {
+	followersURI := strings.TrimRight(actorURI, "/") + "/followers"
+	seen := map[string]struct{}{}
+	out := make([]string, 0)
+	for _, ids := range groups {
+		for _, id := range ids {
+			if id == "" || containsPublic([]string{id}) || id == followersURI {
+				continue
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func mergeUnique(groups ...[]string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0)
+	for _, group := range groups {
+		for _, value := range group {
+			if value == "" {
+				continue
+			}
+			if _, exists := seen[value]; exists {
+				continue
+			}
+			seen[value] = struct{}{}
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func noteText(object map[string]any) string {

@@ -246,6 +246,45 @@ func TestConcordeNoteVisibility(t *testing.T) {
 	}
 }
 
+func TestCurrentMisskeyAudienceAddsDirectRecipientsToMentions(t *testing.T) {
+	recipient := "https://host2.test/users/bob"
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           []any{recipient, recipient},
+		"content":      "direct",
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.Visibility != VisibilitySpecified {
+		t.Fatalf("visibility = %q", note.Visibility)
+	}
+	if len(note.MentionURIs) != 1 || note.MentionURIs[0] != recipient {
+		t.Fatalf("mention URIs = %#v", note.MentionURIs)
+	}
+	if len(note.VisibleUserURIs) != 1 || note.VisibleUserURIs[0] != recipient {
+		t.Fatalf("visible user URIs = %#v", note.VisibleUserURIs)
+	}
+}
+
+func TestCurrentMisskeyAudienceLimitIncludesDirectRecipients(t *testing.T) {
+	recipients := make([]any, 0, maxRemoteNoteMentions+1)
+	for i := 0; i <= maxRemoteNoteMentions; i++ {
+		recipients = append(recipients, fmt.Sprintf("https://host2.test/users/%d", i))
+	}
+	err := ValidateNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           recipients,
+	}, "https://host1.test/notes/1")
+	if err == nil {
+		t.Fatal("ValidateNote accepted too many direct recipients")
+	}
+}
+
 func TestConcordeNoteRejectsWrongAttributedToHost(t *testing.T) {
 	err := ValidateNote(map[string]any{
 		"id":           "https://host1.test/notes/1",

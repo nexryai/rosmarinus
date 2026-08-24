@@ -18,16 +18,18 @@ The Go integration test performs this real federation sequence:
 6. create a public Misskey note;
 7. wait for the delivered `Create(Note)` to be verified and stored by
    Rosmarinus;
-8. react to that Misskey note from Rosmarinus, verify Misskey applies the
+8. renote that public Misskey note and verify Rosmarinus stores the delivered
+   `Announce` with its resolved target reference;
+9. react to that Misskey note from Rosmarinus, verify Misskey applies the
    delivered Like, dereference its Rosmarinus Like activity, then deliver
    `Undo(Like)` and verify Misskey removes the reaction;
-9. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
+10. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
    soft-deleted, and verify Misskey removes the relay from its followers;
-10. approve Misskey's inbound follow, dereference a public Rosmarinus
+11. approve Misskey's inbound follow, dereference a public Rosmarinus
    `Create` activity, and deliver that note;
-11. react to that note from Misskey, verify the reaction in Rosmarinus, and
+12. react to that note from Misskey, verify the reaction in Rosmarinus, and
    dereference its Like activity;
-12. deliver a `specified` Rosmarinus note to the second account's individual
+13. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
 

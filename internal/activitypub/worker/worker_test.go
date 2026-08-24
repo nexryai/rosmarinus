@@ -2610,6 +2610,60 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 	}
 }
 
+func TestPerformAnnounceRejectsUnshareableTargetVisibility(t *testing.T) {
+	host := "remote.example"
+	actor := &actors.Actor{ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host}
+	targetAuthor := &actors.Actor{ID: "remote-alice", URI: "https://remote.example/users/alice", Host: &host}
+	for _, visibility := range []domainnotes.Visibility{domainnotes.VisibilityFollowers, domainnotes.VisibilitySpecified} {
+		t.Run(string(visibility), func(t *testing.T) {
+			targetURI := "https://remote.example/notes/target-" + string(visibility)
+			noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+				targetURI: {
+					ID: "target-" + string(visibility), URI: targetURI,
+					AuthorID: targetAuthor.ID, AttributedTo: targetAuthor.URI,
+					Visibility: visibility,
+				},
+			}}
+			h := New(config.Config{}, nil, &fakeRepo{remote: actor}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+			result, err := h.performAnnounce(context.Background(), actor, map[string]any{
+				"id":   "https://remote.example/activities/announce-" + string(visibility),
+				"type": "Announce", "actor": actor.URI, "object": targetURI,
+				"to": apnotes.PublicAudience,
+			})
+			if err != nil || result != "skip: announce target is not shareable" {
+				t.Fatalf("result=%q err=%v", result, err)
+			}
+			if len(noteRepo.notes) != 1 {
+				t.Fatalf("unshareable Announce was stored: %#v", noteRepo.notes)
+			}
+		})
+	}
+}
+
+func TestPerformAnnounceRejectsCachedTargetFromBlockedHost(t *testing.T) {
+	host := "remote.example"
+	actor := &actors.Actor{ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host}
+	targetURI := "https://social.blocked.example/notes/target"
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		targetURI: {
+			ID: "target", URI: targetURI, AuthorID: "remote-alice",
+			AttributedTo: "https://social.blocked.example/users/alice",
+			Visibility:   domainnotes.VisibilityPublic,
+		},
+	}}
+	h := New(config.Config{FederationBlockedHosts: []string{"blocked.example"}}, nil, &fakeRepo{remote: actor}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.performAnnounce(context.Background(), actor, map[string]any{
+		"id": "https://remote.example/activities/announce", "type": "Announce",
+		"actor": actor.URI, "object": targetURI, "to": apnotes.PublicAudience,
+	})
+	if err != nil || result != "skip: announce target host is blocked" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(noteRepo.notes) != 1 {
+		t.Fatalf("blocked Announce was stored: %#v", noteRepo.notes)
+	}
+}
+
 func TestProcessInboxUndoLikeDeletesReaction(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {

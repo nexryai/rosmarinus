@@ -20,28 +20,29 @@ type NoteRepository struct {
 }
 
 type noteDocument struct {
-	ID             string                 `bson:"_id,omitempty"`
-	URI            string                 `bson:"uri"`
-	AttributedTo   string                 `bson:"attributedTo"`
-	AuthorID       string                 `bson:"authorId"`
-	Text           string                 `bson:"text"`
-	ContentWarning *string                `bson:"contentWarning,omitempty"`
-	Sensitive      bool                   `bson:"sensitive"`
-	InReplyToURI   string                 `bson:"inReplyToUri,omitempty"`
-	ReplyID        string                 `bson:"replyId,omitempty"`
-	QuoteURI       string                 `bson:"quoteUri,omitempty"`
-	QuoteID        string                 `bson:"quoteId,omitempty"`
-	RenoteID       string                 `bson:"renoteId,omitempty"`
-	RenoteURI      string                 `bson:"renoteUri,omitempty"`
-	Visibility     string                 `bson:"visibility"`
-	MentionURIs    []string               `bson:"mentionUris,omitempty"`
-	Hashtags       []string               `bson:"hashtags,omitempty"`
-	Emojis         []emojiDocument        `bson:"emojis,omitempty"`
-	Attachments    []attachmentDocument   `bson:"attachments,omitempty"`
-	Raw            map[string]interface{} `bson:"raw"`
-	CreatedAt      time.Time              `bson:"createdAt"`
-	PublishedAt    *time.Time             `bson:"publishedAt,omitempty"`
-	DeletedAt      *time.Time             `bson:"deletedAt,omitempty"`
+	ID              string                 `bson:"_id,omitempty"`
+	URI             string                 `bson:"uri"`
+	AttributedTo    string                 `bson:"attributedTo"`
+	AuthorID        string                 `bson:"authorId"`
+	Text            string                 `bson:"text"`
+	ContentWarning  *string                `bson:"contentWarning,omitempty"`
+	Sensitive       bool                   `bson:"sensitive"`
+	InReplyToURI    string                 `bson:"inReplyToUri,omitempty"`
+	ReplyID         string                 `bson:"replyId,omitempty"`
+	QuoteURI        string                 `bson:"quoteUri,omitempty"`
+	QuoteID         string                 `bson:"quoteId,omitempty"`
+	RenoteID        string                 `bson:"renoteId,omitempty"`
+	RenoteURI       string                 `bson:"renoteUri,omitempty"`
+	Visibility      string                 `bson:"visibility"`
+	MentionURIs     []string               `bson:"mentionUris,omitempty"`
+	VisibleUserURIs []string               `bson:"visibleUserUris,omitempty"`
+	Hashtags        []string               `bson:"hashtags,omitempty"`
+	Emojis          []emojiDocument        `bson:"emojis,omitempty"`
+	Attachments     []attachmentDocument   `bson:"attachments,omitempty"`
+	Raw             map[string]interface{} `bson:"raw"`
+	CreatedAt       time.Time              `bson:"createdAt"`
+	PublishedAt     *time.Time             `bson:"publishedAt,omitempty"`
+	DeletedAt       *time.Time             `bson:"deletedAt,omitempty"`
 }
 
 type emojiDocument struct {
@@ -142,55 +143,57 @@ func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnot
 		return nil, err
 	}
 	return &domainnotes.Note{
-		ID:             doc.ID,
-		URI:            doc.URI,
-		AttributedTo:   doc.AttributedTo,
-		AuthorID:       doc.AuthorID,
-		Text:           doc.Text,
-		ContentWarning: doc.ContentWarning,
-		Sensitive:      doc.Sensitive,
-		InReplyToURI:   doc.InReplyToURI,
-		ReplyID:        doc.ReplyID,
-		QuoteURI:       doc.QuoteURI,
-		QuoteID:        doc.QuoteID,
-		RenoteID:       doc.RenoteID,
-		RenoteURI:      doc.RenoteURI,
-		Visibility:     domainnotes.Visibility(doc.Visibility),
-		MentionURIs:    doc.MentionURIs,
-		Hashtags:       doc.Hashtags,
-		Emojis:         toDomainEmojis(doc.Emojis),
-		Attachments:    toDomainAttachments(doc.Attachments),
-		Raw:            mapAny(doc.Raw),
-		CreatedAt:      doc.CreatedAt,
-		PublishedAt:    doc.PublishedAt,
-		DeletedAt:      doc.DeletedAt,
+		ID:              doc.ID,
+		URI:             doc.URI,
+		AttributedTo:    doc.AttributedTo,
+		AuthorID:        doc.AuthorID,
+		Text:            doc.Text,
+		ContentWarning:  doc.ContentWarning,
+		Sensitive:       doc.Sensitive,
+		InReplyToURI:    doc.InReplyToURI,
+		ReplyID:         doc.ReplyID,
+		QuoteURI:        doc.QuoteURI,
+		QuoteID:         doc.QuoteID,
+		RenoteID:        doc.RenoteID,
+		RenoteURI:       doc.RenoteURI,
+		Visibility:      domainnotes.Visibility(doc.Visibility),
+		MentionURIs:     doc.MentionURIs,
+		VisibleUserURIs: doc.VisibleUserURIs,
+		Hashtags:        doc.Hashtags,
+		Emojis:          toDomainEmojis(doc.Emojis),
+		Attachments:     toDomainAttachments(doc.Attachments),
+		Raw:             mapAny(doc.Raw),
+		CreatedAt:       doc.CreatedAt,
+		PublishedAt:     doc.PublishedAt,
+		DeletedAt:       doc.DeletedAt,
 	}, nil
 }
 
 func fromNote(note domainnotes.Note) noteDocument {
 	return noteDocument{
-		ID:             note.ID,
-		URI:            note.URI,
-		AttributedTo:   note.AttributedTo,
-		AuthorID:       note.AuthorID,
-		Text:           note.Text,
-		ContentWarning: note.ContentWarning,
-		Sensitive:      note.Sensitive,
-		InReplyToURI:   note.InReplyToURI,
-		ReplyID:        note.ReplyID,
-		QuoteURI:       note.QuoteURI,
-		QuoteID:        note.QuoteID,
-		RenoteID:       note.RenoteID,
-		RenoteURI:      note.RenoteURI,
-		Visibility:     string(note.Visibility),
-		MentionURIs:    note.MentionURIs,
-		Hashtags:       note.Hashtags,
-		Emojis:         fromDomainEmojis(note.Emojis),
-		Attachments:    fromDomainAttachments(note.Attachments),
-		Raw:            mapInterface(note.Raw),
-		CreatedAt:      note.CreatedAt,
-		PublishedAt:    note.PublishedAt,
-		DeletedAt:      note.DeletedAt,
+		ID:              note.ID,
+		URI:             note.URI,
+		AttributedTo:    note.AttributedTo,
+		AuthorID:        note.AuthorID,
+		Text:            note.Text,
+		ContentWarning:  note.ContentWarning,
+		Sensitive:       note.Sensitive,
+		InReplyToURI:    note.InReplyToURI,
+		ReplyID:         note.ReplyID,
+		QuoteURI:        note.QuoteURI,
+		QuoteID:         note.QuoteID,
+		RenoteID:        note.RenoteID,
+		RenoteURI:       note.RenoteURI,
+		Visibility:      string(note.Visibility),
+		MentionURIs:     note.MentionURIs,
+		VisibleUserURIs: note.VisibleUserURIs,
+		Hashtags:        note.Hashtags,
+		Emojis:          fromDomainEmojis(note.Emojis),
+		Attachments:     fromDomainAttachments(note.Attachments),
+		Raw:             mapInterface(note.Raw),
+		CreatedAt:       note.CreatedAt,
+		PublishedAt:     note.PublishedAt,
+		DeletedAt:       note.DeletedAt,
 	}
 }
 

@@ -40,11 +40,12 @@ func TestRenderSpecifiedNoteAddressesMentionedActors(t *testing.T) {
 			"https://remote.example/users/bob",
 			"https://other.example/users/carol",
 		},
-		CreatedAt: time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC),
+		VisibleUserURIs: []string{"https://remote.example/users/bob"},
+		CreatedAt:       time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC),
 	}
 	rendered := Render(note)
 	to, ok := rendered["to"].([]string)
-	if !ok || len(to) != 2 || to[0] != note.MentionURIs[0] || to[1] != note.MentionURIs[1] {
+	if !ok || len(to) != 1 || to[0] != note.VisibleUserURIs[0] {
 		t.Fatalf("to = %#v", rendered["to"])
 	}
 	cc, ok := rendered["cc"].([]string)

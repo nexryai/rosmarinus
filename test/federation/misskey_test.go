@@ -156,7 +156,27 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && remoteNote != nil && remoteNote.Text == "Hello from latest Misskey federation test"
 	})
 
-	// Phase 5: react to the Misskey note as the local Actor, verify Misskey
+	// Phase 5: renote the public Misskey note and verify Rosmarinus accepts the
+	// delivered Announce and stores its reference to the resolved target Note.
+	var createdRenote struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i":        admin.Token,
+		"renoteId": created.CreatedNote.ID,
+	}, &createdRenote)
+	if createdRenote.CreatedNote.ID == "" {
+		t.Fatal("Misskey renote returned an empty note id")
+	}
+	announceURI := "https://a.test/notes/" + createdRenote.CreatedNote.ID
+	waitFor(t, ctx, "Announce stored by Rosmarinus", func() bool {
+		announce, findErr := noteRepo.FindByURI(ctx, announceURI)
+		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
+	})
+
+	// Phase 6: react to the Misskey note as the local Actor, verify Misskey
 	// applies the delivered Like, dereference it, then deliver Undo(Like) and
 	// verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
@@ -203,7 +223,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.Reactions["👍"] == 0
 	})
 
-	// Phase 6: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
+	// Phase 7: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
 	// relationship is soft-deleted, and confirm Misskey removes the relay Actor
 	// from the administrator's followers.
 	var relayOnMisskey struct {
@@ -272,7 +292,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 7: make Misskey follow Rosmarinus, approve the pending request in
+	// Phase 8: make Misskey follow Rosmarinus, approve the pending request in
 	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
@@ -299,7 +319,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 8: publish a public Rosmarinus note, dereference its Create activity,
+	// Phase 9: publish a public Rosmarinus note, dereference its Create activity,
 	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
@@ -339,7 +359,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 9: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 10: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -359,7 +379,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 10: publish a specified-visibility note, verify it is not publicly
+	// Phase 11: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"

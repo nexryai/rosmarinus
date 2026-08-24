@@ -15,28 +15,29 @@ const (
 )
 
 type Note struct {
-	ID             string
-	URI            string
-	AttributedTo   string
-	AuthorID       string
-	Text           string
-	ContentWarning *string
-	Sensitive      bool
-	InReplyToURI   string
-	ReplyID        string
-	QuoteURI       string
-	QuoteID        string
-	RenoteID       string
-	RenoteURI      string
-	Visibility     Visibility
-	MentionURIs    []string
-	Hashtags       []string
-	Emojis         []Emoji
-	Attachments    []Attachment
-	Raw            map[string]any
-	CreatedAt      time.Time
-	PublishedAt    *time.Time
-	DeletedAt      *time.Time
+	ID              string
+	URI             string
+	AttributedTo    string
+	AuthorID        string
+	Text            string
+	ContentWarning  *string
+	Sensitive       bool
+	InReplyToURI    string
+	ReplyID         string
+	QuoteURI        string
+	QuoteID         string
+	RenoteID        string
+	RenoteURI       string
+	Visibility      Visibility
+	MentionURIs     []string
+	VisibleUserURIs []string
+	Hashtags        []string
+	Emojis          []Emoji
+	Attachments     []Attachment
+	Raw             map[string]any
+	CreatedAt       time.Time
+	PublishedAt     *time.Time
+	DeletedAt       *time.Time
 }
 
 type Emoji struct {
