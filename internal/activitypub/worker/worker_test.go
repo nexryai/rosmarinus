@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
@@ -331,6 +332,21 @@ type fakeNoteRepo struct {
 
 type fakeNotificationRepo struct {
 	notifications map[string]*notifications.Notification
+}
+
+type fakeEmojiRepo struct {
+	emojis map[string]*emojis.Emoji
+}
+
+func (r *fakeEmojiRepo) UpsertRemote(_ context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
+	if r.emojis == nil {
+		r.emojis = map[string]*emojis.Emoji{}
+	}
+	key := emoji.Host + "\x00" + emoji.Name
+	copy := emoji
+	copy.ID = "emoji-" + emoji.Name
+	r.emojis[key] = &copy
+	return &copy, nil
 }
 
 func (r *fakeNotificationRepo) Upsert(_ context.Context, notification notifications.Notification) (*notifications.Notification, error) {
@@ -2515,10 +2531,12 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 		},
 	}}
 	reactionRepo := &fakeReactionRepo{}
+	emojiRepo := &fakeEmojiRepo{}
 	notificationRepo := &fakeNotificationRepo{}
 	connectorPublisher := &fakeConnectorPublisher{}
 	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	h.SetNotificationRepository(notificationRepo)
+	h.SetEmojiRepository(emojiRepo)
 	h.SetConnectorPublisher(connectorPublisher)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
@@ -2530,6 +2548,11 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 			"_misskey_reaction": ":party@example.com:",
 			"content":           "ignored",
 			"name":              "also-ignored",
+			"tag": []any{map[string]any{
+				"id": "https://remote.example/emojis/party", "type": "Emoji", "name": ":party:",
+				"updated": "2026-08-24T00:00:00Z",
+				"icon":    map[string]any{"url": "https://remote.example/files/party.webp", "mediaType": "image/webp"},
+			}},
 		},
 		Signature: map[string]any{
 			"keyId":         "https://remote.example/users/alice#main-key",
@@ -2557,6 +2580,10 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 	}
 	if reaction.Reaction != ":party@example.com:" || reaction.RemoteActivityID != "https://remote.example/activities/like" {
 		t.Fatalf("unexpected reaction payload: %+v", reaction)
+	}
+	storedEmoji := emojiRepo.emojis["remote.example\x00party"]
+	if storedEmoji == nil || storedEmoji.URI != "https://remote.example/emojis/party" || storedEmoji.OriginalURL != "https://remote.example/files/party.webp" {
+		t.Fatalf("reaction emoji was not upserted: %+v", storedEmoji)
 	}
 	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindReaction {
 		t.Fatalf("reaction notification was not persisted/published: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)

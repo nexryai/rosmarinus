@@ -332,6 +332,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
 - [ ] Enforce `visibleUserUris` when projecting `specified` Notes; do not use
       `mentionUris` as a content-authorization substitute.
+- [ ] Resolve remote custom emoji through an explicit `{ host, name }`
+      projection and treat a remote `publicUrl` as untrusted remote media.
 - [ ] Make relationship views tolerate Block-driven soft deletion of either
       follow direction and rebuild state from `blocks` plus active `follows`.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the

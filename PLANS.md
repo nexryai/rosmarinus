@@ -351,8 +351,9 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Extract remote `Emoji` names from Actor tags; media upsert remains part
       of the shared custom-emoji pipeline below.
 - [x] Normalize `:name:` to `name`.
-- [ ] Upsert by `(host, name)`.
-- [ ] Update existing emoji if AP URI, updated timestamp, or original URL changes.
+- [x] Upsert Note, Actor, and reaction emoji tags by `(host, name)`.
+- [x] Update existing emoji if AP URI, remote updated timestamp, or original
+      URL changes.
 
 ### Polls
 
@@ -699,7 +700,7 @@ workflow may require both services to update the same document or collection.
 - [x] `follows`
 - [ ] `follow_requests`
 - [x] `blocks`
-- [ ] `emojis`
+- [x] `emojis`
 - [ ] `media`
 - [ ] `instances`
 - [x] `abuse_reports`
@@ -735,7 +736,7 @@ workflow may require both services to update the same document or collection.
 - [x] `notifications`: `{ recipientActorId, createdAt, _id }` and
       `{ recipientAccountId, isRead, createdAt, _id }`
 - [x] `notifications`: unique `{ recipientActorId, kind, remoteActivityId }`
-- [ ] `emojis`: unique `{ name, host }`
+- [x] `emojis`: unique `{ host, name }` and sparse `uri`
 - [ ] `instances`: unique `host`
 - [ ] `media`: unique sparse `uri`, and content hash if available
 - [x] `connector_command_receipts`: unique `{ accountId, requestId }`
@@ -912,7 +913,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement follow request storage without unlocked-account auto-accept.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
-- [ ] Implement reaction emoji extraction and counts.
+- [x] Implement reaction emoji extraction into the shared remote emoji store.
+- [ ] Implement reaction counts.
 - [x] Implement durable reaction notifications and local reaction delivery.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
 - [x] Implement current-Misskey-compatible Announce visibility checks.

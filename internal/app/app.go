@@ -41,6 +41,7 @@ type App struct {
 	follows                     *mongostore.FollowRepository
 	blocks                      *mongostore.BlockRepository
 	reactions                   *mongostore.ReactionRepository
+	emojis                      *mongostore.EmojiRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
 	salviaAccounts              *mongostore.SalviaAccountRepository
@@ -108,6 +109,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	followRepo := mongostore.NewFollowRepository(mongoDB)
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
+	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
@@ -144,6 +146,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)
+	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
@@ -203,6 +206,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		follows:                    followRepo,
 		blocks:                     blockRepo,
 		reactions:                  reactionRepo,
+		emojis:                     emojiRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
 		salviaAccounts:             salviaAccountRepo,

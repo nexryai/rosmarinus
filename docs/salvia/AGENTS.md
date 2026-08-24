@@ -127,6 +127,10 @@ For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
 `visibleUserUris` audience before returning content. Do not substitute
 `mentionUris` as the authorization list.
 
+Resolve remote custom emoji by the Rosmarinus-owned `{ host, name }` key. Treat
+`originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only;
+`publicUrl` may still be a remote HTTPS URL until media caching is implemented.
+
 An accepted ActivityPub Block removes pending/active follow relationships in
 both directions. Recompute UI relationship state from Rosmarinus-owned
 `blocks` and `follows`; do not preserve or repair a separate Salvia follow flag.

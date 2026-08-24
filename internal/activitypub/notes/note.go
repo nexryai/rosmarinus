@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -14,6 +15,7 @@ import (
 const PublicAudience = "https://www.w3.org/ns/activitystreams#Public"
 
 const maxRemoteNoteMentions = 20
+const maxRemoteNoteEmojis = 100
 
 var earliestSafePublishedAt = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 
@@ -314,7 +316,11 @@ func ExtractHashtags(tags any) []string {
 func ExtractEmojis(tags any) []domainnotes.Emoji {
 	items := aptypes.ToArray(tags)
 	out := make([]domainnotes.Emoji, 0, len(items))
+	seen := map[string]struct{}{}
 	for _, item := range items {
+		if len(out) >= maxRemoteNoteEmojis {
+			break
+		}
 		tag, ok := item.(map[string]any)
 		if !ok || !aptypes.IsType(tag, "Emoji") {
 			continue
@@ -324,22 +330,27 @@ func ExtractEmojis(tags any) []domainnotes.Emoji {
 			continue
 		}
 		iconURL, ok := icon["url"].(string)
-		if !ok || iconURL == "" {
+		if !ok || len(iconURL) > 512 || !isHTTPSURL(iconURL) {
 			continue
 		}
 		name, ok := tag["name"].(string)
-		if !ok || name == "" {
+		name = normalizeEmojiName(name)
+		if !ok || name == "" || utf8.RuneCountInString(name) > 128 {
 			continue
 		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
 		emoji := domainnotes.Emoji{
-			Name:      normalizeEmojiName(name),
+			Name:      name,
 			IconURL:   iconURL,
 			MediaType: "image/png",
 		}
-		if id, ok := tag["id"].(string); ok {
+		if id, ok := tag["id"].(string); ok && len(id) <= 512 && isHTTPSURL(id) {
 			emoji.URI = id
 		}
-		if mediaType, ok := icon["mediaType"].(string); ok && mediaType != "" {
+		if mediaType, ok := icon["mediaType"].(string); ok && mediaType != "" && len(mediaType) <= 64 {
 			emoji.MediaType = mediaType
 		}
 		if updated, ok := tag["updated"].(string); ok && updated != "" {
@@ -414,9 +425,7 @@ func containsPublic(ids []string) bool {
 }
 
 func normalizeEmojiName(name string) string {
-	name = strings.TrimPrefix(name, ":")
-	name = strings.TrimSuffix(name, ":")
-	return name
+	return strings.ReplaceAll(strings.TrimSpace(name), ":", "")
 }
 
 func contains(ids []string, target string) bool {

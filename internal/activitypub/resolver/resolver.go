@@ -15,6 +15,7 @@ import (
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/mfm"
 )
@@ -43,6 +44,7 @@ type Resolver struct {
 	webFinger WebFinger
 	policy    FederationPolicy
 	notes     domainnotes.Repository
+	emojis    emojis.Repository
 	locker    ObjectLocker
 }
 
@@ -64,6 +66,10 @@ func (r *Resolver) SetFederationPolicy(policy FederationPolicy) {
 
 func (r *Resolver) SetNoteRepository(notes domainnotes.Repository) {
 	r.notes = notes
+}
+
+func (r *Resolver) SetEmojiRepository(repository emojis.Repository) {
+	r.emojis = repository
 }
 
 func (r *Resolver) SetObjectLocker(locker ObjectLocker) {
@@ -157,6 +163,7 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 		}
 		return nil, err
 	}
+	_ = r.upsertRemoteEmojis(ctx, actor.Host, apnotes.ExtractEmojis(object["tag"]))
 	if existing != nil {
 		actor.FeaturedNoteIDs = existing.FeaturedNoteIDs
 	}
@@ -322,7 +329,8 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 		Text: parsed.Text, ContentWarning: parsed.ContentWarning, Sensitive: parsed.Sensitive,
 		InReplyToURI: parsed.InReplyToURI, QuoteURI: parsed.QuoteURI,
 		Visibility: domainnotes.Visibility(parsed.Visibility), MentionURIs: parsed.MentionURIs,
-		Hashtags: parsed.Hashtags, Emojis: parsed.Emojis, Attachments: parsed.Attachments,
+		VisibleUserURIs: parsed.VisibleUserURIs,
+		Hashtags:        parsed.Hashtags, Emojis: parsed.Emojis, Attachments: parsed.Attachments,
 		Raw: object, CreatedAt: time.Now().UTC(), PublishedAt: activityPublishedAt(object),
 	}
 	if reply != nil {
@@ -331,7 +339,24 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 	if quote != nil {
 		note.QuoteID = quote.ID
 	}
+	_ = r.upsertRemoteEmojis(ctx, author.Host, parsed.Emojis)
 	return r.notes.UpsertRemoteNote(ctx, note)
+}
+
+func (r *Resolver) upsertRemoteEmojis(ctx context.Context, host *string, values []domainnotes.Emoji) error {
+	if r.emojis == nil || host == nil {
+		return nil
+	}
+	for _, value := range values {
+		if _, err := r.emojis.UpsertRemote(ctx, emojis.Emoji{
+			Host: *host, Name: value.Name, URI: value.URI,
+			OriginalURL: value.IconURL, MediaType: value.MediaType,
+			RemoteUpdatedAt: value.UpdatedAt,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Resolver) resolveNoteLinks(ctx context.Context, parsed *apnotes.Note, resolution *noteResolution) (*domainnotes.Note, *domainnotes.Note, error) {

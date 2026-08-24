@@ -25,6 +25,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
@@ -66,6 +67,7 @@ type Handler struct {
 	notes         domainnotes.Repository
 	follows       follows.Repository
 	blocks        blocks.Repository
+	emojis        emojis.Repository
 	reactions     reactions.Repository
 	reports       reports.Repository
 	notifications notifications.Repository
@@ -103,6 +105,11 @@ func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 
 func (h *Handler) SetNotificationRepository(repository notifications.Repository) {
 	h.notifications = repository
+}
+
+func (h *Handler) SetEmojiRepository(repository emojis.Repository) {
+	h.emojis = repository
+	h.resolver.SetEmojiRepository(repository)
 }
 
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
@@ -856,6 +863,9 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	parsed, err := apnotes.ParseRemoteNote(object, uri)
 	if err != nil {
 		return fmt.Sprintf("skip: invalid note: %v", err), nil
+	}
+	if err := h.upsertRemoteEmojis(ctx, actor, parsed.Emojis); err != nil && h.logger != nil {
+		h.logger.Printf("activitypub: store Create emoji tags: %v", err)
 	}
 	reply, quote, err := h.resolver.ResolveNoteLinks(ctx, parsed.URI, parsed.InReplyToURI, parsed.QuoteURI)
 	if err != nil {
@@ -1656,6 +1666,9 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		return "skip: reaction is blocked", nil
 	}
 	reaction := reactionFromActivity(activity)
+	if err := h.upsertRemoteEmojis(ctx, actor, apnotes.ExtractEmojis(activity["tag"])); err != nil && h.logger != nil {
+		h.logger.Printf("activitypub: store reaction emoji tags: %v", err)
+	}
 	existing, err := h.reactions.Find(ctx, note.ID, actor.ID)
 	if err != nil {
 		return "", err
@@ -1775,6 +1788,22 @@ func canAnnounceNote(actor *actors.Actor, note *domainnotes.Note) bool {
 	default:
 		return false
 	}
+}
+
+func (h *Handler) upsertRemoteEmojis(ctx context.Context, actor *actors.Actor, values []domainnotes.Emoji) error {
+	if h.emojis == nil || actor == nil || actor.Host == nil {
+		return nil
+	}
+	for _, value := range values {
+		if _, err := h.emojis.UpsertRemote(ctx, emojis.Emoji{
+			Host: *actor.Host, Name: value.Name, URI: value.URI,
+			OriginalURL: value.IconURL, MediaType: value.MediaType,
+			RemoteUpdatedAt: value.UpdatedAt,
+		}); err != nil {
+			return fmt.Errorf("upsert remote emoji %s@%s: %w", value.Name, *actor.Host, err)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) createNoteNotifications(ctx context.Context, source *actors.Actor, note, reply *domainnotes.Note, activityID string) error {

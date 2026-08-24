@@ -184,6 +184,17 @@ func TestConcordeNoteExtractsTags(t *testing.T) {
 	}
 }
 
+func TestCurrentMisskeyEmojiExtractionRejectsUnsafeAndDeduplicates(t *testing.T) {
+	emojis := ExtractEmojis([]any{
+		map[string]any{"type": "Emoji", "name": ":party:", "icon": map[string]any{"url": "http://remote.example/party.png"}},
+		map[string]any{"type": "Emoji", "name": ":party:", "icon": map[string]any{"url": "https://remote.example/party.webp"}},
+		map[string]any{"type": "Emoji", "name": "::party::", "icon": map[string]any{"url": "https://remote.example/duplicate.webp"}},
+	})
+	if len(emojis) != 1 || emojis[0].Name != "party" || emojis[0].IconURL != "https://remote.example/party.webp" {
+		t.Fatalf("emojis = %#v", emojis)
+	}
+}
+
 func TestConcordeNoteExtractsAttachments(t *testing.T) {
 	note, err := ParseRemoteNote(map[string]any{
 		"id":           "https://host1.test/notes/1",

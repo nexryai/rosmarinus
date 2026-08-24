@@ -12,7 +12,7 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `follows`, `reactions`, `blocks`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
 Use separate MongoDB users with collection-scoped custom roles. The Salvia role
@@ -71,6 +71,12 @@ For `specified` Notes, Salvia must apply `visibleUserUris` in addition to
 Actor/account ownership before returning content to a browser. `mentionUris`
 is a notification/rendering projection and is not itself the authorization
 list.
+
+Remote custom emoji metadata is keyed uniquely by `{ host, name }` in the
+Rosmarinus-owned `emojis` collection. `uri`, `originalUrl`, `publicUrl`,
+`mediaType`, `remoteUpdatedAt`, and `updatedAt` are read-only federation state.
+Until Rosmarinus records a cached media URL, `publicUrl` equals the validated
+remote HTTPS `originalUrl`; Salvia must treat it as remote content.
 
 Local user-facing federation notifications are durable documents in the
 Rosmarinus-owned `notifications` collection:

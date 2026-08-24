@@ -9,6 +9,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainemojis "github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 )
 
@@ -100,6 +101,26 @@ func TestResolveActorRefreshesStaleRemoteActor(t *testing.T) {
 	}
 	if fetcher.calls != 1 || repo.upserted == nil || resolved.Name != "Refreshed" {
 		t.Fatalf("resolved=%+v fetch calls=%d upserted=%+v", resolved, fetcher.calls, repo.upserted)
+	}
+}
+
+func TestResolveActorUpsertsRemoteEmojiTags(t *testing.T) {
+	uri := "https://remote.example/users/alice"
+	fetcher := &countingResolverFetcher{object: map[string]any{
+		"id": uri, "type": "Person", "preferredUsername": "alice", "inbox": uri + "/inbox",
+		"tag": []any{map[string]any{
+			"id": "https://remote.example/emojis/party", "type": "Emoji", "name": ":party:",
+			"icon": map[string]any{"url": "https://remote.example/files/party.webp"},
+		}},
+	}}
+	emojiRepo := &resolverEmojiRepository{}
+	resolver := New(&resolverActorRepository{}, fetcher, nil)
+	resolver.SetEmojiRepository(emojiRepo)
+	if _, err := resolver.ResolveActor(context.Background(), uri); err != nil {
+		t.Fatalf("ResolveActor returned error: %v", err)
+	}
+	if emojiRepo.upserted == nil || emojiRepo.upserted.Host != "remote.example" || emojiRepo.upserted.Name != "party" {
+		t.Fatalf("emoji was not upserted: %+v", emojiRepo.upserted)
 	}
 }
 
@@ -440,6 +461,15 @@ func TestParseRemoteActorRejectsWrongCollectionHosts(t *testing.T) {
 type resolverActorRepository struct {
 	upserted *actors.Actor
 	existing *actors.Actor
+}
+
+type resolverEmojiRepository struct {
+	upserted *domainemojis.Emoji
+}
+
+func (r *resolverEmojiRepository) UpsertRemote(_ context.Context, emoji domainemojis.Emoji) (*domainemojis.Emoji, error) {
+	r.upserted = &emoji
+	return &emoji, nil
 }
 
 func (r *resolverActorRepository) FindLocalByID(context.Context, string) (*actors.Actor, error) {
