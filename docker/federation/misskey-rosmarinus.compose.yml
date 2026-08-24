@@ -32,6 +32,7 @@ services:
       LOCAL_ACTOR_USERNAME: relay
       LOCAL_ACTOR_TYPE: Service
       USER_AGENT: rosmarinus-federation-test/0.0.1
+      MEDIA_ALLOWED_PRIVATE_NETWORKS: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     volumes:
       - type: bind
         source: ./certificates/rootCA.crt

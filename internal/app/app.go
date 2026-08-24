@@ -24,6 +24,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -43,6 +44,7 @@ type App struct {
 	reactions                   *mongostore.ReactionRepository
 	emojis                      *mongostore.EmojiRepository
 	polls                       *mongostore.PollRepository
+	media                       *mongostore.MediaRepository
 	accountCleanup              *mongostore.AccountCleanupRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
@@ -113,6 +115,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
+	mediaRepo := mongostore.NewMediaRepository(mongoDB)
 	accountCleanupRepo := mongostore.NewAccountCleanupRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
@@ -152,6 +155,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetActivityLocker(apLocker)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
+	apWorker.SetMediaRepository(mediaRepo, mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
@@ -214,6 +218,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		reactions:                  reactionRepo,
 		emojis:                     emojiRepo,
 		polls:                      pollRepo,
+		media:                      mediaRepo,
 		accountCleanup:             accountCleanupRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
@@ -232,7 +237,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:                queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithStores(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo),
+			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

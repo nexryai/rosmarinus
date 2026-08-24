@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -30,11 +31,13 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -64,6 +67,11 @@ type ConnectorPublisher interface {
 	PublishFollowApprovalRejected(context.Context, connector.FollowApproval) error
 }
 
+type MediaFetcher interface {
+	Fetch(context.Context, string) (mediafetch.Result, error)
+	ValidateURL(*url.URL) error
+}
+
 type Handler struct {
 	cfg           config.Config
 	logger        *log.Logger
@@ -77,6 +85,8 @@ type Handler struct {
 	notifications notifications.Repository
 	polls         polls.Repository
 	cleanup       cleanup.Repository
+	media         domainmedia.Repository
+	mediaFetcher  MediaFetcher
 	queue         QueueClient
 	client        APClient
 	connector     ConnectorPublisher
@@ -127,6 +137,12 @@ func (h *Handler) SetAccountCleanupRepository(repository cleanup.Repository) {
 	h.cleanup = repository
 }
 
+func (h *Handler) SetMediaRepository(repository domainmedia.Repository, fetcher MediaFetcher) {
+	h.media = repository
+	h.mediaFetcher = fetcher
+	h.resolver.SetMediaScheduler(h)
+}
+
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
 	if h.notifications == nil {
 		return connector.NotificationRead{}, fmt.Errorf("notification repository is not configured")
@@ -151,6 +167,89 @@ func (h *Handler) Register(server *queue.AsynqServer) {
 	server.HandleFunc(queue.TaskDeliver, h.HandleDeliverTask)
 	server.HandleFunc(queue.TaskAccountDelete, h.HandleAccountDeleteTask)
 	server.HandleFunc(queue.TaskPollEnded, h.HandlePollEndedTask)
+	server.HandleFunc(queue.TaskMedia, h.HandleMediaFetchTask)
+}
+
+func (h *Handler) ScheduleMedia(ctx context.Context, rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	if h.media == nil || h.queue == nil {
+		return nil
+	}
+	target, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return err
+	}
+	if h.mediaFetcher == nil {
+		return fmt.Errorf("media fetcher is not configured")
+	}
+	if err := h.mediaFetcher.ValidateURL(target); err != nil {
+		return err
+	}
+	publicBase := strings.TrimRight(h.cfg.PublicURL, "/") + "/media/"
+	mediaRecord, err := h.media.UpsertPending(ctx, target.String(), publicBase+domainmedia.IDForURL(target.String()))
+	if err != nil {
+		return err
+	}
+	if mediaRecord.State == domainmedia.StateReady {
+		return nil
+	}
+	return h.queue.Enqueue(ctx, queue.NewMediaFetchTask(mediaRecord.ID, mediaRecord.OriginalURL))
+}
+
+func (h *Handler) HandleMediaFetchTask(ctx context.Context, task *asynq.Task) error {
+	var payload queue.MediaFetchPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("decode media fetch task: %w", err)
+	}
+	if payload.Version != 1 || payload.MediaID == "" || payload.URL == "" {
+		return fmt.Errorf("invalid media fetch task payload")
+	}
+	if h.media == nil || h.mediaFetcher == nil {
+		return fmt.Errorf("media repository and fetcher are required")
+	}
+	record, err := h.media.FindByID(ctx, payload.MediaID)
+	if err != nil {
+		return err
+	}
+	if record == nil || record.OriginalURL != payload.URL {
+		return fmt.Errorf("media fetch task does not match stored source")
+	}
+	if record.State == domainmedia.StateReady {
+		return nil
+	}
+	var release func(context.Context) error
+	if h.locker != nil {
+		var acquired bool
+		release, acquired, err = h.locker.Acquire(ctx, "media:"+record.ID)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return fmt.Errorf("media fetch is already in progress")
+		}
+		defer release(context.Background())
+	}
+	result, err := h.mediaFetcher.Fetch(ctx, record.OriginalURL)
+	if err != nil {
+		_ = h.media.MarkFailed(ctx, record.ID, err.Error())
+		return err
+	}
+	digestBytes := sha256.Sum256(result.Body)
+	digest := hex.EncodeToString(digestBytes[:])
+	if err := h.media.StoreBlob(ctx, record.ID, bytes.NewReader(result.Body), result.ContentType, int64(len(result.Body)), digest); err != nil {
+		_ = h.media.MarkFailed(ctx, record.ID, err.Error())
+		return err
+	}
+	if _, err := h.media.MarkReady(ctx, record.ID, result.ContentType, int64(len(result.Body)), digest); err != nil {
+		return err
+	}
+	if h.logger != nil {
+		h.logger.Printf("media: cached id=%s bytes=%d content_type=%s", record.ID, len(result.Body), result.ContentType)
+	}
+	return nil
 }
 
 func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task) error {
@@ -521,9 +620,11 @@ func (h *Handler) performUpdate(ctx context.Context, actor *actors.Actor, activi
 		updated.PublicKeyID = actor.PublicKeyID
 		updated.PublicKeyPEM = actor.PublicKeyPEM
 	}
-	if _, err := h.repo.UpsertRemoteActor(ctx, updated); err != nil {
+	storedActor, err := h.repo.UpsertRemoteActor(ctx, updated)
+	if err != nil {
 		return "", fmt.Errorf("store updated actor: %w", err)
 	}
+	h.scheduleActorMedia(ctx, storedActor)
 	return "ok: Person updated", nil
 }
 
@@ -1015,6 +1116,7 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		if err := h.storeRemotePoll(ctx, actor, existing, object); err != nil {
 			return "", err
 		}
+		h.scheduleNoteMedia(ctx, existing)
 		var reply *domainnotes.Note
 		if existing.ReplyID != "" {
 			reply, err = h.notes.FindByID(ctx, existing.ReplyID)
@@ -1074,6 +1176,7 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err := h.storeRemotePoll(ctx, actor, stored, object); err != nil {
 		return "", err
 	}
+	h.scheduleNoteMedia(ctx, stored)
 	activityID, _ := activity["id"].(string)
 	if err := h.createNoteNotifications(ctx, actor, stored, reply, activityID); err != nil {
 		return "", err
@@ -1097,6 +1200,33 @@ func (h *Handler) storeRemotePoll(ctx context.Context, actor *actors.Actor, note
 	poll.AuthorHost = actor.Host
 	_, err = h.polls.UpsertRemote(ctx, *poll)
 	return err
+}
+
+func (h *Handler) scheduleActorMedia(ctx context.Context, actor *actors.Actor) {
+	if actor == nil {
+		return
+	}
+	for _, rawURL := range []string{actor.AvatarURL, actor.BannerURL} {
+		if err := h.ScheduleMedia(ctx, rawURL); err != nil && h.logger != nil {
+			h.logger.Printf("media: schedule actor source=%s: %v", rawURL, err)
+		}
+	}
+}
+
+func (h *Handler) scheduleNoteMedia(ctx context.Context, note *domainnotes.Note) {
+	if note == nil {
+		return
+	}
+	for _, attachment := range note.Attachments {
+		if err := h.ScheduleMedia(ctx, attachment.URL); err != nil && h.logger != nil {
+			h.logger.Printf("media: schedule note attachment=%s: %v", attachment.URL, err)
+		}
+	}
+	for _, emoji := range note.Emojis {
+		if err := h.ScheduleMedia(ctx, emoji.IconURL); err != nil && h.logger != nil {
+			h.logger.Printf("media: schedule note emoji=%s: %v", emoji.IconURL, err)
+		}
+	}
 }
 
 func (h *Handler) performRemotePollVote(ctx context.Context, actor *actors.Actor, object map[string]any, reply *domainnotes.Note) (bool, string, error) {
@@ -2255,6 +2385,9 @@ func (h *Handler) upsertRemoteEmojis(ctx context.Context, actor *actors.Actor, v
 			RemoteUpdatedAt: value.UpdatedAt,
 		}); err != nil {
 			return fmt.Errorf("upsert remote emoji %s@%s: %w", value.Name, *actor.Host, err)
+		}
+		if err := h.ScheduleMedia(ctx, value.IconURL); err != nil && h.logger != nil {
+			h.logger.Printf("activitypub: schedule emoji media url=%s error=%v", value.IconURL, err)
 		}
 	}
 	return nil

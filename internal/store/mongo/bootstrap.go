@@ -244,5 +244,22 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Options: options.Index().SetName("idx_notifications_source_created_at").SetSparse(true),
 		},
 	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("media").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "originalUrl", Value: 1}},
+			Options: options.Index().SetName("uniq_media_original_url").SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "state", Value: 1}, {Key: "createdAt", Value: 1}},
+			Options: options.Index().SetName("idx_media_state_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "sha256", Value: 1}},
+			Options: options.Index().SetName("idx_media_sha256").SetSparse(true),
+		},
+	})
 	return err
 }

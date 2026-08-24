@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -51,6 +52,10 @@ type Config struct {
 
 	InboxQueue   QueueConfig
 	DeliverQueue QueueConfig
+
+	MediaMaxBytes               int64
+	MediaFetchTimeout           time.Duration
+	MediaAllowedPrivateNetworks []string
 }
 
 type QueueConfig struct {
@@ -104,6 +109,9 @@ func Load(lookup LookupFunc) (Config, error) {
 			Timeout:       getDuration(lookup, "DELIVER_TIMEOUT", time.Minute),
 			RatePerSecond: getInt(lookup, "DELIVER_RATE_PER_SECOND", 128),
 		},
+		MediaMaxBytes:               getInt64(lookup, "MEDIA_MAX_BYTES", 20*1024*1024),
+		MediaFetchTimeout:           getDuration(lookup, "MEDIA_FETCH_TIMEOUT", time.Minute),
+		MediaAllowedPrivateNetworks: splitCSV(get(lookup, "MEDIA_ALLOWED_PRIVATE_NETWORKS", "")),
 	}
 
 	var err error
@@ -220,6 +228,14 @@ func (c Config) Validate() error {
 	if c.InboxQueue.Timeout <= 0 || c.DeliverQueue.Timeout <= 0 {
 		return fmt.Errorf("queue timeouts must be positive")
 	}
+	if c.MediaMaxBytes <= 0 || c.MediaFetchTimeout <= 0 {
+		return fmt.Errorf("media max bytes and fetch timeout must be positive")
+	}
+	for _, network := range c.MediaAllowedPrivateNetworks {
+		if _, err := netip.ParsePrefix(network); err != nil {
+			return fmt.Errorf("MEDIA_ALLOWED_PRIVATE_NETWORKS contains invalid CIDR %q: %w", network, err)
+		}
+	}
 	if c.LocalActorUsername != "" {
 		if !validLocalUsername(c.LocalActorUsername) {
 			return fmt.Errorf("LOCAL_ACTOR_USERNAME must match ActivityPub username rules")
@@ -246,6 +262,18 @@ func getInt(lookup LookupFunc, key string, fallback int) int {
 		return fallback
 	}
 	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func getInt64(lookup LookupFunc, key string, fallback int64) int64 {
+	v, ok := lookup(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
 		return fallback
 	}

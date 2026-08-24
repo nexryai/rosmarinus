@@ -121,7 +121,8 @@ Treat remote Actor `summary`, `url`, `profileFields`, `birthday`, `location`,
 `featuredNoteIds` contains resolved `notes._id` values for pinned/featured
 posts. `summary` and profile-field values are already converted to
 Rosmarinus' MFM-compatible text. The avatar/banner fields are validated remote
-HTTPS URLs, not a guarantee of locally cached media.
+HTTPS source URLs. Join them to `media.originalUrl` and use `media.publicUrl`
+only when `state` is `ready`.
 
 Remote Note relationships expose both federation URIs (`inReplyToUri`,
 `quoteUri`) and resolved Rosmarinus IDs (`replyId`, `quoteId`). Use the ID fields
@@ -133,8 +134,14 @@ For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
 `mentionUris` as the authorization list.
 
 Resolve remote custom emoji by the Rosmarinus-owned `{ host, name }` key. Treat
-`originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only;
-`publicUrl` may still be a remote HTTPS URL until media caching is implemented.
+`originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only.
+Join `emojis.originalUrl` to `media.originalUrl`; the emoji document's
+`publicUrl` is remote compatibility metadata, not the local cache URL.
+
+Treat `media` as a read-only Rosmarinus projection. Use its `publicUrl` only for
+`state: "ready"`; tolerate `pending` and `failed` with placeholders or an
+explicitly controlled fallback. Never access the private `media_fs.files` or
+`media_fs.chunks` collections from Salvia.
 
 Join ActivityPub Question notes to `polls` by `polls._id = notes._id`. Preserve
 the stored choice order and pair each choice with the vote count at the same

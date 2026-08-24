@@ -75,6 +75,17 @@ func TestNewPollEndedTask(t *testing.T) {
 	}
 }
 
+func TestNewMediaFetchTask(t *testing.T) {
+	task := NewMediaFetchTask("media-id", "https://remote.example/file.png")
+	if task.Type != TaskMedia || task.Queue != QueueMedia || task.MaxRetry != 7 || task.Timeout != 2*time.Minute {
+		t.Fatalf("unexpected task: %+v", task)
+	}
+	payload, ok := task.Payload.(MediaFetchPayload)
+	if !ok || payload.Version != 1 || payload.MediaID != "media-id" || payload.URL != "https://remote.example/file.png" {
+		t.Fatalf("unexpected payload: %#v", task.Payload)
+	}
+}
+
 func TestAPBackoffRange(t *testing.T) {
 	got := APBackoff(0, nil, nil)
 	if got < time.Minute || got > 72*time.Second {

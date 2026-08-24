@@ -36,6 +36,11 @@ const salviaCollections = [
   "salvia_actor_settings",
 ];
 
+const rosmarinusInternalCollections = [
+  "media_fs.files",
+  "media_fs.chunks",
+];
+
 const writeActions = [
   "find",
   "insert",
@@ -51,6 +56,10 @@ applicationDB.createRole({
   role: "rosmarinusService",
   privileges: [
     ...rosmarinusCollections.map((collection) => ({
+      resource: { db: databaseName, collection },
+      actions: writeActions,
+    })),
+    ...rosmarinusInternalCollections.map((collection) => ({
       resource: { db: databaseName, collection },
       actions: writeActions,
     })),

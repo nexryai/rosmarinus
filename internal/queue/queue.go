@@ -60,6 +60,12 @@ type PollEndedPayload struct {
 	NoteID  string `json:"note_id"`
 }
 
+type MediaFetchPayload struct {
+	Version int    `json:"version"`
+	MediaID string `json:"media_id"`
+	URL     string `json:"url"`
+}
+
 func NewInboxTask(activity map[string]any, signature map[string]any, maxRetry int, timeout time.Duration) Task {
 	return Task{
 		Type:     TaskInbox,
@@ -110,5 +116,12 @@ func NewPollEndedTask(noteID string, processIn time.Duration) Task {
 	return Task{
 		Type: TaskPollEnded, Queue: QueuePollEnded, MaxRetry: 10, Timeout: 5 * time.Minute, ProcessIn: processIn,
 		Payload: PollEndedPayload{Version: 1, NoteID: noteID},
+	}
+}
+
+func NewMediaFetchTask(mediaID, rawURL string) Task {
+	return Task{
+		Type: TaskMedia, Queue: QueueMedia, MaxRetry: 7, Timeout: 2 * time.Minute,
+		Payload: MediaFetchPayload{Version: 1, MediaID: mediaID, URL: rawURL},
 	}
 }

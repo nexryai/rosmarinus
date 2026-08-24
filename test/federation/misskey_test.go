@@ -3,9 +3,11 @@ package federation_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +23,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -58,6 +61,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	followRepo := mongostore.NewFollowRepository(db)
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
+	mediaRepo := mongostore.NewMediaRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -120,20 +124,36 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && relationship != nil && relationship.Status == follows.StatusAccepted
 	})
 
-	// Phase 3: update the followed Misskey Actor's display name and verify
-	// Rosmarinus authenticates Update(Person) and refreshes the Actor document.
+	// Phase 3: upload an avatar and update the followed Misskey Actor, verifying
+	// Rosmarinus authenticates Update(Person) and refreshes its profile fields.
 	const updatedRemoteActorName = "Updated Misskey federation actor"
+	avatarPNG, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatalf("decode avatar fixture: %v", err)
+	}
+	avatar := misskey.uploadFile(ctx, admin.Token, "avatar.png", avatarPNG)
 	misskey.call(ctx, "i/update", map[string]any{
-		"i":    admin.Token,
-		"name": updatedRemoteActorName,
+		"i": admin.Token, "name": updatedRemoteActorName, "avatarId": avatar.ID,
 	}, nil)
 	waitFor(t, ctx, "Update(Person) stored by Rosmarinus", func() bool {
 		var findErr error
 		remoteActor, findErr = actorRepo.FindByURI(ctx, remoteActorURI)
-		return findErr == nil && remoteActor != nil && remoteActor.Name == updatedRemoteActorName
+		return findErr == nil && remoteActor != nil && remoteActor.Name == updatedRemoteActorName && remoteActor.AvatarURL != ""
 	})
 
-	// Phase 4: publish a public Misskey note and verify Rosmarinus accepts,
+	// Phase 4: wait for the updated remote avatar to be fetched into GridFS and
+	// verify Rosmarinus serves the ready cache through its public media URL.
+	var cachedAvatar *domainmedia.Media
+	waitFor(t, ctx, "Misskey avatar cached by Rosmarinus", func() bool {
+		var findErr error
+		cachedAvatar, findErr = mediaRepo.FindByID(ctx, domainmedia.IDForURL(remoteActor.AvatarURL))
+		return findErr == nil && cachedAvatar != nil && cachedAvatar.State == domainmedia.StateReady && cachedAvatar.Size > 0
+	})
+	if status, contentType, body := misskey.getRaw(ctx, cachedAvatar.PublicURL); status != http.StatusOK || !strings.HasPrefix(contentType, "image/") || len(body) == 0 {
+		t.Fatalf("cached avatar response status=%d content_type=%q bytes=%d", status, contentType, len(body))
+	}
+
+	// Phase 5: publish a public Misskey note and verify Rosmarinus accepts,
 	// verifies, and persists the delivered Create(Note).
 	var created struct {
 		CreatedNote struct {
@@ -158,7 +178,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && remoteNote != nil && remoteNote.Text == "Hello from latest Misskey federation test"
 	})
 
-	// Phase 5: renote the public Misskey note and verify Rosmarinus accepts the
+	// Phase 6: renote the public Misskey note and verify Rosmarinus accepts the
 	// delivered Announce and stores its reference to the resolved target Note.
 	var createdRenote struct {
 		CreatedNote struct {
@@ -178,7 +198,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
 	})
 
-	// Phase 6: publish a Misskey Question and verify Rosmarinus stores its
+	// Phase 7: publish a Misskey Question and verify Rosmarinus stores its
 	// ordered choices, initial vote counts, multiplicity, and expiration.
 	var createdPoll struct {
 		CreatedNote struct {
@@ -208,7 +228,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			len(poll.Votes) == 2 && poll.Votes[0] == 0 && poll.Votes[1] == 0
 	})
 
-	// Phase 7: react to the Misskey note as the local Actor, verify Misskey
+	// Phase 8: react to the Misskey note as the local Actor, verify Misskey
 	// applies the delivered Like, dereference it, then deliver Undo(Like) and
 	// verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
@@ -255,7 +275,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.Reactions["👍"] == 0
 	})
 
-	// Phase 8: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
+	// Phase 9: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
 	// relationship is soft-deleted, and confirm Misskey removes the relay Actor
 	// from the administrator's followers.
 	var relayOnMisskey struct {
@@ -324,7 +344,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 9: make Misskey follow Rosmarinus, approve the pending request in
+	// Phase 10: make Misskey follow Rosmarinus, approve the pending request in
 	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
@@ -351,7 +371,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 10: publish a public Rosmarinus note, dereference its Create activity,
+	// Phase 11: publish a public Rosmarinus note, dereference its Create activity,
 	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
@@ -392,7 +412,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 11: vote on the delivered Rosmarinus Question from Misskey and
+	// Phase 12: vote on the delivered Rosmarinus Question from Misskey and
 	// verify Rosmarinus consumes the reply Note as a poll vote.
 	misskey.call(ctx, "notes/polls/vote", map[string]any{
 		"i": admin.Token, "noteId": misskeyLocalNoteID, "choice": 1,
@@ -402,7 +422,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && poll != nil && len(poll.Votes) == 2 && poll.Votes[1] == 1
 	})
 
-	// Phase 12: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 13: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -422,7 +442,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 13: soft-delete the local Note and verify Misskey applies the
+	// Phase 14: soft-delete the local Note and verify Misskey applies the
 	// delivered Delete(Tombstone) by removing its federated copy.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
 	if err != nil {
@@ -446,7 +466,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 14: publish a specified-visibility note, verify it is not publicly
+	// Phase 15: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"
@@ -496,6 +516,11 @@ type misskeyAccount struct {
 	Token string `json:"token"`
 }
 
+type misskeyDriveFile struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
 func newMisskeyClient(t *testing.T) *misskeyClient {
 	t.Helper()
 	return &misskeyClient{t: t, baseURL: "https://a.test", httpClient: &http.Client{Timeout: 30 * time.Second}}
@@ -521,6 +546,50 @@ func (m *misskeyClient) createAccount(ctx context.Context, adminToken, username,
 		m.t.Fatalf("Misskey account creation returned incomplete account: %+v", account)
 	}
 	return account
+}
+
+func (m *misskeyClient) uploadFile(ctx context.Context, token, filename string, data []byte) misskeyDriveFile {
+	m.t.Helper()
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	if err := writer.WriteField("i", token); err != nil {
+		m.t.Fatalf("write Misskey upload token: %v", err)
+	}
+	if err := writer.WriteField("force", "true"); err != nil {
+		m.t.Fatalf("write Misskey upload option: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		m.t.Fatalf("create Misskey upload part: %v", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		m.t.Fatalf("write Misskey upload file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		m.t.Fatalf("close Misskey upload body: %v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/api/drive/files/create", &requestBody)
+	if err != nil {
+		m.t.Fatalf("create Misskey upload request: %v", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res, err := m.httpClient.Do(req)
+	if err != nil {
+		m.t.Fatalf("upload Misskey file: %v", err)
+	}
+	defer res.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		m.t.Fatalf("read Misskey upload response: %v", err)
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		m.t.Fatalf("Misskey file upload status=%d body=%s", res.StatusCode, loggableMisskeyResponse(responseBody))
+	}
+	var file misskeyDriveFile
+	if err := json.Unmarshal(responseBody, &file); err != nil || file.ID == "" {
+		m.t.Fatalf("decode Misskey upload response: file=%+v err=%v", file, err)
+	}
+	return file
 }
 
 func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[string]any, result any) {
@@ -598,6 +667,24 @@ func (m *misskeyClient) getStatus(ctx context.Context, uri string) int {
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
 	m.t.Logf("ActivityPub status response uri=%s status=%s", uri, res.Status)
 	return res.StatusCode
+}
+
+func (m *misskeyClient) getRaw(ctx context.Context, uri string) (int, string, []byte) {
+	m.t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	if err != nil {
+		m.t.Fatalf("create raw GET request: %v", err)
+	}
+	res, err := m.httpClient.Do(req)
+	if err != nil {
+		m.t.Fatalf("raw GET %s: %v", uri, err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		m.t.Fatalf("read raw GET %s: %v", uri, err)
+	}
+	return res.StatusCode, res.Header.Get("Content-Type"), body
 }
 
 func loggableMisskeyResponse(body []byte) string {

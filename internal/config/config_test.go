@@ -37,6 +37,42 @@ func TestLoadDefaults(t *testing.T) {
 	if len(cfg.FederationBlockedHosts) != 0 {
 		t.Fatalf("unexpected blocked hosts: %v", cfg.FederationBlockedHosts)
 	}
+	if cfg.MediaMaxBytes != 20*1024*1024 || cfg.MediaFetchTimeout != time.Minute {
+		t.Fatalf("unexpected media defaults: bytes=%d timeout=%s", cfg.MediaMaxBytes, cfg.MediaFetchTimeout)
+	}
+}
+
+func TestLoadMediaConfig(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		switch key {
+		case "MEDIA_MAX_BYTES":
+			return "1048576", true
+		case "MEDIA_FETCH_TIMEOUT":
+			return "30s", true
+		case "MEDIA_ALLOWED_PRIVATE_NETWORKS":
+			return "10.0.0.0/8, fd00::/8", true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.MediaMaxBytes != 1048576 || cfg.MediaFetchTimeout != 30*time.Second || len(cfg.MediaAllowedPrivateNetworks) != 2 {
+		t.Fatalf("unexpected media config: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsInvalidMediaAllowedNetwork(t *testing.T) {
+	_, err := Load(func(key string) (string, bool) {
+		if key == "MEDIA_ALLOWED_PRIVATE_NETWORKS" {
+			return "not-a-cidr", true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatal("invalid media network was accepted")
+	}
 }
 
 func TestLoadNormalizesFederationBlockedHosts(t *testing.T) {

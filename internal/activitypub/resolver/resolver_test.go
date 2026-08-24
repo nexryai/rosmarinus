@@ -114,13 +114,18 @@ func TestResolveActorUpsertsRemoteEmojiTags(t *testing.T) {
 		}},
 	}}
 	emojiRepo := &resolverEmojiRepository{}
+	mediaScheduler := &resolverMediaScheduler{}
 	resolver := New(&resolverActorRepository{}, fetcher, nil)
 	resolver.SetEmojiRepository(emojiRepo)
+	resolver.SetMediaScheduler(mediaScheduler)
 	if _, err := resolver.ResolveActor(context.Background(), uri); err != nil {
 		t.Fatalf("ResolveActor returned error: %v", err)
 	}
 	if emojiRepo.upserted == nil || emojiRepo.upserted.Host != "remote.example" || emojiRepo.upserted.Name != "party" {
 		t.Fatalf("emoji was not upserted: %+v", emojiRepo.upserted)
+	}
+	if len(mediaScheduler.urls) != 1 || mediaScheduler.urls[0] != "https://remote.example/files/party.webp" {
+		t.Fatalf("emoji media was not scheduled: %v", mediaScheduler.urls)
 	}
 }
 
@@ -465,6 +470,15 @@ type resolverActorRepository struct {
 
 type resolverEmojiRepository struct {
 	upserted *domainemojis.Emoji
+}
+
+type resolverMediaScheduler struct {
+	urls []string
+}
+
+func (s *resolverMediaScheduler) ScheduleMedia(_ context.Context, rawURL string) error {
+	s.urls = append(s.urls, rawURL)
+	return nil
 }
 
 func (r *resolverEmojiRepository) UpsertRemote(_ context.Context, emoji domainemojis.Emoji) (*domainemojis.Emoji, error) {

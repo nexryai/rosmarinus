@@ -12,7 +12,8 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `media`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `media_fs.files`, `media_fs.chunks` | Rosmarinus | No Salvia access; served only through Rosmarinus HTTP |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
 Use separate MongoDB users with collection-scoped custom roles. The Salvia role
@@ -35,8 +36,8 @@ The read-only remote profile projection includes `summary`, `url`,
 values from the Actor's current ActivityPub featured collection. Rosmarinus
 converts ActivityPub HTML summaries and property values to its MFM-compatible
 text representation before storing them. The avatar and banner values are
-validated HTTPS source URLs; Salvia should not treat them as proof that media
-has been cached locally.
+validated HTTPS source URLs. Resolve cached media through `media.originalUrl`;
+do not treat the Actor fields themselves as cache URLs.
 
 Remote Actor documents may contain additive account-migration fields owned by
 Rosmarinus:
@@ -82,8 +83,32 @@ list.
 Remote custom emoji metadata is keyed uniquely by `{ host, name }` in the
 Rosmarinus-owned `emojis` collection. `uri`, `originalUrl`, `publicUrl`,
 `mediaType`, `remoteUpdatedAt`, and `updatedAt` are read-only federation state.
-Until Rosmarinus records a cached media URL, `publicUrl` equals the validated
-remote HTTPS `originalUrl`; Salvia must treat it as remote content.
+The emoji document's `publicUrl` remains remote compatibility metadata. Join
+`emojis.originalUrl` to `media.originalUrl` before choosing a locally cached
+asset.
+
+Rosmarinus owns the `media` metadata collection and the private GridFS bucket.
+Remote Note attachment URLs, Actor avatar/banner URLs, and emoji original URLs
+join to `media.originalUrl`. The UI-facing projection is:
+
+```text
+_id          deterministic opaque ID derived from originalUrl
+originalUrl  validated remote HTTPS source URL; unique
+publicUrl    stable Rosmarinus /media/{id} URL
+contentType  verified cached MIME type
+size         cached byte size
+sha256       cached content digest
+state        pending | ready | failed
+error        bounded diagnostic text when failed
+createdAt    first scheduling timestamp
+fetchedAt    successful fetch timestamp
+```
+
+Salvia must use `publicUrl` only when `state == "ready"`; otherwise render a
+placeholder or an explicitly controlled remote-media fallback. Salvia must not
+read `media_fs.files` or `media_fs.chunks`. Rosmarinus serves ready cache entries
+with immutable caching, ETag, and `nosniff`; active document types such as SVG,
+HTML, and XML are never admitted to the cache.
 
 ActivityPub `Question` state is stored in `polls`, keyed by the related
 `notes._id`. The read projection contains `authorId`, `authorHost`, ordered
@@ -138,7 +163,8 @@ and `follows` documents rather than preserving a UI-only follow flag.
 roles and service users on a new MongoDB deployment:
 
 - `rosmarinusService` can write and manage indexes only on Rosmarinus-owned
-  collections, and can only `find` documents in `salvia_accounts`.
+  collections (including its private GridFS bucket), and can only `find`
+  documents in `salvia_accounts`.
 - `salviaService` can write and manage indexes only on the four documented
   `salvia_*` collections, and can only `find` documents in Rosmarinus-owned
   federation collections.

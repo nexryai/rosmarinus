@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
@@ -19,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
@@ -56,6 +58,11 @@ type PollLookup interface {
 	FindByNoteID(context.Context, string) (*polls.Poll, error)
 }
 
+type MediaLookup interface {
+	FindByID(context.Context, string) (*domainmedia.Media, error)
+	OpenBlob(context.Context, string) (io.ReadCloser, error)
+}
+
 func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
 	return NewHandlerWithStores(cfg, logger, actorLookup, nil, nil, nil, queueClient)
 }
@@ -65,11 +72,16 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 	if len(pollLookups) > 0 {
 		pollLookup = pollLookups[0]
 	}
+	return NewHandlerWithAllStores(cfg, logger, actorLookup, noteLookup, followLookup, reactionLookup, queueClient, pollLookup, nil)
+}
+
+func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
 	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
+	mux.HandleFunc("/media/", mediaByID(mediaLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
@@ -77,6 +89,61 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
 	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
 	return mux
+}
+
+func mediaByID(mediaLookup MediaLookup) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if mediaLookup == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/media/"), "/")
+		if id == "" || strings.Contains(id, "/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		mediaRecord, err := mediaLookup.FindByID(r.Context(), id)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if mediaRecord == nil || mediaRecord.State != domainmedia.StateReady {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		etag := `"` + mediaRecord.SHA256 + `"`
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if mediaRecord.SHA256 != "" {
+			w.Header().Set("ETag", etag)
+		}
+		if mediaRecord.SHA256 != "" && r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		var body io.ReadCloser
+		if r.Method == http.MethodGet {
+			body, err = mediaLookup.OpenBlob(r.Context(), id)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			defer body.Close()
+		}
+		w.Header().Set("Content-Type", mediaRecord.ContentType)
+		w.Header().Set("Content-Length", strconv.FormatInt(mediaRecord.Size, 10))
+		if mediaRecord.ContentType == "application/pdf" {
+			w.Header().Set("Content-Disposition", `attachment; filename="document.pdf"`)
+		}
+		w.WriteHeader(http.StatusOK)
+		if body != nil {
+			_, _ = io.Copy(w, body)
+		}
+	}
 }
 
 func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteLookup) http.HandlerFunc {

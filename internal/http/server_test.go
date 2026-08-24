@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
@@ -49,6 +52,11 @@ type fakeReactionLookup struct {
 
 type fakePollLookup struct {
 	poll *polls.Poll
+}
+
+type fakeMediaLookup struct {
+	media *domainmedia.Media
+	body  []byte
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -136,6 +144,54 @@ func (f fakePollLookup) FindByNoteID(ctx context.Context, noteID string) (*polls
 		return f.poll, nil
 	}
 	return nil, nil
+}
+
+func (f fakeMediaLookup) FindByID(ctx context.Context, id string) (*domainmedia.Media, error) {
+	_ = ctx
+	if f.media != nil && f.media.ID == id {
+		return f.media, nil
+	}
+	return nil, nil
+}
+
+func (f fakeMediaLookup) OpenBlob(ctx context.Context, id string) (io.ReadCloser, error) {
+	_ = ctx
+	_ = id
+	return io.NopCloser(bytes.NewReader(f.body)), nil
+}
+
+func TestMediaByIDServesOnlyReadyCachedContent(t *testing.T) {
+	body := []byte("\x89PNG\r\n\x1a\n")
+	lookup := fakeMediaLookup{media: &domainmedia.Media{
+		ID: "media-id", State: domainmedia.StateReady, ContentType: "image/png",
+		Size: int64(len(body)), SHA256: "digest",
+	}, body: body}
+	handler := NewHandlerWithAllStores(testConfig(), nil, nil, nil, nil, nil, nil, nil, lookup)
+
+	req := httptest.NewRequest(http.MethodGet, "/media/media-id", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), body) {
+		t.Fatalf("status=%d body=%q", rec.Code, rec.Body.Bytes())
+	}
+	if rec.Header().Get("Content-Type") != "image/png" || rec.Header().Get("ETag") != `"digest"` || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("unexpected headers: %v", rec.Header())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/media/media-id", nil)
+	req.Header.Set("If-None-Match", `"digest"`)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("conditional status = %d", rec.Code)
+	}
+
+	lookup.media.State = domainmedia.StatePending
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/media/media-id", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("pending status = %d", rec.Code)
+	}
 }
 
 func testConfig() config.Config {

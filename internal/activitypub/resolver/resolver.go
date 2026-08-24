@@ -39,6 +39,10 @@ type ObjectLocker interface {
 	Acquire(context.Context, string) (func(context.Context) error, bool, error)
 }
 
+type MediaScheduler interface {
+	ScheduleMedia(context.Context, string) error
+}
+
 type Resolver struct {
 	repo      actors.Repository
 	fetcher   Fetcher
@@ -49,6 +53,7 @@ type Resolver struct {
 	emojis    emojis.Repository
 	polls     polls.Repository
 	locker    ObjectLocker
+	media     MediaScheduler
 }
 
 const remoteActorRefreshInterval = 24 * time.Hour
@@ -81,6 +86,10 @@ func (r *Resolver) SetPollRepository(repository polls.Repository) {
 
 func (r *Resolver) SetObjectLocker(locker ObjectLocker) {
 	r.locker = locker
+}
+
+func (r *Resolver) SetMediaScheduler(scheduler MediaScheduler) {
+	r.media = scheduler
 }
 
 func New(repo actors.Repository, fetcher Fetcher, signer *actors.Actor) *Resolver {
@@ -178,6 +187,7 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 	if err != nil {
 		return nil, err
 	}
+	r.scheduleActorMedia(ctx, stored)
 	featuredIDs, err := r.resolveFeaturedNotes(ctx, actor.FeaturedURI)
 	if err != nil {
 		return stored, nil
@@ -351,6 +361,7 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 	if err != nil {
 		return nil, err
 	}
+	r.scheduleNoteMedia(ctx, stored)
 	if r.polls != nil && aptypes.IsType(object, "Question") {
 		poll, parseErr := appolls.ParseQuestion(object)
 		if parseErr == nil {
@@ -365,6 +376,33 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 	return stored, nil
 }
 
+func (r *Resolver) scheduleActorMedia(ctx context.Context, actor *actors.Actor) {
+	if r.media == nil || actor == nil {
+		return
+	}
+	for _, rawURL := range []string{actor.AvatarURL, actor.BannerURL} {
+		if strings.TrimSpace(rawURL) != "" {
+			_ = r.media.ScheduleMedia(ctx, rawURL)
+		}
+	}
+}
+
+func (r *Resolver) scheduleNoteMedia(ctx context.Context, note *domainnotes.Note) {
+	if r.media == nil || note == nil {
+		return
+	}
+	for _, attachment := range note.Attachments {
+		if strings.TrimSpace(attachment.URL) != "" {
+			_ = r.media.ScheduleMedia(ctx, attachment.URL)
+		}
+	}
+	for _, emoji := range note.Emojis {
+		if strings.TrimSpace(emoji.IconURL) != "" {
+			_ = r.media.ScheduleMedia(ctx, emoji.IconURL)
+		}
+	}
+}
+
 func (r *Resolver) upsertRemoteEmojis(ctx context.Context, host *string, values []domainnotes.Emoji) error {
 	if r.emojis == nil || host == nil {
 		return nil
@@ -376,6 +414,9 @@ func (r *Resolver) upsertRemoteEmojis(ctx context.Context, host *string, values 
 			RemoteUpdatedAt: value.UpdatedAt,
 		}); err != nil {
 			return err
+		}
+		if r.media != nil && strings.TrimSpace(value.IconURL) != "" {
+			_ = r.media.ScheduleMedia(ctx, value.IconURL)
 		}
 	}
 	return nil
