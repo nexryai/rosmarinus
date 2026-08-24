@@ -12,7 +12,7 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `polls`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
 Use separate MongoDB users with collection-scoped custom roles. The Salvia role
@@ -92,6 +92,12 @@ timestamps. `Update(Question)` may change vote counts but not the stored choice
 identity or ordering. Salvia must zip `choices` and `votes` by array index and
 treat both arrays as Rosmarinus-owned.
 
+`poll_votes` is Rosmarinus-owned and contains deterministic vote documents
+with `noteId`, `actorId`, zero-based `choice`, and `createdAt`. For a
+single-choice poll, one Actor can have only one vote; for a multiple-choice
+poll, one Actor can vote once per choice. Salvia may use this collection to
+project the authenticated Actor's selected choices but must not mutate it.
+
 Rosmarinus intentionally keeps reply, renote, and reaction records normalized
 instead of maintaining crash-prone cross-document counters. Salvia derives
 counts for a batch of Note IDs with MongoDB aggregation over active documents:
@@ -107,8 +113,8 @@ Rosmarinus-owned `notifications` collection:
 _id                 stable opaque notification ID
 recipientAccountId  owning Salvia account ID
 recipientActorId    local Actor receiving the notification
-kind                followRequest | reaction | renote | reply | mention
-sourceActorId        remote Actor that caused the notification
+kind                followRequest | reaction | renote | reply | mention | pollEnded
+sourceActorId        Actor that caused the notification
 noteId               related Note ID when applicable
 remoteActivityId     source ActivityPub object/activity ID used for deduplication
 createdAt            notification creation timestamp
@@ -327,6 +333,20 @@ soft-deletes the Note, and enqueues a Misskey-compatible `Delete(Tombstone)` to
 remote followers and direct recipients. A successful result contains
 `actor_id`, `note_id`, and the deleted Note `uri`. Reuse the same `request_id`
 when retrying the same logical deletion.
+
+`post.create` may include `data.poll` with `choices` (2–10 unique strings, at
+most 50 characters each), optional `multiple`, and optional RFC 3339
+`expires_at`. Text may be empty when a Poll is present. To vote, publish
+`poll.vote` with the owned local Actor in `actor_id`, plus `note_id` and a
+zero-based `choice` in `data`. Rosmarinus enforces visibility, blocks,
+expiration, and single/multiple-choice uniqueness. A successful result contains
+`vote_id`, `note_id`, `choice`, and, for a remote Poll, the delivered vote
+activity `uri`.
+
+For a local Poll with `expires_at`, Rosmarinus schedules durable delayed work.
+At expiration it creates a stable `pollEnded` notification for the local Poll
+owner and each local Actor that voted. Repeated delayed-job execution does not
+create duplicate notification documents.
 
 To mark a notification read, publish `notification.mark_read` with the owned
 recipient Actor in `actor_id` and `notification_id` in `data`. A successful

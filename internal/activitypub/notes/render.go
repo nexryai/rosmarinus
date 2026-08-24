@@ -5,9 +5,14 @@ import (
 	"time"
 
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 )
 
 func Render(note *domainnotes.Note) map[string]any {
+	return RenderWithPoll(note, nil)
+}
+
+func RenderWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
 	if note.RenoteURI != "" && note.Text == "" && note.InReplyToURI == "" && len(note.Attachments) == 0 {
 		return RenderAnnounce(note)
 	}
@@ -28,7 +33,7 @@ func Render(note *domainnotes.Note) map[string]any {
 	if note.QuoteURI != "" {
 		quote = note.QuoteURI
 	}
-	return withContext(map[string]any{
+	body := map[string]any{
 		"id":               note.URI,
 		"type":             "Note",
 		"attributedTo":     note.AttributedTo,
@@ -48,7 +53,34 @@ func Render(note *domainnotes.Note) map[string]any {
 		"attachment":     renderAttachments(note.Attachments),
 		"sensitive":      note.Sensitive || note.ContentWarning != nil || hasSensitiveAttachment(note.Attachments),
 		"tag":            renderTags(note),
-	})
+	}
+	if poll != nil {
+		body["type"] = "Question"
+		key := "oneOf"
+		if poll.Multiple {
+			key = "anyOf"
+		}
+		choices := make([]any, 0, len(poll.Choices))
+		for i, name := range poll.Choices {
+			votes := 0
+			if i < len(poll.Votes) {
+				votes = poll.Votes[i]
+			}
+			choices = append(choices, map[string]any{
+				"type": "Note", "name": name,
+				"replies": map[string]any{"type": "Collection", "totalItems": votes},
+			})
+		}
+		body[key] = choices
+		if poll.ExpiresAt != nil {
+			endKey := "endTime"
+			if !poll.ExpiresAt.After(time.Now().UTC()) {
+				endKey = "closed"
+			}
+			body[endKey] = poll.ExpiresAt.UTC().Format(time.RFC3339)
+		}
+	}
+	return withContext(body)
 }
 
 func RenderAnnounce(note *domainnotes.Note) map[string]any {
@@ -69,7 +101,11 @@ func RenderAnnounce(note *domainnotes.Note) map[string]any {
 }
 
 func RenderCreate(note *domainnotes.Note) map[string]any {
-	object := Render(note)
+	return RenderCreateWithPoll(note, nil)
+}
+
+func RenderCreateWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
+	object := RenderWithPoll(note, poll)
 	contextValue := object["@context"]
 	delete(object, "@context")
 	published := note.CreatedAt
@@ -86,6 +122,19 @@ func RenderCreate(note *domainnotes.Note) map[string]any {
 		"cc":        object["cc"],
 		"object":    object,
 	}
+}
+
+func RenderQuestionUpdate(note *domainnotes.Note, poll *polls.Poll, updatedAt time.Time) map[string]any {
+	object := RenderWithPoll(note, poll)
+	delete(object, "@context")
+	return withContext(map[string]any{
+		"id":        note.AttributedTo + "#updates/" + updatedAt.UTC().Format("20060102150405.000000000"),
+		"actor":     note.AttributedTo,
+		"type":      "Update",
+		"to":        []string{PublicAudience},
+		"object":    object,
+		"published": updatedAt.UTC().Format(time.RFC3339),
+	})
 }
 
 func RenderDelete(note *domainnotes.Note, deletedAt time.Time) map[string]any {

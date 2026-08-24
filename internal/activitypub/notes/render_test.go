@@ -5,6 +5,7 @@ import (
 	"time"
 
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 )
 
 func TestRenderAnnounceNote(t *testing.T) {
@@ -92,5 +93,29 @@ func TestRenderDeleteUsesMisskeyCompatibleTombstone(t *testing.T) {
 	tombstone, ok := rendered["object"].(map[string]any)
 	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
 		t.Fatalf("unexpected Tombstone: %#v", rendered["object"])
+	}
+}
+
+func TestRenderQuestionIncludesOrderedVoteCollections(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	note := &domainnotes.Note{
+		URI: "https://rosmarinus.example/notes/poll", AttributedTo: "https://rosmarinus.example/users/alice",
+		Text: "choose", Visibility: domainnotes.VisibilityPublic, CreatedAt: time.Now().UTC(),
+	}
+	poll := &polls.Poll{Choices: []string{"cats", "dogs"}, Votes: []int{2, 3}, ExpiresAt: &expiresAt}
+	rendered := RenderWithPoll(note, poll)
+	choices, ok := rendered["oneOf"].([]any)
+	if rendered["type"] != "Question" || !ok || len(choices) != 2 || rendered["endTime"] == nil {
+		t.Fatalf("unexpected Question: %#v", rendered)
+	}
+	second := choices[1].(map[string]any)
+	replies := second["replies"].(map[string]any)
+	if second["name"] != "dogs" || replies["totalItems"] != 3 {
+		t.Fatalf("unexpected second choice: %#v", second)
+	}
+	update := RenderQuestionUpdate(note, poll, time.Now().UTC())
+	object, ok := update["object"].(map[string]any)
+	if update["type"] != "Update" || !ok || object["type"] != "Question" || object["id"] != note.URI {
+		t.Fatalf("unexpected Question Update: %#v", update)
 	}
 }

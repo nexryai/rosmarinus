@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -149,6 +150,7 @@ func (h *Handler) Register(server *queue.AsynqServer) {
 	server.HandleFunc(queue.TaskInbox, h.HandleInboxTask)
 	server.HandleFunc(queue.TaskDeliver, h.HandleDeliverTask)
 	server.HandleFunc(queue.TaskAccountDelete, h.HandleAccountDeleteTask)
+	server.HandleFunc(queue.TaskPollEnded, h.HandlePollEndedTask)
 }
 
 func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task) error {
@@ -178,6 +180,64 @@ func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task)
 	}
 	if h.logger != nil {
 		h.logger.Printf("account-delete: cleaned actor=%s notes=%d reactions=%d follows=%d blocks=%d polls=%d notifications=%d", actor.ID, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Polls, result.Notifications)
+	}
+	return nil
+}
+
+func (h *Handler) HandlePollEndedTask(ctx context.Context, task *asynq.Task) error {
+	var payload queue.PollEndedPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("decode poll ended task: %w", err)
+	}
+	if payload.Version != 1 || payload.NoteID == "" {
+		return fmt.Errorf("invalid poll ended task payload")
+	}
+	if h.notes == nil || h.polls == nil {
+		return fmt.Errorf("note and poll repositories are required")
+	}
+	note, err := h.notes.FindByID(ctx, payload.NoteID)
+	if err != nil || note == nil {
+		return err
+	}
+	poll, err := h.polls.FindByNoteID(ctx, note.ID)
+	if err != nil || poll == nil {
+		return err
+	}
+	if poll.AuthorHost != nil || poll.ExpiresAt == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	if now.Before(*poll.ExpiresAt) {
+		if h.queue == nil {
+			return fmt.Errorf("queue is required to reschedule poll ended task")
+		}
+		return h.queue.Enqueue(ctx, queue.NewPollEndedTask(note.ID, poll.ExpiresAt.Sub(now)))
+	}
+	owner, err := h.repo.FindLocalByID(ctx, poll.AuthorID)
+	if err != nil || owner == nil {
+		return err
+	}
+	voterIDs, err := h.polls.ListVoterActorIDs(ctx, note.ID)
+	if err != nil {
+		return err
+	}
+	recipientIDs := append([]string{owner.ID}, voterIDs...)
+	seen := make(map[string]struct{}, len(recipientIDs))
+	for _, actorID := range recipientIDs {
+		if _, exists := seen[actorID]; exists {
+			continue
+		}
+		seen[actorID] = struct{}{}
+		recipient, err := h.repo.FindLocalByID(ctx, actorID)
+		if err != nil {
+			return err
+		}
+		if recipient == nil {
+			continue
+		}
+		if err := h.createNotification(ctx, recipient, notifications.KindPollEnded, owner, note.ID, "poll-ended:"+note.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -979,6 +1039,9 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err != nil {
 		return "", err
 	}
+	if handled, result, err := h.performRemotePollVote(ctx, actor, object, reply); handled {
+		return result, err
+	}
 	note := domainnotes.Note{
 		URI:             parsed.URI,
 		AttributedTo:    parsed.AttributedTo,
@@ -1034,6 +1097,62 @@ func (h *Handler) storeRemotePoll(ctx context.Context, actor *actors.Actor, note
 	poll.AuthorHost = actor.Host
 	_, err = h.polls.UpsertRemote(ctx, *poll)
 	return err
+}
+
+func (h *Handler) performRemotePollVote(ctx context.Context, actor *actors.Actor, object map[string]any, reply *domainnotes.Note) (bool, string, error) {
+	name, _ := object["name"].(string)
+	name = strings.TrimSpace(name)
+	if h.polls == nil || reply == nil || name == "" {
+		return false, "", nil
+	}
+	poll, err := h.polls.FindByNoteID(ctx, reply.ID)
+	if err != nil {
+		return true, "", err
+	}
+	if poll == nil {
+		return false, "", nil
+	}
+	choice := -1
+	for i, value := range poll.Choices {
+		if value == name {
+			choice = i
+			break
+		}
+	}
+	if choice < 0 {
+		return true, "skip: poll choice not found", nil
+	}
+	allowed, err := h.canReactToNote(ctx, actor, reply)
+	if err != nil {
+		return true, "", err
+	}
+	if !allowed {
+		return true, "skip: poll is not visible to actor", nil
+	}
+	_, updated, err := h.polls.RecordVote(ctx, reply.ID, actor.ID, choice, time.Now().UTC())
+	alreadyVoted := errors.Is(err, polls.ErrAlreadyVoted)
+	if errors.Is(err, polls.ErrExpired) {
+		return true, "skip: poll expired", nil
+	}
+	if err != nil && !alreadyVoted {
+		return true, "", err
+	}
+	if updated.AuthorHost == nil {
+		owner, err := h.repo.FindLocalByID(ctx, updated.AuthorID)
+		if err != nil {
+			return true, "", err
+		}
+		if owner != nil {
+			activity := apnotes.RenderQuestionUpdate(reply, updated, time.Now().UTC())
+			if err := h.enqueueNoteActivityDeliveries(ctx, owner, reply, activity); err != nil {
+				return true, "", err
+			}
+		}
+	}
+	if alreadyVoted {
+		return true, "skip: already voted", nil
+	}
+	return true, "ok: poll vote created", nil
 }
 
 func (h *Handler) createObject(ctx context.Context, activity map[string]any) (map[string]any, error) {
@@ -1248,6 +1367,16 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if actor == nil {
 		return connector.PostCreated{}, fmt.Errorf("local actor not found: %s", command.ActorID)
 	}
+	var localPoll *polls.Poll
+	if command.Poll != nil {
+		if h.polls == nil {
+			return connector.PostCreated{}, fmt.Errorf("poll repository is not configured")
+		}
+		localPoll, err = appolls.NewLocalPoll(command.Poll.Choices, command.Poll.Multiple, command.Poll.ExpiresAt)
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
 	visibility, err := postVisibility(command.Visibility)
 	if err != nil {
 		return connector.PostCreated{}, err
@@ -1291,12 +1420,31 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
+	if localPoll != nil {
+		localPoll.NoteID = note.ID
+		localPoll.AuthorID = actor.ID
+		localPoll.AuthorHost = nil
+		localPoll.CreatedAt = now
+		localPoll.UpdatedAt = now
+		localPoll, err = h.polls.UpsertLocal(ctx, *localPoll)
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+		if localPoll.ExpiresAt != nil {
+			if h.queue == nil {
+				return connector.PostCreated{}, fmt.Errorf("queue is required for poll expiration")
+			}
+			if err := h.queue.Enqueue(ctx, queue.NewPollEndedTask(note.ID, localPoll.ExpiresAt.Sub(now))); err != nil {
+				return connector.PostCreated{}, err
+			}
+		}
+	}
 	if note.Visibility == domainnotes.VisibilitySpecified {
-		if err := h.enqueueSpecifiedCreateNoteDeliveries(ctx, actor, note, specifiedRecipients); err != nil {
+		if err := h.enqueueSpecifiedCreateNoteDeliveries(ctx, actor, note, localPoll, specifiedRecipients); err != nil {
 			return connector.PostCreated{}, err
 		}
 	} else {
-		if err := h.enqueueCreateNoteDeliveries(ctx, actor, note); err != nil {
+		if err := h.enqueueCreateNoteDeliveries(ctx, actor, note, localPoll); err != nil {
 			return connector.PostCreated{}, err
 		}
 	}
@@ -1312,6 +1460,69 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) VotePoll(ctx context.Context, command connector.PollVoteCommand) (connector.PollVoted, error) {
+	if h.notes == nil || h.polls == nil {
+		return connector.PollVoted{}, fmt.Errorf("note and poll repositories are required")
+	}
+	actor, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.PollVoted{}, err
+	}
+	if actor == nil {
+		return connector.PollVoted{}, fmt.Errorf("local actor not found: %s", command.ActorID)
+	}
+	note, err := h.notes.FindByID(ctx, strings.TrimSpace(command.NoteID))
+	if err != nil {
+		return connector.PollVoted{}, err
+	}
+	if note == nil {
+		return connector.PollVoted{}, fmt.Errorf("poll note not found: %s", command.NoteID)
+	}
+	allowed, err := h.canReactToNote(ctx, actor, note)
+	if err != nil {
+		return connector.PollVoted{}, err
+	}
+	if !allowed {
+		return connector.PollVoted{}, fmt.Errorf("poll is not visible to actor")
+	}
+	now := time.Now().UTC()
+	vote, poll, err := h.polls.RecordVote(ctx, note.ID, actor.ID, command.Choice, now)
+	if err != nil && !errors.Is(err, polls.ErrAlreadyVoted) {
+		return connector.PollVoted{}, err
+	}
+	result := connector.PollVoted{VoteID: vote.ID, NoteID: note.ID, Choice: vote.Choice}
+	if poll.AuthorHost != nil {
+		if h.queue == nil {
+			return connector.PollVoted{}, fmt.Errorf("queue is required for remote poll vote")
+		}
+		owner, err := h.repo.FindByURI(ctx, note.AttributedTo)
+		if err != nil {
+			return connector.PollVoted{}, err
+		}
+		if owner == nil || owner.Host == nil || strings.TrimSpace(owner.Inbox) == "" {
+			return connector.PollVoted{}, fmt.Errorf("remote poll owner inbox is unavailable")
+		}
+		activity := appolls.RenderVote(actor.URI, vote, note, poll, now)
+		if err := h.queue.Enqueue(ctx, queue.NewDeliverTask(actor.ID, owner.Inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)); err != nil {
+			return connector.PollVoted{}, err
+		}
+		result.URI, _ = activity["id"].(string)
+	} else {
+		owner, err := h.repo.FindLocalByID(ctx, poll.AuthorID)
+		if err != nil {
+			return connector.PollVoted{}, err
+		}
+		if owner == nil {
+			return connector.PollVoted{}, fmt.Errorf("local poll owner is unavailable")
+		}
+		activity := apnotes.RenderQuestionUpdate(note, poll, now)
+		if err := h.enqueueNoteActivityDeliveries(ctx, owner, note, activity); err != nil {
+			return connector.PollVoted{}, err
+		}
+	}
+	return result, nil
 }
 
 func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCommand) (connector.PostDeleted, error) {
@@ -1535,11 +1746,11 @@ func (h *Handler) resolveDirectRecipients(ctx context.Context, actor *actors.Act
 	return recipients, uris, nil
 }
 
-func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, recipients []*actors.Actor) error {
+func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, poll *polls.Poll, recipients []*actors.Actor) error {
 	if h.queue == nil {
 		return fmt.Errorf("queue is required for specified post delivery")
 	}
-	activity := apnotes.RenderCreate(note)
+	activity := apnotes.RenderCreateWithPoll(note, poll)
 	destinations := make(map[string]struct{}, len(recipients))
 	for _, recipient := range recipients {
 		if recipient == nil || recipient.Host == nil {
@@ -1571,8 +1782,8 @@ func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, acto
 	return nil
 }
 
-func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) error {
-	return h.enqueueNoteActivityDeliveries(ctx, actor, note, apnotes.RenderCreate(note))
+func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, poll *polls.Poll) error {
+	return h.enqueueNoteActivityDeliveries(ctx, actor, note, apnotes.RenderCreateWithPoll(note, poll))
 }
 
 func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, activity map[string]any) error {

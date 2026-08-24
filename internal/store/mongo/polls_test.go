@@ -17,3 +17,16 @@ func TestPollDocumentPreservesQuestionState(t *testing.T) {
 		t.Fatalf("unexpected poll document: %+v", doc)
 	}
 }
+
+func TestPollVoteIDEnforcesSingleAndMultipleChoiceUniqueness(t *testing.T) {
+	singleA := pollVoteID("note", "actor", 0, false)
+	singleB := pollVoteID("note", "actor", 1, false)
+	if singleA != singleB {
+		t.Fatalf("single-choice vote ids differ: %q %q", singleA, singleB)
+	}
+	multipleA := pollVoteID("note", "actor", 0, true)
+	multipleB := pollVoteID("note", "actor", 1, true)
+	if multipleA == multipleB {
+		t.Fatalf("multiple-choice vote ids are equal: %q", multipleA)
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -51,16 +52,24 @@ type ReactionLookup interface {
 	FindByID(context.Context, string) (*reactions.Reaction, error)
 }
 
+type PollLookup interface {
+	FindByNoteID(context.Context, string) (*polls.Poll, error)
+}
+
 func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
 	return NewHandlerWithStores(cfg, logger, actorLookup, nil, nil, nil, queueClient)
 }
 
-func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient) http.Handler {
+func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookups ...PollLookup) http.Handler {
+	var pollLookup PollLookup
+	if len(pollLookups) > 0 {
+		pollLookup = pollLookups[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
-	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup))
+	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
 	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
 	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
@@ -238,7 +247,7 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLo
 	}
 }
 
-func noteByID(cfg config.Config, noteLookup NoteLookup) http.HandlerFunc {
+func noteByID(cfg config.Config, noteLookup NoteLookup, pollLookup PollLookup) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -267,20 +276,28 @@ func noteByID(cfg config.Config, noteLookup NoteLookup) http.HandlerFunc {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		var poll *polls.Poll
+		if pollLookup != nil {
+			poll, err = pollLookup.FindByNoteID(r.Context(), note.ID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		localURI := strings.TrimRight(cfg.PublicURL, "/") + "/notes/" + url.PathEscape(note.ID)
 		if len(parts) == 2 {
 			if note.URI != localURI {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			writeActivityJSON(w, apnotes.RenderCreate(note))
+			writeActivityJSON(w, apnotes.RenderCreateWithPoll(note, poll))
 			return
 		}
 		if note.URI != localURI {
 			http.Redirect(w, r, note.URI, http.StatusFound)
 			return
 		}
-		writeActivityJSON(w, apnotes.Render(note))
+		writeActivityJSON(w, apnotes.RenderWithPoll(note, poll))
 	}
 }
 

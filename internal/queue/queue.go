@@ -55,6 +55,11 @@ type AccountDeletePayload struct {
 	ActorURI string `json:"actor_uri"`
 }
 
+type PollEndedPayload struct {
+	Version int    `json:"version"`
+	NoteID  string `json:"note_id"`
+}
+
 func NewInboxTask(activity map[string]any, signature map[string]any, maxRetry int, timeout time.Duration) Task {
 	return Task{
 		Type:     TaskInbox,
@@ -95,5 +100,15 @@ func NewAccountDeleteTask(actorID, actorURI string) Task {
 			ActorID:  actorID,
 			ActorURI: actorURI,
 		},
+	}
+}
+
+func NewPollEndedTask(noteID string, processIn time.Duration) Task {
+	if processIn < 0 {
+		processIn = 0
+	}
+	return Task{
+		Type: TaskPollEnded, Queue: QueuePollEnded, MaxRetry: 10, Timeout: 5 * time.Minute, ProcessIn: processIn,
+		Payload: PollEndedPayload{Version: 1, NoteID: noteID},
 	}
 }

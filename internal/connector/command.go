@@ -19,6 +19,7 @@ const (
 	CommandFollowDelete         = "follow.delete"
 	CommandPostCreate           = "post.create"
 	CommandPostDelete           = "post.delete"
+	CommandPollVote             = "poll.vote"
 	CommandReactionCreate       = "reaction.create"
 	CommandReactionDelete       = "reaction.delete"
 	CommandActorCreate          = "actor.create"
@@ -58,6 +59,7 @@ type CommandExecutor interface {
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
 	DeletePost(context.Context, PostDeleteCommand) (PostDeleted, error)
+	VotePoll(context.Context, PollVoteCommand) (PollVoted, error)
 	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
 	DeleteReaction(context.Context, ReactionDeleteCommand) (ReactionDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
@@ -110,15 +112,16 @@ type FollowDeleted struct {
 }
 
 type PostCreateData struct {
-	NoteID         string   `json:"note_id"`
-	Text           string   `json:"text"`
-	Visibility     string   `json:"visibility,omitempty"`
-	ContentWarning *string  `json:"content_warning,omitempty"`
-	Sensitive      bool     `json:"sensitive,omitempty"`
-	InReplyToURI   string   `json:"in_reply_to_uri,omitempty"`
-	QuoteURI       string   `json:"quote_uri,omitempty"`
-	MentionURIs    []string `json:"mention_uris,omitempty"`
-	Hashtags       []string `json:"hashtags,omitempty"`
+	NoteID         string          `json:"note_id"`
+	Text           string          `json:"text"`
+	Visibility     string          `json:"visibility,omitempty"`
+	ContentWarning *string         `json:"content_warning,omitempty"`
+	Sensitive      bool            `json:"sensitive,omitempty"`
+	InReplyToURI   string          `json:"in_reply_to_uri,omitempty"`
+	QuoteURI       string          `json:"quote_uri,omitempty"`
+	MentionURIs    []string        `json:"mention_uris,omitempty"`
+	Hashtags       []string        `json:"hashtags,omitempty"`
+	Poll           *PollCreateData `json:"poll,omitempty"`
 }
 
 type PostCreateCommand struct {
@@ -132,6 +135,19 @@ type PostCreateCommand struct {
 	QuoteURI       string
 	MentionURIs    []string
 	Hashtags       []string
+	Poll           *PollCreateCommand
+}
+
+type PollCreateData struct {
+	Choices   []string   `json:"choices"`
+	Multiple  bool       `json:"multiple,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+type PollCreateCommand struct {
+	Choices   []string
+	Multiple  bool
+	ExpiresAt *time.Time
 }
 
 type PostDeleteData struct {
@@ -147,6 +163,24 @@ type PostDeleted struct {
 	ActorID string `json:"actor_id" bson:"actor_id"`
 	NoteID  string `json:"note_id" bson:"note_id"`
 	URI     string `json:"uri" bson:"uri"`
+}
+
+type PollVoteData struct {
+	NoteID string `json:"note_id"`
+	Choice int    `json:"choice"`
+}
+
+type PollVoteCommand struct {
+	ActorID string
+	NoteID  string
+	Choice  int
+}
+
+type PollVoted struct {
+	VoteID string `json:"vote_id" bson:"vote_id"`
+	NoteID string `json:"note_id" bson:"note_id"`
+	Choice int    `json:"choice" bson:"choice"`
+	URI    string `json:"uri,omitempty" bson:"uri,omitempty"`
 }
 
 type ReactionCreateData struct {
@@ -230,7 +264,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -429,8 +463,12 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if err := decodeCommandData(data, &command); err != nil {
 			return nil, actorID, err
 		}
-		if strings.TrimSpace(command.NoteID) == "" || strings.TrimSpace(command.Text) == "" {
-			return nil, actorID, fmt.Errorf("note_id and text are required")
+		if strings.TrimSpace(command.NoteID) == "" || (strings.TrimSpace(command.Text) == "" && command.Poll == nil) {
+			return nil, actorID, fmt.Errorf("note_id and text or poll are required")
+		}
+		var poll *PollCreateCommand
+		if command.Poll != nil {
+			poll = &PollCreateCommand{Choices: command.Poll.Choices, Multiple: command.Poll.Multiple, ExpiresAt: command.Poll.ExpiresAt}
 		}
 		result, err := h.executor.CreatePost(ctx, PostCreateCommand{
 			ActorID:        actorID,
@@ -443,6 +481,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			QuoteURI:       command.QuoteURI,
 			MentionURIs:    command.MentionURIs,
 			Hashtags:       command.Hashtags,
+			Poll:           poll,
 		})
 		return result, actorID, err
 	case CommandPostDelete:
@@ -454,6 +493,16 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			return nil, actorID, fmt.Errorf("note_id is required")
 		}
 		result, err := h.executor.DeletePost(ctx, PostDeleteCommand{ActorID: actorID, NoteID: command.NoteID})
+		return result, actorID, err
+	case CommandPollVote:
+		var command PollVoteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.NoteID) == "" || command.Choice < 0 {
+			return nil, actorID, fmt.Errorf("note_id and a non-negative choice are required")
+		}
+		result, err := h.executor.VotePoll(ctx, PollVoteCommand{ActorID: actorID, NoteID: command.NoteID, Choice: command.Choice})
 		return result, actorID, err
 	case CommandReactionCreate:
 		var command ReactionCreateData
@@ -539,7 +588,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
 		return true
 	default:
 		return false

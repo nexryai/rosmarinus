@@ -51,6 +51,9 @@ func (r *AccountCleanupRepository) CleanupRemoteActor(ctx context.Context, actor
 		return result, fmt.Errorf("cleanup polls for actor %s: %w", actorID, err)
 	}
 	result.Polls = deleted.DeletedCount
+	if _, err := r.db.Collection("poll_votes").DeleteMany(ctx, bson.M{"actorId": actorID}); err != nil {
+		return result, fmt.Errorf("cleanup poll votes for actor %s: %w", actorID, err)
+	}
 	deleted, err = r.db.Collection("notifications").DeleteMany(ctx, bson.M{"sourceActorId": actorID})
 	if err != nil {
 		return result, fmt.Errorf("cleanup notifications for actor %s: %w", actorID, err)
@@ -82,6 +85,9 @@ func (r *AccountCleanupRepository) cleanupActorNoteDependencies(ctx context.Cont
 			return fmt.Errorf("cleanup notifications on notes by actor %s: %w", actorID, err)
 		}
 		result.Notifications += deleted.DeletedCount
+		if _, err := r.db.Collection("poll_votes").DeleteMany(ctx, bson.M{"noteId": bson.M{"$in": ids}}); err != nil {
+			return fmt.Errorf("cleanup poll votes on notes by actor %s: %w", actorID, err)
+		}
 		ids = ids[:0]
 		return nil
 	}

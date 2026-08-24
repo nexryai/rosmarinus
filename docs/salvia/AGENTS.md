@@ -140,6 +140,10 @@ Join ActivityPub Question notes to `polls` by `polls._id = notes._id`. Preserve
 the stored choice order and pair each choice with the vote count at the same
 array index. Never update poll arrays directly from Salvia.
 
+Read an Actor's selected Poll choices from `poll_votes` by `noteId` and
+`actorId`. Treat `choice` as a zero-based index and never insert or update vote
+documents directly.
+
 Derive reply, renote, and reaction counts in batched MongoDB aggregations over
 active `notes` and `reactions`; filter `deletedAt: null`. Do not add or update
 denormalized counter fields in Rosmarinus Note documents.
@@ -227,9 +231,13 @@ Use these Ably message names and payloads:
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
   `mention_uris`, and `hashtags`. When `visibility` is `specified`,
   `mention_uris` is required, must contain at least one Actor URI, and defines
-  the direct recipients.
+  the direct recipients. It may also contain `poll` with `choices`, optional
+  `multiple`, and optional RFC 3339 `expires_at`; `text` may be empty when
+  `poll` is present.
 - `post.delete`: `data` contains `note_id`; top-level `actor_id` must own the
   local Note. Treat success as a soft deletion plus queued federation delivery.
+- `poll.vote`: `data` contains `note_id` and a zero-based non-negative
+  `choice`; top-level `actor_id` is the owned local voting Actor.
 - `follow.create`: `data` contains `target`, which is a Fediverse handle or an
   absolute ActivityPub Actor URL.
 - `follow.delete`: `data` contains the same `target` forms as `follow.create`;
@@ -278,6 +286,8 @@ scoped by the authenticated account and recipient Actor. Never update
 `isRead` directly. Publish `notification.mark_read` with the owned Actor ID and
 notification ID, and deduplicate repeated `notification.created` events by
 `notification_id` before refreshing MongoDB state.
+Support `pollEnded` in addition to the existing Follow, reaction, renote,
+reply, and mention kinds; use its `noteId` to load the completed Poll.
 
 The current Rosmarinus handler can reject malformed, unauthenticated, or
 unauthorized commands before it creates a receipt and publishes a result. A

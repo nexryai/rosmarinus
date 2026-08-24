@@ -1,6 +1,12 @@
 package polls
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
+)
 
 func TestParseQuestionSupportsMultipleChoiceAndClosed(t *testing.T) {
 	poll, err := ParseQuestion(map[string]any{
@@ -46,5 +52,34 @@ func TestParseUpdatedVotesMatchesStoredChoicesAndRequiresReplies(t *testing.T) {
 		"oneOf": []any{map[string]any{"name": "cats", "_misskey_votes": 3}},
 	}, []string{"cats"}); err == nil {
 		t.Fatal("accepted an update without replies.totalItems")
+	}
+}
+
+func TestNewLocalPollUsesCurrentMisskeyLimits(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	poll, err := NewLocalPoll([]string{" cats ", "dogs"}, true, &expiresAt)
+	if err != nil {
+		t.Fatalf("NewLocalPoll returned error: %v", err)
+	}
+	if !poll.Multiple || poll.Choices[0] != "cats" || len(poll.Votes) != 2 || poll.ExpiresAt == nil {
+		t.Fatalf("unexpected poll: %+v", poll)
+	}
+	if _, err := NewLocalPoll([]string{"one"}, false, nil); err == nil {
+		t.Fatal("accepted a one-choice local poll")
+	}
+	if _, err := NewLocalPoll([]string{"same", "same"}, false, nil); err == nil {
+		t.Fatal("accepted duplicate local poll choices")
+	}
+}
+
+func TestRenderVoteUsesMisskeyReplyNoteShape(t *testing.T) {
+	now := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
+	note := &domainnotes.Note{URI: "https://remote.example/notes/poll", AttributedTo: "https://remote.example/users/alice"}
+	poll := &domainpolls.Poll{Choices: []string{"cats", "dogs"}}
+	vote := &domainpolls.Vote{ID: "vote-1", Choice: 1}
+	rendered := RenderVote("https://local.example/users/bob", vote, note, poll, now)
+	object, ok := rendered["object"].(map[string]any)
+	if rendered["type"] != "Create" || !ok || object["name"] != "dogs" || object["inReplyTo"] != note.URI {
+		t.Fatalf("unexpected vote activity: %#v", rendered)
 	}
 }

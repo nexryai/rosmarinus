@@ -56,6 +56,8 @@ type fakeCommandExecutor struct {
 	postCalls           int
 	postDelete          PostDeleteCommand
 	postDeleteCalls     int
+	pollVote            PollVoteCommand
+	pollVoteCalls       int
 	reactionCommand     ReactionCreateCommand
 	reactionCalls       int
 	reactionDelete      ReactionDeleteCommand
@@ -108,6 +110,13 @@ func (f *fakeCommandExecutor) DeletePost(ctx context.Context, command PostDelete
 	f.postDeleteCalls++
 	f.postDelete = command
 	return PostDeleted{ActorID: command.ActorID, NoteID: command.NoteID, URI: "https://example.test/notes/" + command.NoteID}, f.err
+}
+
+func (f *fakeCommandExecutor) VotePoll(ctx context.Context, command PollVoteCommand) (PollVoted, error) {
+	_ = ctx
+	f.pollVoteCalls++
+	f.pollVote = command
+	return PollVoted{VoteID: "poll-vote", NoteID: command.NoteID, Choice: command.Choice}, f.err
 }
 
 func (f *fakeCommandExecutor) CreateReaction(ctx context.Context, command ReactionCreateCommand) (ReactionCreated, error) {
@@ -249,7 +258,7 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 10 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandReactionCreate || source.names[7] != CommandReactionDelete || source.names[8] != CommandActorCreate || source.names[9] != CommandNotificationMarkRead {
+	if len(source.names) != 11 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandActorCreate || source.names[10] != CommandNotificationMarkRead {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
@@ -308,6 +317,37 @@ func TestCommandHandlerDeletesPostAsOwnedActor(t *testing.T) {
 	}
 	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandPostDelete {
 		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerVotesPollAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandPollVote, "request-poll-vote", "actor-2", PollVoteData{NoteID: "poll-note", Choice: 1})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.pollVoteCalls != 1 || executor.pollVote.ActorID != "actor-2" || executor.pollVote.NoteID != "poll-note" || executor.pollVote.Choice != 1 {
+		t.Fatalf("poll vote command = %+v calls=%d", executor.pollVote, executor.pollVoteCalls)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandPollVote {
+		t.Fatalf("unexpected command result: %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerCreatesPollOnlyPost(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	message := commandMessage(CommandPostCreate, "request-poll-post", "actor-2", PostCreateData{
+		NoteID: "poll-note", Poll: &PollCreateData{Choices: []string{"cats", "dogs"}, Multiple: true, ExpiresAt: &expiresAt},
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.postCalls != 1 || executor.postCommand.Poll == nil || !executor.postCommand.Poll.Multiple || len(executor.postCommand.Poll.Choices) != 2 {
+		t.Fatalf("post command = %+v calls=%d", executor.postCommand, executor.postCalls)
 	}
 }
 

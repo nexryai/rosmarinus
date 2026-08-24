@@ -8,11 +8,60 @@ import (
 	"unicode/utf8"
 
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
+	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
 )
 
 const maxChoices = 20
 const maxChoiceLength = 256
+const maxLocalChoices = 10
+const maxLocalChoiceLength = 50
+
+func NewLocalPoll(choices []string, multiple bool, expiresAt *time.Time) (*domainpolls.Poll, error) {
+	if len(choices) < 2 || len(choices) > maxLocalChoices {
+		return nil, fmt.Errorf("local poll must contain between 2 and %d choices", maxLocalChoices)
+	}
+	normalized := make([]string, 0, len(choices))
+	seen := make(map[string]struct{}, len(choices))
+	for _, raw := range choices {
+		choice := strings.TrimSpace(raw)
+		if choice == "" || utf8.RuneCountInString(choice) > maxLocalChoiceLength {
+			return nil, fmt.Errorf("local poll choice is invalid")
+		}
+		if _, exists := seen[choice]; exists {
+			return nil, fmt.Errorf("local poll choices must be unique")
+		}
+		seen[choice] = struct{}{}
+		normalized = append(normalized, choice)
+	}
+	if expiresAt != nil {
+		utc := expiresAt.UTC()
+		if !utc.After(time.Now().UTC()) {
+			return nil, fmt.Errorf("local poll expiration must be in the future")
+		}
+		expiresAt = &utc
+	}
+	return &domainpolls.Poll{
+		Choices: normalized, Votes: make([]int, len(normalized)), Multiple: multiple, ExpiresAt: expiresAt,
+	}, nil
+}
+
+func RenderVote(actorURI string, vote *domainpolls.Vote, note *domainnotes.Note, poll *domainpolls.Poll, published time.Time) map[string]any {
+	voteURI := actorURI + "#votes/" + vote.ID
+	return map[string]any{
+		"@context":  "https://www.w3.org/ns/activitystreams",
+		"id":        voteURI + "/activity",
+		"actor":     actorURI,
+		"type":      "Create",
+		"to":        []string{note.AttributedTo},
+		"published": published.UTC().Format(time.RFC3339),
+		"object": map[string]any{
+			"id": voteURI, "type": "Note", "attributedTo": actorURI,
+			"to": []string{note.AttributedTo}, "inReplyTo": note.URI,
+			"name": poll.Choices[vote.Choice],
+		},
+	}
+}
 
 func ParseQuestion(object map[string]any) (*domainpolls.Poll, error) {
 	if !aptypes.IsType(object, "Question") {

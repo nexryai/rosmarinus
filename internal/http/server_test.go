@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -44,6 +45,10 @@ type fakeFollowLookup struct {
 
 type fakeReactionLookup struct {
 	reaction *reactions.Reaction
+}
+
+type fakePollLookup struct {
+	poll *polls.Poll
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -121,6 +126,14 @@ func (f fakeReactionLookup) FindByID(ctx context.Context, id string) (*reactions
 	_ = ctx
 	if f.reaction != nil && f.reaction.ID == id {
 		return f.reaction, nil
+	}
+	return nil, nil
+}
+
+func (f fakePollLookup) FindByNoteID(ctx context.Context, noteID string) (*polls.Poll, error) {
+	_ = ctx
+	if f.poll != nil && f.poll.NoteID == noteID {
+		return f.poll, nil
 	}
 	return nil, nil
 }
@@ -458,6 +471,20 @@ func TestNoteActivityByID(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
 		}
+	}
+}
+
+func TestQuestionNoteByIDJoinsPollProjection(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/notes/poll-note", nil)
+	rec := httptest.NewRecorder()
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID: "poll-note", URI: "https://example.test/notes/poll-note", AttributedTo: "https://example.test/users/alice",
+		Text: "choose", Visibility: domainnotes.VisibilityPublic, CreatedAt: time.Now().UTC(),
+	}}
+	pollLookup := fakePollLookup{poll: &polls.Poll{NoteID: "poll-note", Choices: []string{"cats", "dogs"}, Votes: []int{1, 2}}}
+	NewHandlerWithStores(testConfig(), nil, nil, noteLookup, nil, nil, nil, pollLookup).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"type":"Question"`) || !strings.Contains(rec.Body.String(), `"oneOf"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -91,6 +91,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		client,
 		localActor,
 	)
+	worker.SetPollRepository(pollRepo)
 
 	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
 	// Follow resource is exposed while pending, then wait for Misskey's Accept.
@@ -359,6 +360,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		NoteID:     localNoteID,
 		Text:       localNoteText,
 		Visibility: string(domainnotes.VisibilityPublic),
+		Poll:       &connector.PollCreateCommand{Choices: []string{"cats", "dogs"}},
 	})
 	if err != nil {
 		t.Fatalf("create local Rosmarinus post: %v", err)
@@ -390,7 +392,17 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 11: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 11: vote on the delivered Rosmarinus Question from Misskey and
+	// verify Rosmarinus consumes the reply Note as a poll vote.
+	misskey.call(ctx, "notes/polls/vote", map[string]any{
+		"i": admin.Token, "noteId": misskeyLocalNoteID, "choice": 1,
+	}, nil)
+	waitFor(t, ctx, "Misskey poll vote stored by Rosmarinus", func() bool {
+		poll, findErr := pollRepo.FindByNoteID(ctx, localNoteID)
+		return findErr == nil && poll != nil && len(poll.Votes) == 2 && poll.Votes[1] == 1
+	})
+
+	// Phase 12: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -410,7 +422,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 12: soft-delete the local Note and verify Misskey applies the
+	// Phase 13: soft-delete the local Note and verify Misskey applies the
 	// delivered Delete(Tombstone) by removing its federated copy.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
 	if err != nil {
@@ -434,7 +446,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 13: publish a specified-visibility note, verify it is not publicly
+	// Phase 14: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"

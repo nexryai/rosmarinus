@@ -344,7 +344,8 @@ type fakeEmojiRepo struct {
 }
 
 type fakePollRepo struct {
-	polls map[string]*domainpolls.Poll
+	polls  map[string]*domainpolls.Poll
+	voters map[string]map[string]struct{}
 }
 
 type fakeAccountCleanupRepo struct {
@@ -359,6 +360,15 @@ func (r *fakeAccountCleanupRepo) CleanupRemoteActor(_ context.Context, actorID s
 
 func (r *fakePollRepo) FindByNoteID(_ context.Context, noteID string) (*domainpolls.Poll, error) {
 	return r.polls[noteID], nil
+}
+
+func (r *fakePollRepo) UpsertLocal(_ context.Context, poll domainpolls.Poll) (*domainpolls.Poll, error) {
+	if r.polls == nil {
+		r.polls = map[string]*domainpolls.Poll{}
+	}
+	copy := poll
+	r.polls[poll.NoteID] = &copy
+	return &copy, nil
 }
 
 func (r *fakePollRepo) UpsertRemote(_ context.Context, poll domainpolls.Poll) (*domainpolls.Poll, error) {
@@ -377,6 +387,33 @@ func (r *fakePollRepo) UpdateRemoteVotes(_ context.Context, noteID, authorID str
 	}
 	poll.Votes = append([]int(nil), votes...)
 	return poll, nil
+}
+
+func (r *fakePollRepo) RecordVote(_ context.Context, noteID, actorID string, choice int, createdAt time.Time) (*domainpolls.Vote, *domainpolls.Poll, error) {
+	poll := r.polls[noteID]
+	if poll == nil || choice < 0 || choice >= len(poll.Choices) {
+		return nil, poll, domainpolls.ErrInvalidChoice
+	}
+	if poll.ExpiresAt != nil && !createdAt.Before(*poll.ExpiresAt) {
+		return nil, poll, domainpolls.ErrExpired
+	}
+	poll.Votes[choice]++
+	if r.voters == nil {
+		r.voters = map[string]map[string]struct{}{}
+	}
+	if r.voters[noteID] == nil {
+		r.voters[noteID] = map[string]struct{}{}
+	}
+	r.voters[noteID][actorID] = struct{}{}
+	return &domainpolls.Vote{ID: "poll-vote-id", NoteID: noteID, ActorID: actorID, Choice: choice, CreatedAt: createdAt}, poll, nil
+}
+
+func (r *fakePollRepo) ListVoterActorIDs(_ context.Context, noteID string) ([]string, error) {
+	ids := make([]string, 0, len(r.voters[noteID]))
+	for actorID := range r.voters[noteID] {
+		ids = append(ids, actorID)
+	}
+	return ids, nil
 }
 
 func (r *fakeEmojiRepo) UpsertRemote(_ context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
@@ -836,6 +873,37 @@ func TestPerformUpdateQuestionChangesOnlyExistingChoiceVotes(t *testing.T) {
 	}
 	if got := pollRepo.polls["poll-note"].Votes; len(got) != 2 || got[0] != 3 || got[1] != 4 {
 		t.Fatalf("votes = %#v", got)
+	}
+}
+
+func TestPerformCreateConsumesRemoteVoteForLocalPoll(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "local", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &remoteHost}
+	pollURI := "https://local.example/notes/poll"
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		pollURI: {ID: "poll-note", URI: pollURI, AuthorID: local.ID, AttributedTo: local.URI, Visibility: domainnotes.VisibilityPublic},
+	}}
+	pollRepo := &fakePollRepo{polls: map[string]*domainpolls.Poll{
+		"poll-note": {NoteID: "poll-note", AuthorID: local.ID, Choices: []string{"cats", "dogs"}, Votes: []int{0, 0}},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetPollRepository(pollRepo)
+	result, err := h.performCreate(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/vote", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/votes/1", "type": "Note", "attributedTo": remote.URI,
+			"to": []any{local.URI}, "inReplyTo": pollURI, "name": "dogs",
+		},
+	})
+	if err != nil || result != "ok: poll vote created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if pollRepo.polls["poll-note"].Votes[1] != 1 {
+		t.Fatalf("poll votes = %#v", pollRepo.polls["poll-note"].Votes)
+	}
+	if noteRepo.notes["https://remote.example/votes/1"] != nil {
+		t.Fatal("vote reply was stored as a regular Note")
 	}
 }
 
@@ -1681,6 +1749,68 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	object, ok := delivery.Object["object"].(map[string]any)
 	if !ok || object["type"] != "Note" || object["id"] != note.URI || object["content"] != note.Text {
 		t.Fatalf("unexpected Note object: %#v", delivery.Object["object"])
+	}
+}
+
+func TestCreatePostStoresAndDeliversLocalQuestion(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remoteHost := "remote.example"
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &remoteHost}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: remote.ID, FolloweeID: local.ID, FollowerURI: remote.URI, FolloweeURI: local.URI,
+		FollowerHost: &remoteHost, FollowerSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	noteRepo := &fakeNoteRepo{}
+	pollRepo := &fakePollRepo{}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetPollRepository(pollRepo)
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "local-poll", Text: "choose",
+		Poll: &connector.PollCreateCommand{Choices: []string{"cats", "dogs"}},
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	poll := pollRepo.polls["local-poll"]
+	if poll == nil || poll.AuthorHost != nil || len(poll.Choices) != 2 {
+		t.Fatalf("unexpected stored poll: %+v", poll)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d", len(q.tasks))
+	}
+	payload := q.tasks[0].Payload.(queue.DeliverPayload)
+	object := payload.Object["object"].(map[string]any)
+	if object["type"] != "Question" || object["oneOf"] == nil {
+		t.Fatalf("unexpected delivered Question: %#v", object)
+	}
+}
+
+func TestVotePollDeliversReplyNoteToRemoteOwner(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "local", URI: "https://local.example/users/bob"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &remoteHost, Inbox: "https://remote.example/users/alice/inbox"}
+	note := &domainnotes.Note{ID: "remote-poll", URI: "https://remote.example/notes/poll", AuthorID: remote.ID, AttributedTo: remote.URI, Visibility: domainnotes.VisibilityPublic}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{note.ID: note, note.URI: note}}
+	pollRepo := &fakePollRepo{polls: map[string]*domainpolls.Poll{
+		note.ID: {NoteID: note.ID, AuthorID: remote.ID, AuthorHost: &remoteHost, Choices: []string{"cats", "dogs"}, Votes: []int{0, 0}},
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetPollRepository(pollRepo)
+	result, err := h.VotePoll(context.Background(), connector.PollVoteCommand{ActorID: local.ID, NoteID: note.ID, Choice: 1})
+	if err != nil {
+		t.Fatalf("VotePoll returned error: %v", err)
+	}
+	if result.Choice != 1 || result.URI == "" || len(q.tasks) != 1 {
+		t.Fatalf("unexpected result=%+v tasks=%+v", result, q.tasks)
+	}
+	payload := q.tasks[0].Payload.(queue.DeliverPayload)
+	object := payload.Object["object"].(map[string]any)
+	if payload.To != remote.Inbox || payload.Object["type"] != "Create" || object["name"] != "dogs" || object["inReplyTo"] != note.URI {
+		t.Fatalf("unexpected vote delivery: %#v", payload)
 	}
 }
 
@@ -2721,6 +2851,32 @@ func TestHandleAccountDeleteTaskRejectsActiveActor(t *testing.T) {
 	payload, _ := json.Marshal(queue.AccountDeletePayload{Version: 1, ActorID: remote.ID, ActorURI: remote.URI})
 	if err := h.HandleAccountDeleteTask(context.Background(), asynq.NewTask(queue.TaskAccountDelete, payload)); err == nil {
 		t.Fatal("active remote actor cleanup was accepted")
+	}
+}
+
+func TestHandlePollEndedTaskNotifiesLocalOwner(t *testing.T) {
+	owner := &actors.Actor{ID: "local", URI: "https://local.example/users/alice", OwnerAccountID: "account-1"}
+	note := &domainnotes.Note{ID: "poll-note", URI: "https://local.example/notes/poll", AuthorID: owner.ID, AttributedTo: owner.URI, Visibility: domainnotes.VisibilityPublic}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{note.ID: note, note.URI: note}}
+	expiresAt := time.Now().UTC().Add(-time.Minute)
+	pollRepo := &fakePollRepo{polls: map[string]*domainpolls.Poll{
+		note.ID: {NoteID: note.ID, AuthorID: owner.ID, Choices: []string{"cats", "dogs"}, Votes: []int{1, 0}, ExpiresAt: &expiresAt},
+	}}
+	notificationRepo := &fakeNotificationRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{local: owner}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, owner)
+	h.SetPollRepository(pollRepo)
+	h.SetNotificationRepository(notificationRepo)
+	payload, _ := json.Marshal(queue.PollEndedPayload{Version: 1, NoteID: note.ID})
+	if err := h.HandlePollEndedTask(context.Background(), asynq.NewTask(queue.TaskPollEnded, payload)); err != nil {
+		t.Fatalf("HandlePollEndedTask returned error: %v", err)
+	}
+	if len(notificationRepo.notifications) != 1 {
+		t.Fatalf("notifications = %#v", notificationRepo.notifications)
+	}
+	for _, notification := range notificationRepo.notifications {
+		if notification.Kind != notifications.KindPollEnded || notification.NoteID != note.ID || notification.RecipientActorID != owner.ID {
+			t.Fatalf("unexpected notification: %+v", notification)
+		}
 	}
 }
 

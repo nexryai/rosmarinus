@@ -98,7 +98,7 @@ func (s *AsynqServer) RegisterNoopHandlers() {
 }
 
 func (s *AsynqServer) RegisterSystemNoopHandlers() {
-	for _, typ := range []string{TaskMetadata, TaskMedia, TaskPollEnded} {
+	for _, typ := range []string{TaskMetadata, TaskMedia} {
 		taskType := typ
 		s.HandleFunc(taskType, func(ctx context.Context, task *asynq.Task) error {
 			if s.logger != nil {

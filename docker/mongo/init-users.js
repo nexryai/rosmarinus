@@ -16,6 +16,7 @@ const rosmarinusCollections = [
   "actor_public_keys",
   "notes",
   "polls",
+  "poll_votes",
   "reactions",
   "follows",
   "follow_requests",

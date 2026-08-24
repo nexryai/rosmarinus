@@ -217,9 +217,12 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       names as the Rosmarinus contract.
 - [ ] Implement `post.create` with required `note_id` and `text`, plus optional
       `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`,
-      `quote_uri`, `mention_uris`, and `hashtags`.
+      `quote_uri`, `mention_uris`, `hashtags`, and `poll`. Allow empty text only
+      when the command includes a valid Poll.
 - [ ] Implement `post.delete` with the owned local `actor_id` and
       `data.note_id`; reuse the original request ID on retry.
+- [ ] Implement `poll.vote` with the owned local `actor_id`, `data.note_id`,
+      and a zero-based `data.choice`.
 - [ ] Implement `follow.create` with a Fediverse handle or absolute Actor URL
       in `data.target`.
 - [ ] Implement `follow.delete` with the owned local `actor_id` and the same
@@ -330,6 +333,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       views by `recipientActorId` and sort by `createdAt` plus `_id`.
 - [ ] Mark notifications read only through `notification.mark_read`; never
       write Rosmarinus-owned notification documents from Salvia.
+- [ ] Render `pollEnded` notifications for local Poll owners and voters; use
+      the related `noteId` to load the Poll Note.
 - [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
 - [ ] Enforce `visibleUserUris` when projecting `specified` Notes; do not use
@@ -338,6 +343,8 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       projection and treat a remote `publicUrl` as untrusted remote media.
 - [ ] Join Question notes to `polls` by Note ID and zip ordered `choices` with
       the positionally matching `votes` array.
+- [ ] Read the current Actor's selected choices from `poll_votes` by
+      `{ noteId, actorId }`; never write vote documents from Salvia.
 - [ ] Batch reply, renote, and reaction count aggregation by Note IDs, filter
       `deletedAt: null`, and group reactions by `reaction` where needed.
 - [ ] Make relationship views tolerate Block-driven soft deletion of either
@@ -409,7 +416,7 @@ The current Rosmarinus contract provides:
 - lookup of `salvia_accounts` by Ably `clientId`;
 - account status and authorization revision checks;
 - one-account-to-many-Actor ownership through `ownerAccountId`;
-- `actor.create`, `post.create`, `post.delete`, `follow.create`, `follow.delete`,
+- `actor.create`, `post.create`, `post.delete`, `poll.vote`, `follow.create`, `follow.delete`,
   `reaction.create`, `reaction.delete`, `follow.approve`, and `follow.reject`
   commands;
 - command receipt persistence for request ID idempotency;

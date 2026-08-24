@@ -64,6 +64,17 @@ func TestNewAccountDeleteTask(t *testing.T) {
 	}
 }
 
+func TestNewPollEndedTask(t *testing.T) {
+	task := NewPollEndedTask("poll-note", 10*time.Minute)
+	if task.Type != TaskPollEnded || task.Queue != QueuePollEnded || task.ProcessIn != 10*time.Minute {
+		t.Fatalf("unexpected task: %+v", task)
+	}
+	payload, ok := task.Payload.(PollEndedPayload)
+	if !ok || payload.Version != 1 || payload.NoteID != "poll-note" {
+		t.Fatalf("unexpected payload: %#v", task.Payload)
+	}
+}
+
 func TestAPBackoffRange(t *testing.T) {
 	got := APBackoff(0, nil, nil)
 	if got < time.Minute || got > 72*time.Second {

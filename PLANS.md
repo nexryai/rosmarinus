@@ -361,13 +361,14 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 ### Polls
 
-- [ ] Render local polls as `Question` with `oneOf` or `anyOf`.
+- [x] Render local polls as `Question` with `oneOf` or `anyOf`.
 - [x] Extract remote `Question` choices, vote counts, multiplicity, and expiry.
 - [x] Accept authenticated `Update(Question)` vote-count refreshes without
       allowing the remote Actor to replace stored choice identity/order.
-- [ ] Support vote activities represented as notes replying to poll notes.
-- [ ] Enqueue delayed poll-ended work in Redis.
-- [ ] Deliver question updates to remote followers when votes change.
+- [x] Support vote activities represented as notes replying to poll notes.
+- [x] Enqueue delayed poll-ended work in Redis and notify the local owner and
+      local voters idempotently when it runs.
+- [x] Deliver question updates to remote followers when votes change.
 
 ### Delivery
 
@@ -422,7 +423,7 @@ flags, but that is an operational option, not the default architecture.
 - [ ] `inbox`: accepted inbound ActivityPub activities.
 - [ ] `deliver`: outbound ActivityPub delivery jobs.
 - [ ] `system`: scheduled maintenance.
-- [ ] `poll-ended`: delayed poll expiration work.
+- [x] `poll-ended`: delayed poll expiration work.
 - [ ] `media`: remote attachment/avatar/banner fetch and cleanup.
 - [ ] `metadata`: remote instance metadata refresh.
 - [x] `account-delete`: remote actor delete cleanup task payload/enqueue path.
@@ -554,8 +555,8 @@ when an Ably notification is missed.
       Actor and checking ownership later.
 - [x] Require the implemented Actor-bound commands to name the acting/target
       local Actor, then authorize it against the account resolved from
-      `message.ClientID`. This includes `post.create`, `post.delete`, `follow.create`,
-      `follow.delete`, `reaction.create`, `reaction.delete`, `follow.approve`, and
+      `message.ClientID`. This includes `post.create`, `post.delete`, `poll.vote`,
+      `follow.create`, `follow.delete`, `reaction.create`, `reaction.delete`, `follow.approve`, and
       `follow.reject`.
 - [ ] Apply the same owned-Actor authorization to future Actor update/delete
       commands when those commands are implemented.
@@ -635,6 +636,8 @@ when an Ably notification is missed.
 - [x] Handle Next.js-driven `post.delete` commands by ownership-checking and
       soft-deleting a local Note, then delivering a Misskey-compatible
       `Delete(Tombstone)` to remote followers and direct recipients.
+- [x] Accept local Poll definitions on `post.create` and handle `poll.vote`
+      with single/multiple-choice uniqueness and remote vote delivery.
 - [x] Handle Next.js-driven `reaction.create` commands by checking Note
       visibility, storing the reaction, and delivering a Misskey-compatible
       `Like` to the remote author.
@@ -707,6 +710,7 @@ workflow may require both services to update the same document or collection.
 - [ ] `actor_public_keys`
 - [x] `notes`
 - [x] `polls`
+- [x] `poll_votes`
 - [x] `reactions`
 - [x] `follows`
 - [ ] `follow_requests`
@@ -738,6 +742,7 @@ workflow may require both services to update the same document or collection.
       `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
 - [x] `polls`: `{ authorId, expiresAt }` and sparse `expiresAt`
+- [x] `poll_votes`: `{ noteId, choice }` and `{ actorId, createdAt }`
 - [x] `blocks`: unique `{ blockerId, blockeeId }`
 - [x] `reactions`: unique `{ noteId, actorId }`
 - [x] `reactions`: basic `{ noteId, createdAt }` and
@@ -952,8 +957,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement inbound remote actor delete and account cleanup queue enqueue.
 - [x] Implement full remote account cleanup worker behavior.
 - [x] Implement poll extraction and authenticated poll count updates.
-- [ ] Implement vote ingestion, delayed poll-ended jobs, and poll update
-      delivery.
+- [x] Implement local/remote vote ingestion and poll update delivery.
+- [x] Implement delayed poll-ended jobs and durable local notifications.
 - [ ] Implement media fetch for note attachments, avatars, banners, and emoji.
 - [ ] Add tests for quote, reply, poll, and sensitive media behavior.
 

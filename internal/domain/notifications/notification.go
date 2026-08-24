@@ -11,6 +11,7 @@ const (
 	KindRenote        = "renote"
 	KindReply         = "reply"
 	KindMention       = "mention"
+	KindPollEnded     = "pollEnded"
 )
 
 type Notification struct {
