@@ -223,6 +223,8 @@ Use these Ably message names and payloads:
   `mention_uris`, and `hashtags`. When `visibility` is `specified`,
   `mention_uris` is required, must contain at least one Actor URI, and defines
   the direct recipients.
+- `post.delete`: `data` contains `note_id`; top-level `actor_id` must own the
+  local Note. Treat success as a soft deletion plus queued federation delivery.
 - `follow.create`: `data` contains `target`, which is a Fediverse handle or an
   absolute ActivityPub Actor URL.
 - `follow.delete`: `data` contains the same `target` forms as `follow.create`;

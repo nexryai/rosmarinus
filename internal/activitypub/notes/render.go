@@ -88,6 +88,15 @@ func RenderCreate(note *domainnotes.Note) map[string]any {
 	}
 }
 
+func RenderDelete(note *domainnotes.Note, deletedAt time.Time) map[string]any {
+	return withContext(map[string]any{
+		"type":      "Delete",
+		"actor":     note.AttributedTo,
+		"object":    map[string]any{"id": note.URI, "type": "Tombstone"},
+		"published": deletedAt.UTC().Format(time.RFC3339),
+	})
+}
+
 func renderAudience(actorURI string, visibility domainnotes.Visibility, mentionURIs, visibleUserURIs []string) ([]string, []string) {
 	followers := actorURI + "/followers"
 	switch visibility {

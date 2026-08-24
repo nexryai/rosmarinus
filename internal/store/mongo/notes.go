@@ -70,6 +70,10 @@ func (r *NoteRepository) FindByID(ctx context.Context, id string) (*domainnotes.
 	return r.findOne(ctx, bson.M{"_id": id, "deletedAt": nil})
 }
 
+func (r *NoteRepository) FindAnyByID(ctx context.Context, id string) (*domainnotes.Note, error) {
+	return r.findOne(ctx, bson.M{"_id": id})
+}
+
 func (r *NoteRepository) FindByURI(ctx context.Context, uri string) (*domainnotes.Note, error) {
 	return r.findOne(ctx, bson.M{"uri": uri, "deletedAt": nil})
 }
@@ -128,6 +132,17 @@ func (r *NoteRepository) DeleteRemoteNote(ctx context.Context, uri, authorID str
 		"uri":       uri,
 		"authorId":  authorID,
 		"deletedAt": nil,
+	}, bson.M{
+		"$set": bson.M{"deletedAt": now},
+	})
+	return err
+}
+
+func (r *NoteRepository) DeleteLocalNote(ctx context.Context, id, authorID string) error {
+	now := time.Now().UTC()
+	_, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id":      id,
+		"authorId": authorID,
 	}, bson.M{
 		"$set": bson.M{"deletedAt": now},
 	})

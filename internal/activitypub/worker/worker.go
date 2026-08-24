@@ -1221,6 +1221,11 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		if err != nil {
 			return connector.PostCreated{}, err
 		}
+	} else if len(mentionURIs) > 0 {
+		_, mentionURIs, err = h.resolveDirectRecipients(ctx, actor, mentionURIs)
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
 	}
 	now := time.Now().UTC()
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
@@ -1269,6 +1274,39 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCommand) (connector.PostDeleted, error) {
+	if h.notes == nil || h.queue == nil {
+		return connector.PostDeleted{}, fmt.Errorf("note repository and queue are required")
+	}
+	actor, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.PostDeleted{}, err
+	}
+	if actor == nil {
+		return connector.PostDeleted{}, fmt.Errorf("local actor not found: %s", command.ActorID)
+	}
+	note, err := h.notes.FindAnyByID(ctx, strings.TrimSpace(command.NoteID))
+	if err != nil {
+		return connector.PostDeleted{}, err
+	}
+	if note == nil || note.AuthorID != actor.ID || note.AttributedTo != actor.URI {
+		return connector.PostDeleted{}, fmt.Errorf("owned local note not found: %s", command.NoteID)
+	}
+	deletedAt := time.Now().UTC()
+	if note.DeletedAt == nil {
+		if err := h.notes.DeleteLocalNote(ctx, note.ID, actor.ID); err != nil {
+			return connector.PostDeleted{}, err
+		}
+	} else {
+		deletedAt = note.DeletedAt.UTC()
+	}
+	activity := apnotes.RenderDelete(note, deletedAt)
+	if err := h.enqueueNoteActivityDeliveries(ctx, actor, note, activity); err != nil {
+		return connector.PostDeleted{}, err
+	}
+	return connector.PostDeleted{ActorID: actor.ID, NoteID: note.ID, URI: note.URI}, nil
 }
 
 func (h *Handler) CreateReaction(ctx context.Context, command connector.ReactionCreateCommand) (connector.ReactionCreated, error) {
@@ -1416,6 +1454,17 @@ func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note 
 }
 
 func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, actor *actors.Actor, mentionURIs []string) ([]*actors.Actor, []string, error) {
+	recipients, uris, err := h.resolveDirectRecipients(ctx, actor, mentionURIs)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(recipients) == 0 {
+		return nil, nil, fmt.Errorf("specified visibility requires at least one mention_uri")
+	}
+	return recipients, uris, nil
+}
+
+func (h *Handler) resolveDirectRecipients(ctx context.Context, actor *actors.Actor, mentionURIs []string) ([]*actors.Actor, []string, error) {
 	if h.resolver == nil {
 		return nil, nil, fmt.Errorf("actor resolver is not configured")
 	}
@@ -1444,9 +1493,6 @@ func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, actor *actors.
 		seen[uri] = struct{}{}
 		uris = append(uris, uri)
 		recipients = append(recipients, recipient)
-	}
-	if len(recipients) == 0 {
-		return nil, nil, fmt.Errorf("specified visibility requires at least one mention_uri")
 	}
 	return recipients, uris, nil
 }
@@ -1488,64 +1534,109 @@ func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, acto
 }
 
 func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) error {
+	return h.enqueueNoteActivityDeliveries(ctx, actor, note, apnotes.RenderCreate(note))
+}
+
+func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, activity map[string]any) error {
 	if h.follows == nil || h.queue == nil {
 		return fmt.Errorf("follow repository and queue are required for post delivery")
 	}
-	activity := apnotes.RenderCreate(note)
 	destinations := make(map[string]struct{})
-	afterID := ""
-	for {
-		followers, err := h.follows.ListFollowersPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
-		if err != nil {
-			return fmt.Errorf("list followers for post delivery: %w", err)
-		}
-		remoteIDs := make([]string, 0, len(followers))
-		for _, follow := range followers {
-			if follow.FollowerHost != nil {
-				remoteIDs = append(remoteIDs, follow.FollowerID)
+	recipientIDs := make(map[string]struct{})
+	if note.Visibility != domainnotes.VisibilitySpecified {
+		afterID := ""
+		for {
+			followers, err := h.follows.ListFollowersPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
+			if err != nil {
+				return fmt.Errorf("list followers for post delivery: %w", err)
 			}
-		}
-		activeRemoteIDs, err := h.repo.FilterActiveRemoteIDs(ctx, remoteIDs)
-		if err != nil {
-			return fmt.Errorf("filter active post recipients: %w", err)
-		}
-		for _, follow := range followers {
-			if follow.FollowerHost != nil {
+			remoteIDs := make([]string, 0, len(followers))
+			for _, follow := range followers {
+				if follow.FollowerHost != nil {
+					remoteIDs = append(remoteIDs, follow.FollowerID)
+				}
+			}
+			activeRemoteIDs, err := h.repo.FilterActiveRemoteIDs(ctx, remoteIDs)
+			if err != nil {
+				return fmt.Errorf("filter active post recipients: %w", err)
+			}
+			for _, follow := range followers {
+				if follow.FollowerHost == nil {
+					continue
+				}
 				if _, active := activeRemoteIDs[follow.FollowerID]; !active {
 					continue
 				}
+				if h.cfg.IsFederationHostBlocked(*follow.FollowerHost) {
+					continue
+				}
+				blocked, err := h.isBlockedPair(ctx, actor.ID, follow.FollowerID)
+				if err != nil {
+					return err
+				}
+				if blocked {
+					continue
+				}
+				inbox := strings.TrimSpace(follow.FollowerSharedInbox)
+				if inbox == "" {
+					inbox = strings.TrimSpace(follow.FollowerInbox)
+				}
+				if err := h.enqueueNoteActivity(ctx, actor.ID, inbox, activity, destinations); err != nil {
+					return err
+				}
+				recipientIDs[follow.FollowerID] = struct{}{}
 			}
-			if follow.FollowerHost != nil && h.cfg.IsFederationHostBlocked(*follow.FollowerHost) {
-				continue
+			if len(followers) < postDeliveryFollowerLimit {
+				break
 			}
-			blocked, err := h.isBlockedPair(ctx, actor.ID, follow.FollowerID)
-			if err != nil {
-				return err
-			}
-			if blocked {
-				continue
-			}
-			inbox := strings.TrimSpace(follow.FollowerSharedInbox)
-			if inbox == "" {
-				inbox = strings.TrimSpace(follow.FollowerInbox)
-			}
-			if inbox == "" {
-				continue
-			}
-			if _, exists := destinations[inbox]; exists {
-				continue
-			}
-			destinations[inbox] = struct{}{}
-			task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
-			if err := h.queue.Enqueue(ctx, task); err != nil {
-				return fmt.Errorf("enqueue Create(Note) delivery to %s: %w", inbox, err)
-			}
+			afterID = followers[len(followers)-1].ID
 		}
-		if len(followers) < postDeliveryFollowerLimit {
-			return nil
-		}
-		afterID = followers[len(followers)-1].ID
 	}
+	directURIs := note.MentionURIs
+	if note.Visibility == domainnotes.VisibilitySpecified && len(note.VisibleUserURIs) > 0 {
+		directURIs = note.VisibleUserURIs
+	}
+	for _, uri := range directURIs {
+		recipient, err := h.resolver.ResolveActor(ctx, uri)
+		if err != nil {
+			return fmt.Errorf("resolve direct post recipient %s: %w", uri, err)
+		}
+		if recipient == nil || recipient.Host == nil {
+			continue
+		}
+		if _, exists := recipientIDs[recipient.ID]; exists {
+			continue
+		}
+		if h.cfg.IsFederationHostBlocked(*recipient.Host) {
+			continue
+		}
+		blocked, err := h.isBlockedPair(ctx, actor.ID, recipient.ID)
+		if err != nil {
+			return err
+		}
+		if blocked {
+			continue
+		}
+		if err := h.enqueueNoteActivity(ctx, actor.ID, strings.TrimSpace(recipient.Inbox), activity, destinations); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *Handler) enqueueNoteActivity(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}) error {
+	if inbox == "" {
+		return nil
+	}
+	if _, exists := destinations[inbox]; exists {
+		return nil
+	}
+	destinations[inbox] = struct{}{}
+	task := queue.NewDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return fmt.Errorf("enqueue note activity delivery to %s: %w", inbox, err)
+	}
+	return nil
 }
 
 func (h *Handler) CreateActor(ctx context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {

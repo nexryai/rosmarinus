@@ -552,7 +552,7 @@ when an Ably notification is missed.
       Actor and checking ownership later.
 - [x] Require the implemented Actor-bound commands to name the acting/target
       local Actor, then authorize it against the account resolved from
-      `message.ClientID`. This includes `post.create`, `follow.create`,
+      `message.ClientID`. This includes `post.create`, `post.delete`, `follow.create`,
       `follow.delete`, `reaction.create`, `reaction.delete`, `follow.approve`, and
       `follow.reject`.
 - [ ] Apply the same owned-Actor authorization to future Actor update/delete
@@ -630,6 +630,9 @@ when an Ably notification is missed.
       `Undo(Follow)` to the remote Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
+- [x] Handle Next.js-driven `post.delete` commands by ownership-checking and
+      soft-deleting a local Note, then delivering a Misskey-compatible
+      `Delete(Tombstone)` to remote followers and direct recipients.
 - [x] Handle Next.js-driven `reaction.create` commands by checking Note
       visibility, storing the reaction, and delivering a Misskey-compatible
       `Like` to the remote author.
@@ -942,7 +945,8 @@ Implement this phase before exposing additional browser-driven mutations.
       `Update(Question)`; generic `Update(Note)` remains intentionally
       unsupported.
 - [x] Implement inbound remote note delete.
-- [ ] Implement local note delete delivery and cascaded delete behavior.
+- [x] Implement retryable local note delete delivery.
+- [ ] Implement cascaded delete behavior for dependent records.
 - [x] Implement inbound remote actor delete and account cleanup queue enqueue.
 - [ ] Implement full account cleanup worker behavior.
 - [x] Implement poll extraction and authenticated poll count updates.

@@ -79,3 +79,18 @@ func TestRenderCreateWrapsNoteAudience(t *testing.T) {
 		t.Fatalf("missing Create activity context or audience: %#v", rendered)
 	}
 }
+
+func TestRenderDeleteUsesMisskeyCompatibleTombstone(t *testing.T) {
+	deletedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
+	note := &domainnotes.Note{
+		URI: "https://rosmarinus.example/notes/1", AttributedTo: "https://rosmarinus.example/users/alice",
+	}
+	rendered := RenderDelete(note, deletedAt)
+	if rendered["type"] != "Delete" || rendered["actor"] != note.AttributedTo || rendered["published"] != deletedAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected Delete activity: %#v", rendered)
+	}
+	tombstone, ok := rendered["object"].(map[string]any)
+	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
+		t.Fatalf("unexpected Tombstone: %#v", rendered["object"])
+	}
+}

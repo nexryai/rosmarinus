@@ -314,6 +314,13 @@ every recipient before storing the note, places the deduplicated Actor URIs in
 the ActivityPub `to` audience, and delivers remote recipients to their
 individual inboxes rather than a shared inbox.
 
+To delete a local Note, publish `post.delete` with the owned local Actor in
+`actor_id` and `note_id` in `data`. Rosmarinus verifies Note ownership,
+soft-deletes the Note, and enqueues a Misskey-compatible `Delete(Tombstone)` to
+remote followers and direct recipients. A successful result contains
+`actor_id`, `note_id`, and the deleted Note `uri`. Reuse the same `request_id`
+when retrying the same logical deletion.
+
 To mark a notification read, publish `notification.mark_read` with the owned
 recipient Actor in `actor_id` and `notification_id` in `data`. A successful
 result contains `notification_id` and `is_read: true`. Rosmarinus updates a

@@ -424,6 +424,15 @@ func TestMarkNotificationReadScopesRecipientAccountAndActor(t *testing.T) {
 
 func (f *fakeNoteRepo) FindByID(ctx context.Context, id string) (*domainnotes.Note, error) {
 	for _, note := range f.notes {
+		if note.ID == id && note.DeletedAt == nil {
+			return note, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeNoteRepo) FindAnyByID(ctx context.Context, id string) (*domainnotes.Note, error) {
+	for _, note := range f.notes {
 		if note.ID == id {
 			return note, nil
 		}
@@ -479,6 +488,19 @@ func (f *fakeNoteRepo) DeleteRemoteNote(ctx context.Context, uri, authorID strin
 	now := time.Now().UTC()
 	note.DeletedAt = &now
 	delete(f.notes, uri)
+	return nil
+}
+
+func (f *fakeNoteRepo) DeleteLocalNote(ctx context.Context, id, authorID string) error {
+	if f.notes == nil {
+		return nil
+	}
+	for _, note := range f.notes {
+		if note.ID == id && note.AuthorID == authorID {
+			now := time.Now().UTC()
+			note.DeletedAt = &now
+		}
+	}
 	return nil
 }
 
@@ -1651,13 +1673,19 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
 	followRepo := &fakeFollowRepo{}
+	remoteHost := "remote.example"
+	remoteActors := make(map[string]*actors.Actor, postDeliveryFollowerLimit*2+5)
 	for i := 0; i < postDeliveryFollowerLimit*2+5; i++ {
 		id := fmt.Sprintf("follow-%03d", i)
+		actorID := "remote-" + id
+		actorURI := "https://remote.example/users/" + id
+		remoteActors[actorURI] = &actors.Actor{ID: actorID, URI: actorURI, Host: &remoteHost}
 		_, err := followRepo.Upsert(context.Background(), follows.Follow{
 			ID:                  id,
-			FollowerID:          "remote-" + id,
+			FollowerID:          actorID,
 			FolloweeID:          local.ID,
-			FollowerURI:         "https://remote.example/users/" + id,
+			FollowerURI:         actorURI,
+			FollowerHost:        &remoteHost,
 			FolloweeURI:         local.URI,
 			FollowerSharedInbox: "https://remote.example/inbox/" + id,
 			Status:              follows.StatusAccepted,
@@ -1670,7 +1698,7 @@ func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	h := New(config.Config{
 		PublicURL:    "https://rosmarinus.example",
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
-	}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	}, nil, &fakeRepo{local: local, remotes: remoteActors}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID: local.ID,
 		NoteID:  "paginated-note",
@@ -1681,6 +1709,49 @@ func TestCreatePostPaginatesFollowerDeliveries(t *testing.T) {
 	}
 	if len(q.tasks) != postDeliveryFollowerLimit*2+5 {
 		t.Fatalf("delivery task count = %d, want %d", len(q.tasks), postDeliveryFollowerLimit*2+5)
+	}
+}
+
+func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{ID: "remote-follower", URI: "https://remote.example/users/alice", Host: &remoteHost}
+	noteRepo := &fakeNoteRepo{}
+	note, err := noteRepo.CreateLocalNote(context.Background(), domainnotes.Note{
+		ID: "note-to-delete", URI: "https://rosmarinus.example/notes/note-to-delete",
+		AuthorID: local.ID, AttributedTo: local.URI, Text: "obsolete", Visibility: domainnotes.VisibilityPublic,
+	})
+	if err != nil {
+		t.Fatalf("CreateLocalNote returned error: %v", err)
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: remote.ID, FolloweeID: local.ID, FollowerURI: remote.URI, FolloweeURI: local.URI,
+		FollowerHost: &remoteHost, FollowerSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	deleted, err := h.DeletePost(context.Background(), connector.PostDeleteCommand{ActorID: local.ID, NoteID: note.ID})
+	if err != nil {
+		t.Fatalf("DeletePost returned error: %v", err)
+	}
+	if deleted.NoteID != note.ID || deleted.ActorID != local.ID || deleted.URI != note.URI {
+		t.Fatalf("unexpected result: %+v", deleted)
+	}
+	if active, _ := noteRepo.FindByID(context.Background(), note.ID); active != nil {
+		t.Fatalf("deleted note remains active: %+v", active)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d", len(q.tasks))
+	}
+	payload, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok || payload.To != "https://remote.example/inbox" || payload.Object["type"] != "Delete" {
+		t.Fatalf("unexpected delivery: %#v", q.tasks[0])
+	}
+	tombstone, ok := payload.Object["object"].(map[string]any)
+	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
+		t.Fatalf("unexpected tombstone: %#v", payload.Object["object"])
 	}
 }
 
@@ -1790,6 +1861,32 @@ func TestCreatePostDeliversSpecifiedPostToRemoteActorInbox(t *testing.T) {
 	}
 	if len(note.MentionURIs) != 1 || note.MentionURIs[0] != remote.URI {
 		t.Fatalf("stored mention URIs = %#v", note.MentionURIs)
+	}
+}
+
+func TestCreatePostDeliversPublicMentionToNonFollower(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{
+		ID: "remote-bob", Host: &remoteHost, URI: "https://remote.example/users/bob",
+		Inbox: "https://remote.example/users/bob/inbox",
+	}
+	q := &fakeQueue{}
+	noteRepo := &fakeNoteRepo{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "public-mention", Text: "hello Bob", MentionURIs: []string{remote.URI},
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d", len(q.tasks))
+	}
+	payload, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok || payload.To != remote.Inbox || payload.Object["type"] != "Create" {
+		t.Fatalf("unexpected public mention delivery: %#v", q.tasks[0])
 	}
 }
 

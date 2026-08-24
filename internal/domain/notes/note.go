@@ -59,8 +59,10 @@ type Attachment struct {
 
 type Repository interface {
 	FindByID(context.Context, string) (*Note, error)
+	FindAnyByID(context.Context, string) (*Note, error)
 	FindByURI(context.Context, string) (*Note, error)
 	CreateLocalNote(context.Context, Note) (*Note, error)
 	UpsertRemoteNote(context.Context, Note) (*Note, error)
+	DeleteLocalNote(context.Context, string, string) error
 	DeleteRemoteNote(context.Context, string, string) error
 }

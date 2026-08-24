@@ -410,7 +410,31 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 12: publish a specified-visibility note, verify it is not publicly
+	// Phase 12: soft-delete the local Note and verify Misskey applies the
+	// delivered Delete(Tombstone) by removing its federated copy.
+	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
+	if err != nil {
+		t.Fatalf("delete local Rosmarinus post: %v", err)
+	}
+	if deletedLocal.NoteID != localNoteID || deletedLocal.URI != createdLocal.URI {
+		t.Fatalf("unexpected deleted local post: %+v", deletedLocal)
+	}
+	waitFor(t, ctx, "Delete(Tombstone) applied by Misskey", func() bool {
+		var notes []struct {
+			URI string `json:"uri"`
+		}
+		misskey.call(ctx, "users/notes", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID, "limit": 10,
+		}, &notes)
+		for _, note := range notes {
+			if note.URI == createdLocal.URI {
+				return false
+			}
+		}
+		return true
+	})
+
+	// Phase 13: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"

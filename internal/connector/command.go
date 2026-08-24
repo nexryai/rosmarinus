@@ -18,6 +18,7 @@ const (
 	CommandFollowCreate         = "follow.create"
 	CommandFollowDelete         = "follow.delete"
 	CommandPostCreate           = "post.create"
+	CommandPostDelete           = "post.delete"
 	CommandReactionCreate       = "reaction.create"
 	CommandReactionDelete       = "reaction.delete"
 	CommandActorCreate          = "actor.create"
@@ -56,6 +57,7 @@ type CommandExecutor interface {
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
+	DeletePost(context.Context, PostDeleteCommand) (PostDeleted, error)
 	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
 	DeleteReaction(context.Context, ReactionDeleteCommand) (ReactionDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
@@ -130,6 +132,21 @@ type PostCreateCommand struct {
 	QuoteURI       string
 	MentionURIs    []string
 	Hashtags       []string
+}
+
+type PostDeleteData struct {
+	NoteID string `json:"note_id"`
+}
+
+type PostDeleteCommand struct {
+	ActorID string
+	NoteID  string
+}
+
+type PostDeleted struct {
+	ActorID string `json:"actor_id" bson:"actor_id"`
+	NoteID  string `json:"note_id" bson:"note_id"`
+	URI     string `json:"uri" bson:"uri"`
 }
 
 type ReactionCreateData struct {
@@ -213,7 +230,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -428,6 +445,16 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			Hashtags:       command.Hashtags,
 		})
 		return result, actorID, err
+	case CommandPostDelete:
+		var command PostDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.NoteID) == "" {
+			return nil, actorID, fmt.Errorf("note_id is required")
+		}
+		result, err := h.executor.DeletePost(ctx, PostDeleteCommand{ActorID: actorID, NoteID: command.NoteID})
+		return result, actorID, err
 	case CommandReactionCreate:
 		var command ReactionCreateData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -512,7 +539,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
 		return true
 	default:
 		return false

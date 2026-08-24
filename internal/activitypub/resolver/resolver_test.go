@@ -572,6 +572,10 @@ func (r *resolverNoteRepository) FindByID(_ context.Context, id string) (*domain
 	return nil, nil
 }
 
+func (r *resolverNoteRepository) FindAnyByID(ctx context.Context, id string) (*domainnotes.Note, error) {
+	return r.FindByID(ctx, id)
+}
+
 func (r *resolverNoteRepository) FindByURI(_ context.Context, uri string) (*domainnotes.Note, error) {
 	return r.notes[uri], nil
 }
@@ -588,6 +592,10 @@ func (r *resolverNoteRepository) UpsertRemoteNote(_ context.Context, note domain
 }
 
 func (r *resolverNoteRepository) DeleteRemoteNote(context.Context, string, string) error {
+	return nil
+}
+
+func (r *resolverNoteRepository) DeleteLocalNote(context.Context, string, string) error {
 	return nil
 }
 

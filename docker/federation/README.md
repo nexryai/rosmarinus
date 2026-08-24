@@ -31,7 +31,9 @@ The Go integration test performs this real federation sequence:
    `Create` activity, and deliver that note;
 13. react to that note from Misskey, verify the reaction in Rosmarinus, and
    dereference its Like activity;
-14. deliver a `specified` Rosmarinus note to the second account's individual
+14. delete that Rosmarinus note and verify Misskey applies the delivered
+   `Delete(Tombstone)`;
+15. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
 
