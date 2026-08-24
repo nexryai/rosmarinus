@@ -721,6 +721,7 @@ workflow may require both services to update the same document or collection.
 - [ ] `notes`: `userId`, `userHost`, `replyId`, `createdAt`
 - [ ] `notes`: tag and mention indexes suitable for MongoDB
 - [x] `follows`: unique `{ followerId, followeeId }`
+- [x] `follows`: unique partial `remoteActivityId` for non-empty values
 - [x] `follows`: basic `{ followerId, createdAt }` and
       `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
@@ -906,7 +907,8 @@ Implement this phase before exposing additional browser-driven mutations.
       delivering notes to the local Actor inbox.
 - [x] Expose follow approval through a Connector command for Next.js.
 - [x] Implement inbound remote `Undo(Follow)` for local followees.
-- [ ] Implement full `Follow`, `Accept`, and `Reject`.
+- [x] Implement `Follow`, `Accept`, and `Reject`, including current Misskey's
+      referenced outbound Follow resolution.
 - [x] Implement follow request storage without unlocked-account auto-accept.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
@@ -920,7 +922,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Apply stored blocks bidirectionally to follow approval/creation,
       reactions, announces, specified recipients, and follower fan-out; remove
       both follow directions when a Block is accepted.
-- [ ] Add tests for local/remote follow direction combinations.
+- [x] Add tests for local/remote Follow, Accept, Reject, Undo, approval, and
+      rejection direction combinations.
 
 ### Phase 6: Updates, Deletes, Polls, And Media
 

@@ -741,9 +741,12 @@ func (h *Handler) finishOutgoingFollow(ctx context.Context, actor *actors.Actor,
 	if h.follows == nil {
 		return "skip: follow repository is not configured", nil
 	}
-	object, ok := activity["object"].(map[string]any)
-	if !ok || !aptypes.IsFollow(object) {
-		return "skip: accept/reject object is not an embedded Follow", nil
+	object, err := h.resolveOutgoingFollowObject(ctx, activity["object"])
+	if err != nil {
+		return "", err
+	}
+	if object == nil || !aptypes.IsFollow(object) {
+		return "skip: accept/reject object is not a Follow", nil
 	}
 	followerURI, err := aptypes.GetAPID(object["actor"])
 	if err != nil {
@@ -781,6 +784,36 @@ func (h *Handler) finishOutgoingFollow(ctx context.Context, actor *actors.Actor,
 		return "", err
 	}
 	return "ok: outgoing follow rejected", nil
+}
+
+func (h *Handler) resolveOutgoingFollowObject(ctx context.Context, value any) (map[string]any, error) {
+	if object, ok := value.(map[string]any); ok {
+		return object, nil
+	}
+	uri, err := aptypes.GetAPID(value)
+	if err != nil {
+		return nil, nil
+	}
+	follow, err := h.follows.FindByRemoteActivityID(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+	if follow != nil {
+		return map[string]any{
+			"id":     uri,
+			"type":   "Follow",
+			"actor":  follow.FollowerURI,
+			"object": follow.FolloweeURI,
+		}, nil
+	}
+	if h.client == nil || h.cfg.IsSelfFederationURL(uri) {
+		return nil, nil
+	}
+	object, err := h.client.FetchObject(ctx, uri, h.localActor)
+	if err != nil {
+		return nil, fmt.Errorf("resolve accept/reject object: %w", err)
+	}
+	return object, nil
 }
 
 func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {

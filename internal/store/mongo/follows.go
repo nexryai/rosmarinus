@@ -51,6 +51,16 @@ func (r *FollowRepository) Find(ctx context.Context, followerID, followeeID stri
 	})
 }
 
+func (r *FollowRepository) FindByRemoteActivityID(ctx context.Context, remoteActivityID string) (*follows.Follow, error) {
+	if remoteActivityID == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{
+		"remoteActivityId": remoteActivityID,
+		"deletedAt":        nil,
+	})
+}
+
 func (r *FollowRepository) Upsert(ctx context.Context, follow follows.Follow) (*follows.Follow, error) {
 	if follow.FollowerID == "" || follow.FolloweeID == "" {
 		return nil, fmt.Errorf("followerId and followeeId are required")
@@ -76,6 +86,23 @@ func (r *FollowRepository) Upsert(ctx context.Context, follow follows.Follow) (*
 		return existing, nil
 	}
 	doc := fromFollow(follow)
+	set := bson.M{
+		"followerUri":          doc.FollowerURI,
+		"followeeUri":          doc.FolloweeURI,
+		"followerHost":         doc.FollowerHost,
+		"followeeHost":         doc.FolloweeHost,
+		"followerInbox":        doc.FollowerInbox,
+		"followerSharedInbox":  doc.FollowerSharedInbox,
+		"followeeInbox":        doc.FolloweeInbox,
+		"followeeSharedInbox":  doc.FolloweeSharedInbox,
+		"status":               doc.Status,
+		"acceptedAt":           doc.AcceptedAt,
+		"remoteUndoActivityId": doc.RemoteUndoActivityID,
+		"deletedAt":            nil,
+	}
+	if doc.RemoteActivityID != "" {
+		set["remoteActivityId"] = doc.RemoteActivityID
+	}
 	_, err = r.collection.UpdateOne(ctx, bson.M{
 		"followerId": doc.FollowerID,
 		"followeeId": doc.FolloweeID,
@@ -84,21 +111,7 @@ func (r *FollowRepository) Upsert(ctx context.Context, follow follows.Follow) (*
 			"_id":       doc.ID,
 			"createdAt": doc.CreatedAt,
 		},
-		"$set": bson.M{
-			"followerUri":          doc.FollowerURI,
-			"followeeUri":          doc.FolloweeURI,
-			"followerHost":         doc.FollowerHost,
-			"followeeHost":         doc.FolloweeHost,
-			"followerInbox":        doc.FollowerInbox,
-			"followerSharedInbox":  doc.FollowerSharedInbox,
-			"followeeInbox":        doc.FolloweeInbox,
-			"followeeSharedInbox":  doc.FolloweeSharedInbox,
-			"status":               doc.Status,
-			"acceptedAt":           doc.AcceptedAt,
-			"remoteActivityId":     doc.RemoteActivityID,
-			"remoteUndoActivityId": doc.RemoteUndoActivityID,
-			"deletedAt":            nil,
-		},
+		"$set": set,
 	}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err

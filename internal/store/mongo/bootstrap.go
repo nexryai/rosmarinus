@@ -124,6 +124,13 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetUnique(true),
 		},
 		{
+			Keys: bson.D{{Key: "remoteActivityId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_follows_remote_activity").
+				SetUnique(true).
+				SetPartialFilterExpression(bson.M{"remoteActivityId": bson.M{"$type": "string", "$gt": ""}}),
+		},
+		{
 			Keys: bson.D{{Key: "followerId", Value: 1}, {Key: "createdAt", Value: -1}},
 			Options: options.Index().
 				SetName("idx_follows_follower_created_at"),

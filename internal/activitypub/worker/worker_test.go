@@ -204,6 +204,15 @@ func (f *fakeFollowRepo) Find(ctx context.Context, followerID, followeeID string
 	return f.follows[followerID+"\x00"+followeeID], nil
 }
 
+func (f *fakeFollowRepo) FindByRemoteActivityID(_ context.Context, remoteActivityID string) (*follows.Follow, error) {
+	for _, follow := range f.follows {
+		if follow.RemoteActivityID == remoteActivityID {
+			return follow, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeFollowRepo) ListFollowers(ctx context.Context, followeeID string, limit int) ([]follows.Follow, error) {
 	result := make([]follows.Follow, 0)
 	for _, follow := range f.follows {
@@ -1052,6 +1061,31 @@ func TestCreateFollowAndAcceptEstablishesOutgoingRelationship(t *testing.T) {
 	}
 }
 
+func TestAcceptResolvesReferencedOutgoingFollow(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local-alice", URI: "https://rosmarinus.example/users/local-alice"}
+	remote := &actors.Actor{ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host}
+	const followActivityID = "https://rosmarinus.example/follows/local-alice/remote-bob"
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: local.ID, FolloweeID: remote.ID,
+		FollowerURI: local.URI, FolloweeURI: remote.URI,
+		Status: follows.StatusPending, RemoteActivityID: followActivityID,
+	})
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	result, err := h.performAcceptFollow(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/accepts/1", "type": "Accept",
+		"actor": remote.URI, "object": followActivityID,
+	})
+	if err != nil || result != "ok: outgoing follow accepted" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	follow, _ := followRepo.Find(context.Background(), local.ID, remote.ID)
+	if follow == nil || follow.Status != follows.StatusAccepted {
+		t.Fatalf("referenced Follow was not accepted: %+v", follow)
+	}
+}
+
 func TestDeleteFollowRemovesRelationshipAndEnqueuesUndo(t *testing.T) {
 	host := "remote.example"
 	local := &actors.Actor{
@@ -1254,7 +1288,7 @@ func TestProcessInboxRejectsAcceptWithoutIDLikeCurrentMisskey(t *testing.T) {
 	}
 }
 
-func TestRejectOutgoingFollowRemovesRequest(t *testing.T) {
+func TestRejectReferencedOutgoingFollowRemovesRequest(t *testing.T) {
 	host := "remote.example"
 	local := &actors.Actor{ID: "local-alice", URI: "https://rosmarinus.example/users/local-alice"}
 	remote := &actors.Actor{ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host}
@@ -1269,14 +1303,9 @@ func TestRejectOutgoingFollowRemovesRequest(t *testing.T) {
 	})
 	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
 	result, err := h.performRejectFollow(context.Background(), remote, map[string]any{
-		"id":   "https://remote.example/rejects/1",
-		"type": "Reject",
-		"object": map[string]any{
-			"id":     "https://rosmarinus.example/follows/local-alice/remote-bob",
-			"type":   "Follow",
-			"actor":  local.URI,
-			"object": remote.URI,
-		},
+		"id":     "https://remote.example/rejects/1",
+		"type":   "Reject",
+		"object": "https://rosmarinus.example/follows/local-alice/remote-bob",
 	})
 	if err != nil || result != "ok: outgoing follow rejected" {
 		t.Fatalf("result=%q err=%v", result, err)

@@ -33,6 +33,7 @@ type Follow struct {
 
 type Repository interface {
 	Find(context.Context, string, string) (*Follow, error)
+	FindByRemoteActivityID(context.Context, string) (*Follow, error)
 	ListFollowers(context.Context, string, int) ([]Follow, error)
 	ListFollowersPage(context.Context, string, string, int) ([]Follow, error)
 	Upsert(context.Context, Follow) (*Follow, error)
