@@ -151,6 +151,10 @@ Read an Actor's selected Poll choices from `poll_votes` by `noteId` and
 `actorId`. Treat `choice` as a zero-based index and never insert or update vote
 documents directly.
 
+Treat a Note's non-null `deletedAt` as authoritative. Rosmarinus subsequently
+soft-deletes reactions and removes the related Poll, Poll votes, and
+notifications idempotently; tolerate those dependent records during retries.
+
 Derive reply, renote, and reaction counts in batched MongoDB aggregations over
 active `notes` and `reactions`; filter `deletedAt: null`. Do not add or update
 denormalized counter fields in Rosmarinus Note documents.

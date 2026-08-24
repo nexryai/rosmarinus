@@ -1681,6 +1681,9 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 	} else {
 		deletedAt = note.DeletedAt.UTC()
 	}
+	if err := h.cleanupNote(ctx, note.ID); err != nil {
+		return connector.PostDeleted{}, err
+	}
 	activity := apnotes.RenderDelete(note, deletedAt)
 	if err := h.enqueueNoteActivityDeliveries(ctx, actor, note, activity); err != nil {
 		return connector.PostDeleted{}, err
@@ -2648,7 +2651,7 @@ func (h *Handler) performUndoAnnounce(ctx context.Context, actor *actors.Actor, 
 	if err != nil {
 		return "skip: undo announce id is invalid", nil
 	}
-	note, err := h.notes.FindByURI(ctx, announceURI)
+	note, err := h.notes.FindAnyByURI(ctx, announceURI)
 	if err != nil {
 		return "", err
 	}
@@ -2656,6 +2659,9 @@ func (h *Handler) performUndoAnnounce(ctx context.Context, actor *actors.Actor, 
 		return "skip: no such Announce", nil
 	}
 	if err := h.notes.DeleteRemoteNote(ctx, announceURI, actor.ID); err != nil {
+		return "", err
+	}
+	if err := h.cleanupNote(ctx, note.ID); err != nil {
 		return "", err
 	}
 	return "ok: deleted", nil
@@ -2719,7 +2725,7 @@ func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activi
 	if h.notes == nil {
 		return "skip: note repository is not configured", nil
 	}
-	note, err := h.notes.FindByURI(ctx, uri)
+	note, err := h.notes.FindAnyByURI(ctx, uri)
 	if err != nil {
 		return "", err
 	}
@@ -2732,7 +2738,24 @@ func (h *Handler) performDelete(ctx context.Context, actor *actors.Actor, activi
 	if err := h.notes.DeleteRemoteNote(ctx, uri, actor.ID); err != nil {
 		return "", err
 	}
+	if err := h.cleanupNote(ctx, note.ID); err != nil {
+		return "", err
+	}
 	return "ok: note deleted", nil
+}
+
+func (h *Handler) cleanupNote(ctx context.Context, noteID string) error {
+	if h.cleanup == nil {
+		return nil
+	}
+	result, err := h.cleanup.CleanupNote(ctx, noteID)
+	if err != nil {
+		return err
+	}
+	if h.logger != nil && (result.Reactions != 0 || result.Polls != 0 || result.PollVotes != 0 || result.Notifications != 0) {
+		h.logger.Printf("note-delete: cleaned note=%s reactions=%d polls=%d poll_votes=%d notifications=%d", noteID, result.Reactions, result.Polls, result.PollVotes, result.Notifications)
+	}
+	return nil
 }
 
 func (h *Handler) performDeleteActor(ctx context.Context, actor *actors.Actor, uri string) (string, error) {

@@ -123,6 +123,11 @@ single-choice poll, one Actor can have only one vote; for a multiple-choice
 poll, one Actor can vote once per choice. Salvia may use this collection to
 project the authenticated Actor's selected choices but must not mutate it.
 
+Deleting a local or remote Note first soft-deletes the Note and then
+idempotently soft-deletes its reactions and removes its Poll, Poll votes, and
+related notifications. Salvia must treat `notes.deletedAt` as authoritative
+immediately and tolerate the dependent collections converging during a retry.
+
 Rosmarinus intentionally keeps reply, renote, and reaction records normalized
 instead of maintaining crash-prone cross-document counters. Salvia derives
 counts for a batch of Note IDs with MongoDB aggregation over active documents:

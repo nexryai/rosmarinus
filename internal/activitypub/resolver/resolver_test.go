@@ -594,6 +594,10 @@ func (r *resolverNoteRepository) FindByURI(_ context.Context, uri string) (*doma
 	return r.notes[uri], nil
 }
 
+func (r *resolverNoteRepository) FindAnyByURI(ctx context.Context, uri string) (*domainnotes.Note, error) {
+	return r.FindByURI(ctx, uri)
+}
+
 func (r *resolverNoteRepository) CreateLocalNote(_ context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	return r.store(note), nil
 }

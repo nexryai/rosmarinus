@@ -78,6 +78,10 @@ func (r *NoteRepository) FindByURI(ctx context.Context, uri string) (*domainnote
 	return r.findOne(ctx, bson.M{"uri": uri, "deletedAt": nil})
 }
 
+func (r *NoteRepository) FindAnyByURI(ctx context.Context, uri string) (*domainnotes.Note, error) {
+	return r.findOne(ctx, bson.M{"uri": uri})
+}
+
 func (r *NoteRepository) CreateLocalNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	if note.ID == "" {
 		return nil, fmt.Errorf("note id is required")

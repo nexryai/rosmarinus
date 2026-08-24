@@ -96,6 +96,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		localActor,
 	)
 	worker.SetPollRepository(pollRepo)
+	worker.SetAccountCleanupRepository(mongostore.NewAccountCleanupRepository(db))
 
 	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
 	// Follow resource is exposed while pending, then wait for Misskey's Accept.
@@ -442,8 +443,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 14: soft-delete the local Note and verify Misskey applies the
-	// delivered Delete(Tombstone) by removing its federated copy.
+	// Phase 14: soft-delete the local Note, verify Rosmarinus removes its Poll,
+	// votes, and reactions, and verify Misskey applies the delivered Tombstone.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
 	if err != nil {
 		t.Fatalf("delete local Rosmarinus post: %v", err)
@@ -465,6 +466,15 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}
 		return true
 	})
+	if poll, findErr := pollRepo.FindByNoteID(ctx, localNoteID); findErr != nil || poll != nil {
+		t.Fatalf("deleted Note poll remains: poll=%+v err=%v", poll, findErr)
+	}
+	if reaction, findErr := reactionRepo.Find(ctx, localNoteID, remoteActor.ID); findErr != nil || reaction != nil {
+		t.Fatalf("deleted Note reaction remains: reaction=%+v err=%v", reaction, findErr)
+	}
+	if votes, countErr := db.Collection("poll_votes").CountDocuments(ctx, map[string]any{"noteId": localNoteID}); countErr != nil || votes != 0 {
+		t.Fatalf("deleted Note poll votes remain: count=%d err=%v", votes, countErr)
+	}
 
 	// Phase 15: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient

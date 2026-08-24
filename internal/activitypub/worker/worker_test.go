@@ -468,13 +468,20 @@ type fakePollRepo struct {
 }
 
 type fakeAccountCleanupRepo struct {
-	actorID string
-	result  cleanup.Result
+	actorID    string
+	noteID     string
+	result     cleanup.Result
+	noteResult cleanup.NoteResult
 }
 
 func (r *fakeAccountCleanupRepo) CleanupRemoteActor(_ context.Context, actorID string) (cleanup.Result, error) {
 	r.actorID = actorID
 	return r.result, nil
+}
+
+func (r *fakeAccountCleanupRepo) CleanupNote(_ context.Context, noteID string) (cleanup.NoteResult, error) {
+	r.noteID = noteID
+	return r.noteResult, nil
 }
 
 func (r *fakePollRepo) FindByNoteID(_ context.Context, noteID string) (*domainpolls.Poll, error) {
@@ -615,6 +622,21 @@ func (f *fakeNoteRepo) FindByURI(ctx context.Context, uri string) (*domainnotes.
 		return nil, nil
 	}
 	return f.notes[uri], nil
+}
+
+func (f *fakeNoteRepo) FindAnyByURI(_ context.Context, uri string) (*domainnotes.Note, error) {
+	if f.notes == nil {
+		return nil, nil
+	}
+	note := f.notes[uri]
+	if note == nil {
+		for _, candidate := range f.notes {
+			if candidate.URI == uri {
+				return candidate, nil
+			}
+		}
+	}
+	return note, nil
 }
 
 func (f *fakeNoteRepo) UpsertRemoteNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
@@ -1995,6 +2017,8 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	q := &fakeQueue{}
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
 		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	cleanupRepo := &fakeAccountCleanupRepo{}
+	h.SetAccountCleanupRepository(cleanupRepo)
 	deleted, err := h.DeletePost(context.Background(), connector.PostDeleteCommand{ActorID: local.ID, NoteID: note.ID})
 	if err != nil {
 		t.Fatalf("DeletePost returned error: %v", err)
@@ -2004,6 +2028,9 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	}
 	if active, _ := noteRepo.FindByID(context.Background(), note.ID); active != nil {
 		t.Fatalf("deleted note remains active: %+v", active)
+	}
+	if cleanupRepo.noteID != note.ID {
+		t.Fatalf("note dependencies were not cleaned: %+v", cleanupRepo)
 	}
 	if len(q.tasks) != 1 {
 		t.Fatalf("delivery task count = %d", len(q.tasks))
@@ -2843,6 +2870,8 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 		},
 	}}
 	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	cleanupRepo := &fakeAccountCleanupRepo{}
+	h.SetAccountCleanupRepository(cleanupRepo)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -2871,6 +2900,9 @@ func TestProcessInboxDeleteRemovesNote(t *testing.T) {
 	}
 	if noteRepo.notes["https://remote.example/notes/1"] != nil {
 		t.Fatalf("note still exists: %+v", noteRepo.notes["https://remote.example/notes/1"])
+	}
+	if cleanupRepo.noteID != "note-id" {
+		t.Fatalf("note dependencies were not cleaned: %+v", cleanupRepo)
 	}
 }
 

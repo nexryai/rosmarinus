@@ -20,6 +20,38 @@ func NewAccountCleanupRepository(db *mongo.Database) *AccountCleanupRepository {
 	return &AccountCleanupRepository{db: db}
 }
 
+func (r *AccountCleanupRepository) CleanupNote(ctx context.Context, noteID string) (cleanup.NoteResult, error) {
+	if noteID == "" {
+		return cleanup.NoteResult{}, fmt.Errorf("cleanup note id is required")
+	}
+	now := time.Now().UTC()
+	result := cleanup.NoteResult{}
+	updated, err := r.db.Collection("reactions").UpdateMany(ctx, bson.M{
+		"noteId": noteID, "deletedAt": nil,
+	}, bson.M{"$set": bson.M{"deletedAt": now}})
+	if err != nil {
+		return result, fmt.Errorf("cleanup reactions on note %s: %w", noteID, err)
+	}
+	result.Reactions = updated.ModifiedCount
+
+	deleted, err := r.db.Collection("poll_votes").DeleteMany(ctx, bson.M{"noteId": noteID})
+	if err != nil {
+		return result, fmt.Errorf("cleanup poll votes on note %s: %w", noteID, err)
+	}
+	result.PollVotes = deleted.DeletedCount
+	deleted, err = r.db.Collection("polls").DeleteMany(ctx, bson.M{"_id": noteID})
+	if err != nil {
+		return result, fmt.Errorf("cleanup poll on note %s: %w", noteID, err)
+	}
+	result.Polls = deleted.DeletedCount
+	deleted, err = r.db.Collection("notifications").DeleteMany(ctx, bson.M{"noteId": noteID})
+	if err != nil {
+		return result, fmt.Errorf("cleanup notifications on note %s: %w", noteID, err)
+	}
+	result.Notifications = deleted.DeletedCount
+	return result, nil
+}
+
 func (r *AccountCleanupRepository) CleanupRemoteActor(ctx context.Context, actorID string) (cleanup.Result, error) {
 	if actorID == "" {
 		return cleanup.Result{}, fmt.Errorf("cleanup actor id is required")
