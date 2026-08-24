@@ -205,6 +205,16 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Options: options.Index().
 				SetName("idx_follows_followee_status_created_at"),
 		},
+		{
+			Keys: bson.D{{Key: "followerHost", Value: 1}, {Key: "status", Value: 1}, {Key: "deletedAt", Value: 1}},
+			Options: options.Index().
+				SetName("idx_follows_follower_host_status_active"),
+		},
+		{
+			Keys: bson.D{{Key: "followeeHost", Value: 1}, {Key: "status", Value: 1}, {Key: "deletedAt", Value: 1}},
+			Options: options.Index().
+				SetName("idx_follows_followee_host_status_active"),
+		},
 	})
 	if err != nil {
 		return err
@@ -259,6 +269,23 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		{
 			Keys:    bson.D{{Key: "sha256", Value: 1}},
 			Options: options.Index().SetName("idx_media_sha256").SetSparse(true),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("instances").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "host", Value: 1}},
+			Options: options.Index().SetName("uniq_instances_host").SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "suspensionState", Value: 1}, {Key: "updatedAt", Value: -1}},
+			Options: options.Index().SetName("idx_instances_suspension_updated_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "infoUpdatedAt", Value: 1}},
+			Options: options.Index().SetName("idx_instances_info_updated_at").SetSparse(true),
 		},
 	})
 	return err

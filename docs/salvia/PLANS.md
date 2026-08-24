@@ -343,6 +343,10 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Resolve remote custom emoji through an explicit `{ host, name }`
       projection, join `originalUrl` to ready `media` metadata, and treat the
       emoji document's remote `publicUrl` as untrusted compatibility data.
+- [ ] Add a read-only `instances` projection for federation administration;
+      expose software/presentation metadata, directional relationship counts,
+      recent send/receive health, and suspension state, and join icon/favicon
+      sources to ready `media` records.
 - [ ] Join Question notes to `polls` by Note ID and zip ordered `choices` with
       the positionally matching `votes` array.
 - [ ] Read the current Actor's selected choices from `poll_votes` by

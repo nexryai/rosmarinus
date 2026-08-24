@@ -24,6 +24,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
+	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
@@ -45,6 +46,7 @@ type App struct {
 	emojis                      *mongostore.EmojiRepository
 	polls                       *mongostore.PollRepository
 	media                       *mongostore.MediaRepository
+	instances                   *mongostore.InstanceRepository
 	accountCleanup              *mongostore.AccountCleanupRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
@@ -116,6 +118,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
 	mediaRepo := mongostore.NewMediaRepository(mongoDB)
+	instanceRepo := mongostore.NewInstanceRepository(mongoDB)
 	accountCleanupRepo := mongostore.NewAccountCleanupRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
@@ -156,6 +159,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
 	apWorker.SetMediaRepository(mediaRepo, mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
+	apWorker.SetInstanceRepository(instanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
@@ -219,6 +223,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		emojis:                     emojiRepo,
 		polls:                      pollRepo,
 		media:                      mediaRepo,
+		instances:                  instanceRepo,
 		accountCleanup:             accountCleanupRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
@@ -269,7 +274,6 @@ func (a *App) Start(ctx context.Context) error {
 	}
 	if a.cfg.RunWorkers {
 		a.apWorker.Register(a.queueServer)
-		a.queueServer.RegisterSystemNoopHandlers()
 		go func() {
 			if err := a.queueServer.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Printf("queue worker stopped: %v", err)

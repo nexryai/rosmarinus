@@ -12,7 +12,7 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `media`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `media`, `instances`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
 | `media_fs.files`, `media_fs.chunks` | Rosmarinus | No Salvia access; served only through Rosmarinus HTTP |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
@@ -109,6 +109,43 @@ placeholder or an explicitly controlled remote-media fallback. Salvia must not
 read `media_fs.files` or `media_fs.chunks`. Rosmarinus serves ready cache entries
 with immutable caching, ETag, and `nosniff`; active document types such as SVG,
 HTML, and XML are never admitted to the cache.
+
+Rosmarinus owns the `instances` collection and registers a normalized remote
+host after authenticated inbound contact or outbound delivery. Salvia may use
+this read-only projection for federation administration and remote-server UI:
+
+```text
+_id                      stable opaque instance ID
+host                     normalized ASCII host; unique
+usersCount               remote NodeInfo user count
+notesCount               remote NodeInfo local post plus comment count
+followingCount           accepted remote-host users following local Actors
+followersCount           accepted local Actors following remote-host users
+latestRequestReceivedAt  latest authenticated inbound Activity timestamp
+latestRequestSentAt      latest attempted outbound delivery timestamp
+latestStatus             latest outbound HTTP status, or 0 for transport errors
+isNotResponding          whether the latest delivery path is failing
+notRespondingSince       start of the current delivery-failure period
+suspensionState          none | manuallySuspended | goneSuspended | autoSuspendedForNotResponding
+softwareName             normalized NodeInfo software name
+softwareVersion          NodeInfo software version
+openRegistrations        NodeInfo registration flag when supplied
+name, description        remote server presentation metadata
+maintainerName, maintainerEmail
+iconUrl, faviconUrl      validated remote HTTPS source URLs
+themeColor               remote theme-color metadata
+firstRetrievedAt         first contact timestamp
+infoUpdatedAt            latest metadata refresh timestamp
+updatedAt                latest operational update timestamp
+```
+
+Rosmarinus refreshes metadata no more than daily unless explicitly forced and
+keeps relationship counts current when accepted follows change. Join instance
+icon URLs to `media.originalUrl` and use only a ready `media.publicUrl`.
+Treat any non-`none` suspension state as an outbound-delivery stop. A host that
+fails continuously for seven days is automatically suspended; authenticated
+inbound traffic revives only that automatic failure suspension, never a manual
+or gone suspension.
 
 ActivityPub `Question` state is stored in `polls`, keyed by the related
 `notes._id`. The read projection contains `authorId`, `authorHost`, ordered

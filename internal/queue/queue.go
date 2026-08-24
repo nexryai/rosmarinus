@@ -43,10 +43,11 @@ type InboxPayload struct {
 }
 
 type DeliverPayload struct {
-	Version int            `json:"version"`
-	ActorID string         `json:"actor_id"`
-	To      string         `json:"to"`
-	Object  map[string]any `json:"object"`
+	Version       int            `json:"version"`
+	ActorID       string         `json:"actor_id"`
+	To            string         `json:"to"`
+	Object        map[string]any `json:"object"`
+	IsSharedInbox bool           `json:"is_shared_inbox,omitempty"`
 }
 
 type AccountDeletePayload struct {
@@ -66,6 +67,12 @@ type MediaFetchPayload struct {
 	URL     string `json:"url"`
 }
 
+type MetadataPayload struct {
+	Version int    `json:"version"`
+	Host    string `json:"host"`
+	Force   bool   `json:"force,omitempty"`
+}
+
 func NewInboxTask(activity map[string]any, signature map[string]any, maxRetry int, timeout time.Duration) Task {
 	return Task{
 		Type:     TaskInbox,
@@ -81,16 +88,25 @@ func NewInboxTask(activity map[string]any, signature map[string]any, maxRetry in
 }
 
 func NewDeliverTask(actorID, to string, object map[string]any, maxRetry int, timeout time.Duration) Task {
+	return newDeliverTask(actorID, to, object, false, maxRetry, timeout)
+}
+
+func NewSharedInboxDeliverTask(actorID, to string, object map[string]any, maxRetry int, timeout time.Duration) Task {
+	return newDeliverTask(actorID, to, object, true, maxRetry, timeout)
+}
+
+func newDeliverTask(actorID, to string, object map[string]any, isSharedInbox bool, maxRetry int, timeout time.Duration) Task {
 	return Task{
 		Type:     TaskDeliver,
 		Queue:    QueueDeliver,
 		MaxRetry: maxRetry,
 		Timeout:  timeout,
 		Payload: DeliverPayload{
-			Version: 1,
-			ActorID: actorID,
-			To:      to,
-			Object:  object,
+			Version:       1,
+			ActorID:       actorID,
+			To:            to,
+			Object:        object,
+			IsSharedInbox: isSharedInbox,
 		},
 	}
 }
@@ -123,5 +139,12 @@ func NewMediaFetchTask(mediaID, rawURL string) Task {
 	return Task{
 		Type: TaskMedia, Queue: QueueMedia, MaxRetry: 7, Timeout: 2 * time.Minute,
 		Payload: MediaFetchPayload{Version: 1, MediaID: mediaID, URL: rawURL},
+	}
+}
+
+func NewMetadataTask(host string, force bool) Task {
+	return Task{
+		Type: TaskMetadata, Queue: QueueMetadata, MaxRetry: 5, Timeout: 2 * time.Minute,
+		Payload: MetadataPayload{Version: 1, Host: host, Force: force},
 	}
 }

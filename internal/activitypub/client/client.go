@@ -107,38 +107,38 @@ func (c *Client) FetchObject(ctx context.Context, targetURL string, signer *acto
 	return object, nil
 }
 
-func (c *Client) Deliver(ctx context.Context, targetURL string, signer actors.Actor, object map[string]any) error {
+func (c *Client) Deliver(ctx context.Context, targetURL string, signer actors.Actor, object map[string]any) (int, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
-		return fmt.Errorf("invalid activitypub url: %w", err)
+		return 0, fmt.Errorf("invalid activitypub url: %w", err)
 	}
 	if err := c.validateFederationURL(target); err != nil {
-		return err
+		return 0, err
 	}
 	body, err := json.Marshal(object)
 	if err != nil {
-		return fmt.Errorf("marshal activitypub delivery: %w", err)
+		return 0, fmt.Errorf("marshal activitypub delivery: %w", err)
 	}
 	signed, err := apsig.CreateSignedPost(privateKey(signer), targetURL, body, map[string]string{
 		"User-Agent": c.cfg.UserAgent,
 	}, time.Now())
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, signed.Method, targetURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	applySignedHeaders(req, signed.Headers)
 	res, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("activitypub deliver: %w", err)
+		return 0, fmt.Errorf("activitypub deliver: %w", err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return &StatusError{Operation: "activitypub deliver", Status: res.StatusCode}
+		return res.StatusCode, &StatusError{Operation: "activitypub deliver", Status: res.StatusCode}
 	}
-	return nil
+	return res.StatusCode, nil
 }
 
 func (c *Client) newGetRequest(ctx context.Context, targetURL string, signer *actors.Actor) (*http.Request, error) {

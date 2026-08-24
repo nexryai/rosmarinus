@@ -56,6 +56,7 @@ type Config struct {
 	MediaMaxBytes               int64
 	MediaFetchTimeout           time.Duration
 	MediaAllowedPrivateNetworks []string
+	InstanceMetadataTimeout     time.Duration
 }
 
 type QueueConfig struct {
@@ -112,6 +113,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		MediaMaxBytes:               getInt64(lookup, "MEDIA_MAX_BYTES", 20*1024*1024),
 		MediaFetchTimeout:           getDuration(lookup, "MEDIA_FETCH_TIMEOUT", time.Minute),
 		MediaAllowedPrivateNetworks: splitCSV(get(lookup, "MEDIA_ALLOWED_PRIVATE_NETWORKS", "")),
+		InstanceMetadataTimeout:     getDuration(lookup, "INSTANCE_METADATA_TIMEOUT", 30*time.Second),
 	}
 
 	var err error
@@ -230,6 +232,9 @@ func (c Config) Validate() error {
 	}
 	if c.MediaMaxBytes <= 0 || c.MediaFetchTimeout <= 0 {
 		return fmt.Errorf("media max bytes and fetch timeout must be positive")
+	}
+	if c.InstanceMetadataTimeout <= 0 {
+		return fmt.Errorf("INSTANCE_METADATA_TIMEOUT must be positive")
 	}
 	for _, network := range c.MediaAllowedPrivateNetworks {
 		if _, err := netip.ParsePrefix(network); err != nil {

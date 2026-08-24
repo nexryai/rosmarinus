@@ -77,7 +77,7 @@ func TestFetchObjectRejectsBlockedHostAndSubdomain(t *testing.T) {
 			t.Fatalf("FetchObject(%q) should reject blocked host, got %v", target, err)
 		}
 	}
-	if err := client.Deliver(context.Background(), "https://example.com/inbox", actors.Actor{}, map[string]any{}); err == nil || !strings.Contains(err.Error(), "blocked") {
+	if _, err := client.Deliver(context.Background(), "https://example.com/inbox", actors.Actor{}, map[string]any{}); err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("Deliver should reject blocked host, got %v", err)
 	}
 }

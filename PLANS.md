@@ -392,19 +392,22 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Skip configured blocked hosts and Actor block relationships.
 - [x] Skip suspended Actors retained in existing relationships and prevent
       resolver refresh from resurrecting tombstoned Actors.
-- [ ] Update instance send stats on success and failure.
-- [ ] Suspend delivery to instances that have failed for a long period.
+- [x] Update instance send stats on success and failure.
+- [x] Suspend delivery to instances that have failed continuously for seven
+      days, matching current Misskey's automatic suspension threshold.
+- [x] Treat non-retryable HTTP failures as terminal and mark a host gone when
+      its shared inbox returns `410`, matching current Misskey delivery policy.
 
 ### Instance Metadata
 
-- [ ] Register instances by host on first contact.
-- [ ] Track counts for users, notes, following, and followers where relevant.
-- [ ] Track latest sent/received timestamps and status codes.
-- [ ] Fetch remote `.well-known/nodeinfo`.
-- [ ] Fetch remote root HTML and `manifest.json` where useful.
-- [ ] Store software name/version, open registrations, maintainer, name,
+- [x] Register instances by host on first authenticated contact or delivery.
+- [x] Track NodeInfo users/notes and accepted directional follow counts.
+- [x] Track latest sent/received timestamps and status codes.
+- [x] Fetch remote `.well-known/nodeinfo` with 2.1, 2.0, then 1.0 preference.
+- [x] Fetch remote root HTML and linked or conventional `manifest.json`.
+- [x] Store software name/version, open registrations, maintainer, name,
       description, icon, favicon, and theme color.
-- [ ] Refresh metadata at most daily unless forced.
+- [x] Refresh metadata at most daily unless forced.
 
 ## Redis Queue Design
 
@@ -429,7 +432,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] `poll-ended`: delayed poll expiration work.
 - [x] `media`: remote attachment/avatar/banner/emoji fetch, GridFS storage, and
       safe public serving; orphan cleanup remains a maintenance task.
-- [ ] `metadata`: remote instance metadata refresh.
+- [x] `metadata`: remote instance metadata refresh.
 - [x] `account-delete`: remote actor delete cleanup task payload/enqueue path.
 - [x] `account-delete`: validate the tombstoned remote Actor and idempotently
       clean its Notes, reactions, relationships, polls, and notifications.
@@ -481,7 +484,7 @@ flags, but that is an operational option, not the default architecture.
       bounded context.
 - [x] AP object lock by URI for note and Announce target resolution.
 - [x] Extend AP object locking to missing/stale Actor refresh paths.
-- [ ] Instance metadata lock by host.
+- [x] Instance metadata lock by host.
 - [ ] Public key cache keyed by `keyId`.
 - [ ] Actor URI cache.
 - [ ] Suspended host cache.
@@ -721,7 +724,7 @@ workflow may require both services to update the same document or collection.
 - [x] `blocks`
 - [x] `emojis`
 - [x] `media` plus Rosmarinus-private `media_fs.files` and `media_fs.chunks`
-- [ ] `instances`
+- [x] `instances`
 - [x] `abuse_reports`
 - [x] `notifications`
 - [x] `connector_command_receipts`
@@ -759,7 +762,8 @@ workflow may require both services to update the same document or collection.
       `{ recipientAccountId, isRead, createdAt, _id }`
 - [x] `notifications`: unique `{ recipientActorId, kind, remoteActivityId }`
 - [x] `emojis`: unique `{ host, name }` and sparse `uri`
-- [ ] `instances`: unique `host`
+- [x] `instances`: unique `host`, suspension/update lookup, and sparse metadata
+      refresh timestamp
 - [x] `media`: unique `originalUrl`, `{ state, createdAt }`, and sparse content
       hash
 - [x] `connector_command_receipts`: unique `{ accountId, requestId }`

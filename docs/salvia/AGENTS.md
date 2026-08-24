@@ -143,6 +143,16 @@ Treat `media` as a read-only Rosmarinus projection. Use its `publicUrl` only for
 explicitly controlled fallback. Never access the private `media_fs.files` or
 `media_fs.chunks` collections from Salvia.
 
+Treat `instances` as read-only Rosmarinus federation state keyed by unique
+normalized `host`. It contains NodeInfo counts and software metadata, server
+name/description/maintainer/icon/favicon/theme metadata, latest authenticated
+receive and delivery timestamps/status, `isNotResponding`,
+`notRespondingSince`, and `suspensionState`. The relationship counters mean
+remote-host users following local Actors (`followingCount`) and local Actors
+following remote-host users (`followersCount`). Treat a suspension state other
+than `none` as delivery-disabled. Join `iconUrl` and `faviconUrl` to ready
+`media` records; never render them as trusted local cache URLs directly.
+
 Join ActivityPub Question notes to `polls` by `polls._id = notes._id`. Preserve
 the stored choice order and pair each choice with the vote count at the same
 array index. Never update poll arrays directly from Salvia.

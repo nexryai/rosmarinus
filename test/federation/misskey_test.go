@@ -27,6 +27,7 @@ import (
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
+	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -64,6 +65,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	pollRepo := mongostore.NewPollRepository(db)
 	mediaRepo := mongostore.NewMediaRepository(db)
 	emojiRepo := mongostore.NewEmojiRepository(db)
+	instanceRepo := mongostore.NewInstanceRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -100,6 +102,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	worker.SetPollRepository(pollRepo)
 	worker.SetEmojiRepository(emojiRepo)
 	worker.SetAccountCleanupRepository(mongostore.NewAccountCleanupRepository(db))
+	worker.SetInstanceRepository(instanceRepo, instancemetadata.New(30*time.Second, cfg.UserAgent, nil, misskey.httpClient))
 
 	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
 	// Follow resource is exposed while pending, then wait for Misskey's Accept.
@@ -531,6 +534,18 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			}
 		}
 		return false
+	})
+
+	// Phase 16: verify first contact, authenticated inbox traffic, successful
+	// deliveries, relationship changes, and daily NodeInfo discovery converge on
+	// one current-Misskey instance document that Salvia can read.
+	waitFor(t, ctx, "Misskey instance metadata and federation stats stored", func() bool {
+		instance, findErr := instanceRepo.FindByHost(ctx, "a.test")
+		return findErr == nil && instance != nil && instance.SoftwareName == "misskey" &&
+			instance.InfoUpdatedAt != nil && instance.LatestRequestReceivedAt != nil &&
+			instance.LatestRequestSentAt != nil && instance.LatestStatus >= 200 && instance.LatestStatus < 300 &&
+			!instance.IsNotResponding && instance.SuspensionState == "none" &&
+			instance.UsersCount >= 2 && instance.FollowingCount == 1 && instance.FollowersCount == 0
 	})
 }
 

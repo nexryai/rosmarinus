@@ -40,6 +40,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MediaMaxBytes != 20*1024*1024 || cfg.MediaFetchTimeout != time.Minute {
 		t.Fatalf("unexpected media defaults: bytes=%d timeout=%s", cfg.MediaMaxBytes, cfg.MediaFetchTimeout)
 	}
+	if cfg.InstanceMetadataTimeout != 30*time.Second {
+		t.Fatalf("InstanceMetadataTimeout = %s", cfg.InstanceMetadataTimeout)
+	}
 }
 
 func TestLoadMediaConfig(t *testing.T) {
@@ -51,6 +54,8 @@ func TestLoadMediaConfig(t *testing.T) {
 			return "30s", true
 		case "MEDIA_ALLOWED_PRIVATE_NETWORKS":
 			return "10.0.0.0/8, fd00::/8", true
+		case "INSTANCE_METADATA_TIMEOUT":
+			return "15s", true
 		default:
 			return "", false
 		}
@@ -58,7 +63,7 @@ func TestLoadMediaConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.MediaMaxBytes != 1048576 || cfg.MediaFetchTimeout != 30*time.Second || len(cfg.MediaAllowedPrivateNetworks) != 2 {
+	if cfg.MediaMaxBytes != 1048576 || cfg.MediaFetchTimeout != 30*time.Second || len(cfg.MediaAllowedPrivateNetworks) != 2 || cfg.InstanceMetadataTimeout != 15*time.Second {
 		t.Fatalf("unexpected media config: %+v", cfg)
 	}
 }

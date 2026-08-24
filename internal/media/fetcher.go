@@ -35,12 +35,29 @@ func NewWithAllowedNetworks(maxBytes int64, timeout time.Duration, userAgent str
 			fetcher.allowedNetworks = append(fetcher.allowedNetworks, prefix)
 		}
 	}
+	client = configureHTTPClient(timeout, userAgent, client, fetcher.allowedNetworks, fetcher.ValidateURL, "media")
+	fetcher.client = client
+	return fetcher
+}
+
+func NewSafeHTTPClient(timeout time.Duration, userAgent string, allowedNetworks []string) (*http.Client, func(*url.URL) error) {
+	validator := &Fetcher{}
+	for _, network := range allowedNetworks {
+		if prefix, err := netip.ParsePrefix(network); err == nil {
+			validator.allowedNetworks = append(validator.allowedNetworks, prefix)
+		}
+	}
+	client := configureHTTPClient(timeout, userAgent, nil, validator.allowedNetworks, validator.ValidateURL, "HTTP")
+	return client, validator.ValidateURL
+}
+
+func configureHTTPClient(timeout time.Duration, userAgent string, client *http.Client, allowedNetworks []netip.Prefix, validate func(*url.URL) error, operation string) *http.Client {
 	if client == nil {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		// Resolve and validate the origin locally; an environment proxy could
 		// otherwise resolve the target after the SSRF boundary.
 		transport.Proxy = nil
-		transport.DialContext = safeDialer((&net.Dialer{Timeout: 10 * time.Second}).DialContext, fetcher.allowedNetworks)
+		transport.DialContext = safeDialer((&net.Dialer{Timeout: 10 * time.Second}).DialContext, allowedNetworks)
 		client = &http.Client{Transport: transport, Timeout: timeout}
 	} else {
 		clone := *client
@@ -52,10 +69,12 @@ func NewWithAllowedNetworks(maxBytes int64, timeout time.Duration, userAgent str
 	previousRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
-			return fmt.Errorf("stopped after 5 media redirects")
+			return fmt.Errorf("stopped after 5 %s redirects", operation)
 		}
-		if err := fetcher.ValidateURL(req.URL); err != nil {
-			return err
+		if validate != nil {
+			if err := validate(req.URL); err != nil {
+				return err
+			}
 		}
 		if previousRedirect != nil {
 			return previousRedirect(req, via)
@@ -63,8 +82,7 @@ func NewWithAllowedNetworks(maxBytes int64, timeout time.Duration, userAgent str
 		return nil
 	}
 	client.Transport = userAgentTransport{base: client.Transport, userAgent: userAgent}
-	fetcher.client = client
-	return fetcher
+	return client
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string) (Result, error) {
@@ -139,8 +157,11 @@ func safeDialer(dial func(context.Context, string, string) (net.Conn, error), al
 			return nil, err
 		}
 		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if err != nil || len(addresses) == 0 {
+		if err != nil {
 			return nil, fmt.Errorf("resolve media host %s: %w", host, err)
+		}
+		if len(addresses) == 0 {
+			return nil, fmt.Errorf("resolve media host %s: no addresses", host)
 		}
 		for _, address := range addresses {
 			if !isAllowedIP(address.IP, allowedNetworks) {

@@ -11,8 +11,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -29,6 +31,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	"github.com/nexryai/rosmarinus/internal/domain/instances"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
@@ -792,7 +795,112 @@ func (f *fakeReportRepo) Create(ctx context.Context, report reports.Report) (*re
 }
 
 type fakeClient struct {
-	objects map[string]map[string]any
+	objects     map[string]map[string]any
+	deliverErr  error
+	deliveries  int
+	lastDeliver string
+}
+
+type fakeInstanceRepo struct {
+	instance *instances.Instance
+	received int
+	success  int
+	failure  int
+	metadata instances.Metadata
+}
+
+func (r *fakeInstanceRepo) FindByHost(context.Context, string) (*instances.Instance, error) {
+	return r.instance, nil
+}
+
+func (r *fakeInstanceRepo) Register(_ context.Context, host string, now time.Time) (*instances.Instance, bool, error) {
+	if r.instance != nil {
+		return r.instance, false, nil
+	}
+	r.instance = &instances.Instance{
+		ID: "instance-id", Host: host, SuspensionState: instances.SuspensionNone,
+		FirstRetrievedAt: now, UpdatedAt: now,
+	}
+	return r.instance, true, nil
+}
+
+func (r *fakeInstanceRepo) RecordReceived(_ context.Context, host string, now time.Time) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	r.received++
+	instance.LatestRequestReceivedAt = &now
+	instance.IsNotResponding = false
+	instance.NotRespondingSince = nil
+	if instance.SuspensionState == instances.SuspensionAutoNotResponding {
+		instance.SuspensionState = instances.SuspensionNone
+	}
+	return instance, nil
+}
+
+func (r *fakeInstanceRepo) RecordDeliverySuccess(_ context.Context, host string, now time.Time, status int) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	r.success++
+	instance.LatestRequestSentAt = &now
+	instance.LatestStatus = status
+	instance.IsNotResponding = false
+	instance.NotRespondingSince = nil
+	return instance, nil
+}
+
+func (r *fakeInstanceRepo) RecordDeliveryFailure(_ context.Context, host string, now time.Time, status int) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	r.failure++
+	instance.LatestRequestSentAt = &now
+	instance.LatestStatus = status
+	instance.IsNotResponding = true
+	if instance.NotRespondingSince == nil {
+		instance.NotRespondingSince = &now
+	}
+	return instance, nil
+}
+
+func (r *fakeInstanceRepo) UpdateMetadata(_ context.Context, host string, metadata instances.Metadata, now time.Time) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	r.metadata = metadata
+	instance.SoftwareName = strings.ToLower(metadata.SoftwareName)
+	instance.SoftwareVersion = metadata.SoftwareVersion
+	instance.Name = metadata.Name
+	instance.IconURL = metadata.IconURL
+	instance.FaviconURL = metadata.FaviconURL
+	instance.InfoUpdatedAt = &now
+	return instance, nil
+}
+
+func (r *fakeInstanceRepo) RefreshRelationshipCounts(_ context.Context, host string, now time.Time) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	return instance, nil
+}
+
+func (r *fakeInstanceRepo) SuspendGone(_ context.Context, host string, now time.Time) (*instances.Instance, error) {
+	instance, _, _ := r.Register(context.Background(), host, now)
+	instance.SuspensionState = instances.SuspensionGone
+	return instance, nil
+}
+
+type fakeInstanceMetadataFetcher struct {
+	metadata instances.Metadata
+	calls    int
+}
+
+func (f *fakeInstanceMetadataFetcher) Fetch(context.Context, string) (instances.Metadata, error) {
+	f.calls++
+	return f.metadata, nil
+}
+
+type deliveryStatusError struct {
+	status int
+}
+
+func (e deliveryStatusError) Error() string {
+	return fmt.Sprintf("delivery status %d", e.status)
+}
+
+func (e deliveryStatusError) HTTPStatusCode() int {
+	return e.status
 }
 
 type fakeActivityLocker struct {
@@ -816,8 +924,120 @@ func (f *fakeClient) FetchObject(ctx context.Context, uri string, signer *actors
 	return f.objects[uri], nil
 }
 
-func (f *fakeClient) Deliver(ctx context.Context, target string, signer actors.Actor, object map[string]any) error {
-	return nil
+func (f *fakeClient) Deliver(ctx context.Context, target string, signer actors.Actor, object map[string]any) (int, error) {
+	f.deliveries++
+	f.lastDeliver = target
+	if f.deliverErr != nil {
+		var statusError interface{ HTTPStatusCode() int }
+		if errors.As(f.deliverErr, &statusError) {
+			return statusError.HTTPStatusCode(), f.deliverErr
+		}
+		return 0, f.deliverErr
+	}
+	return http.StatusAccepted, nil
+}
+
+func TestHandleDeliverTaskTracksInstanceAndSkipsSuspendedHost(t *testing.T) {
+	local := &actors.Actor{ID: "local-id", URI: "https://local.example/users/alice"}
+	newTask := func(t *testing.T) *asynq.Task {
+		t.Helper()
+		payload, err := json.Marshal(queue.DeliverPayload{
+			Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+			Object: map[string]any{"type": "Create"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return asynq.NewTask(queue.TaskDeliver, payload)
+	}
+
+	t.Run("success", func(t *testing.T) {
+		client := &fakeClient{}
+		instanceRepo := &fakeInstanceRepo{}
+		queued := &fakeQueue{}
+		h := &Handler{repo: &fakeRepo{local: local}, client: client, instances: instanceRepo, queue: queued}
+		if err := h.HandleDeliverTask(context.Background(), newTask(t)); err != nil {
+			t.Fatalf("HandleDeliverTask returned error: %v", err)
+		}
+		if client.deliveries != 1 || instanceRepo.success != 1 || instanceRepo.instance.LatestStatus != http.StatusAccepted {
+			t.Fatalf("delivery state was not recorded: client=%+v instance=%+v", client, instanceRepo.instance)
+		}
+		if queued.task.Type != queue.TaskMetadata {
+			t.Fatalf("metadata refresh was not scheduled: %+v", queued.task)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		client := &fakeClient{deliverErr: deliveryStatusError{status: http.StatusServiceUnavailable}}
+		instanceRepo := &fakeInstanceRepo{}
+		h := &Handler{repo: &fakeRepo{local: local}, client: client, instances: instanceRepo}
+		if err := h.HandleDeliverTask(context.Background(), newTask(t)); err == nil {
+			t.Fatal("failed delivery returned nil")
+		}
+		if instanceRepo.failure != 1 || instanceRepo.instance.LatestStatus != http.StatusServiceUnavailable || !instanceRepo.instance.IsNotResponding {
+			t.Fatalf("failure state was not recorded: %+v", instanceRepo.instance)
+		}
+	})
+
+	t.Run("suspended", func(t *testing.T) {
+		client := &fakeClient{}
+		instanceRepo := &fakeInstanceRepo{instance: &instances.Instance{Host: "remote.example", SuspensionState: instances.SuspensionManual}}
+		h := &Handler{repo: &fakeRepo{local: local}, client: client, instances: instanceRepo}
+		if err := h.HandleDeliverTask(context.Background(), newTask(t)); err != nil {
+			t.Fatalf("HandleDeliverTask returned error: %v", err)
+		}
+		if client.deliveries != 0 {
+			t.Fatalf("delivery to suspended host was attempted: %+v", client)
+		}
+	})
+
+	t.Run("gone shared inbox", func(t *testing.T) {
+		client := &fakeClient{deliverErr: deliveryStatusError{status: http.StatusGone}}
+		instanceRepo := &fakeInstanceRepo{}
+		h := &Handler{repo: &fakeRepo{local: local}, client: client, instances: instanceRepo}
+		payload, err := json.Marshal(queue.DeliverPayload{
+			Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+			Object: map[string]any{"type": "Create"}, IsSharedInbox: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, payload))
+		if !errors.Is(err, asynq.SkipRetry) {
+			t.Fatalf("gone shared inbox error = %v, want SkipRetry", err)
+		}
+		if instanceRepo.instance.SuspensionState != instances.SuspensionGone {
+			t.Fatalf("instance state = %q", instanceRepo.instance.SuspensionState)
+		}
+	})
+}
+
+func TestHandleMetadataTaskUsesDailyFreshnessAndHostLock(t *testing.T) {
+	metadata := instances.Metadata{NodeInfoFetched: true, SoftwareName: "Misskey", SoftwareVersion: "2026.8.0", Name: "Remote"}
+	fetcher := &fakeInstanceMetadataFetcher{metadata: metadata}
+	instanceRepo := &fakeInstanceRepo{}
+	locker := &fakeActivityLocker{acquired: true}
+	h := &Handler{instances: instanceRepo, metadataFetcher: fetcher, locker: locker}
+	payload, err := json.Marshal(queue.MetadataPayload{Version: 1, Host: "remote.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.HandleMetadataTask(context.Background(), asynq.NewTask(queue.TaskMetadata, payload)); err != nil {
+		t.Fatalf("HandleMetadataTask returned error: %v", err)
+	}
+	if fetcher.calls != 1 || instanceRepo.metadata.SoftwareName != "Misskey" || locker.name != "metadata:remote.example" || !locker.unlocked {
+		t.Fatalf("metadata update did not use the host lock: fetches=%d repo=%+v lock=%+v", fetcher.calls, instanceRepo.metadata, locker)
+	}
+
+	fresh := time.Now().UTC()
+	instanceRepo.instance.InfoUpdatedAt = &fresh
+	locker.name = ""
+	if err := h.HandleMetadataTask(context.Background(), asynq.NewTask(queue.TaskMetadata, payload)); err != nil {
+		t.Fatalf("fresh HandleMetadataTask returned error: %v", err)
+	}
+	if fetcher.calls != 1 || locker.name != "" {
+		t.Fatalf("fresh metadata was fetched or locked: calls=%d lock=%q", fetcher.calls, locker.name)
+	}
 }
 
 func TestPerformCollectionProcessesBoundedSignerHostedActivities(t *testing.T) {

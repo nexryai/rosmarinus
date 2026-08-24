@@ -40,12 +40,19 @@ The Go integration test performs this real federation sequence:
 17. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
+18. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
+   metadata and user count, tracks authenticated receive/successful delivery
+   timestamps and status, and keeps per-instance relationship counts current.
 
 Media downloads default to 20 MiB and a one-minute operation timeout through
 `MEDIA_MAX_BYTES` and `MEDIA_FETCH_TIMEOUT`. Production deployments should
 leave `MEDIA_ALLOWED_PRIVATE_NETWORKS` empty. The federation fixture sets it to
 the RFC1918 Docker ranges so Rosmarinus can fetch test-only Misskey media from
 the isolated compose network.
+
+Instance NodeInfo, root HTML, and manifest discovery uses the same private
+network allowlist and defaults to a 30-second operation timeout. Override the
+timeout with `INSTANCE_METADATA_TIMEOUT` when necessary.
 
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.

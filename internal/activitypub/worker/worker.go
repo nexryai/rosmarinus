@@ -31,6 +31,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	"github.com/nexryai/rosmarinus/internal/domain/instances"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
@@ -43,7 +44,7 @@ import (
 
 type APClient interface {
 	FetchObject(context.Context, string, *actors.Actor) (map[string]any, error)
-	Deliver(context.Context, string, actors.Actor, map[string]any) error
+	Deliver(context.Context, string, actors.Actor, map[string]any) (int, error)
 }
 
 const (
@@ -72,27 +73,33 @@ type MediaFetcher interface {
 	ValidateURL(*url.URL) error
 }
 
+type InstanceMetadataFetcher interface {
+	Fetch(context.Context, string) (instances.Metadata, error)
+}
+
 type Handler struct {
-	cfg           config.Config
-	logger        *log.Logger
-	repo          actors.Repository
-	notes         domainnotes.Repository
-	follows       follows.Repository
-	blocks        blocks.Repository
-	emojis        emojis.Repository
-	reactions     reactions.Repository
-	reports       reports.Repository
-	notifications notifications.Repository
-	polls         polls.Repository
-	cleanup       cleanup.Repository
-	media         domainmedia.Repository
-	mediaFetcher  MediaFetcher
-	queue         QueueClient
-	client        APClient
-	connector     ConnectorPublisher
-	locker        ActivityLocker
-	resolver      *apresolver.Resolver
-	localActor    *actors.Actor
+	cfg             config.Config
+	logger          *log.Logger
+	repo            actors.Repository
+	notes           domainnotes.Repository
+	follows         follows.Repository
+	blocks          blocks.Repository
+	emojis          emojis.Repository
+	reactions       reactions.Repository
+	reports         reports.Repository
+	notifications   notifications.Repository
+	polls           polls.Repository
+	cleanup         cleanup.Repository
+	media           domainmedia.Repository
+	mediaFetcher    MediaFetcher
+	instances       instances.Repository
+	metadataFetcher InstanceMetadataFetcher
+	queue           QueueClient
+	client          APClient
+	connector       ConnectorPublisher
+	locker          ActivityLocker
+	resolver        *apresolver.Resolver
+	localActor      *actors.Actor
 }
 
 func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
@@ -143,6 +150,11 @@ func (h *Handler) SetMediaRepository(repository domainmedia.Repository, fetcher 
 	h.resolver.SetMediaScheduler(h)
 }
 
+func (h *Handler) SetInstanceRepository(repository instances.Repository, fetcher InstanceMetadataFetcher) {
+	h.instances = repository
+	h.metadataFetcher = fetcher
+}
+
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
 	if h.notifications == nil {
 		return connector.NotificationRead{}, fmt.Errorf("notification repository is not configured")
@@ -168,6 +180,53 @@ func (h *Handler) Register(server *queue.AsynqServer) {
 	server.HandleFunc(queue.TaskAccountDelete, h.HandleAccountDeleteTask)
 	server.HandleFunc(queue.TaskPollEnded, h.HandlePollEndedTask)
 	server.HandleFunc(queue.TaskMedia, h.HandleMediaFetchTask)
+	server.HandleFunc(queue.TaskMetadata, h.HandleMetadataTask)
+}
+
+func (h *Handler) HandleMetadataTask(ctx context.Context, task *asynq.Task) error {
+	var payload queue.MetadataPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("decode instance metadata task: %w", err)
+	}
+	if payload.Version != 1 || strings.TrimSpace(payload.Host) == "" {
+		return fmt.Errorf("invalid instance metadata task payload")
+	}
+	if h.instances == nil || h.metadataFetcher == nil {
+		return fmt.Errorf("instance repository and metadata fetcher are required")
+	}
+	instance, _, err := h.instances.Register(ctx, payload.Host, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if !payload.Force && instance.InfoUpdatedAt != nil && time.Since(*instance.InfoUpdatedAt) < 24*time.Hour {
+		return nil
+	}
+	var release func(context.Context) error
+	if h.locker != nil {
+		var acquired bool
+		release, acquired, err = h.locker.Acquire(ctx, "metadata:"+instance.Host)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			return nil
+		}
+		defer release(context.Background())
+	}
+	metadata, err := h.metadataFetcher.Fetch(ctx, instance.Host)
+	if err != nil {
+		return err
+	}
+	updated, err := h.instances.UpdateMetadata(ctx, instance.Host, metadata, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	_ = h.ScheduleMedia(ctx, updated.IconURL)
+	_ = h.ScheduleMedia(ctx, updated.FaviconURL)
+	if h.logger != nil {
+		h.logger.Printf("instance: metadata updated host=%s software=%s version=%s", updated.Host, updated.SoftwareName, updated.SoftwareVersion)
+	}
+	return nil
 }
 
 func (h *Handler) ScheduleMedia(ctx context.Context, rawURL string) error {
@@ -369,13 +428,61 @@ func (h *Handler) HandleDeliverTask(ctx context.Context, task *asynq.Task) error
 	if actor == nil {
 		return fmt.Errorf("deliver actor not found: %s", payload.ActorID)
 	}
-	if err := h.client.Deliver(ctx, payload.To, *actor, payload.Object); err != nil {
+	target, err := url.Parse(payload.To)
+	if err != nil || target.Hostname() == "" {
+		return fmt.Errorf("invalid delivery target")
+	}
+	host := strings.ToLower(strings.TrimSuffix(target.Hostname(), "."))
+	if h.instances != nil {
+		instance, _, registerErr := h.instances.Register(ctx, host, time.Now().UTC())
+		if registerErr != nil {
+			return registerErr
+		}
+		if instance.SuspensionState != "" && instance.SuspensionState != instances.SuspensionNone {
+			if h.logger != nil {
+				h.logger.Printf("deliver: skipped suspended instance host=%s state=%s", host, instance.SuspensionState)
+			}
+			return nil
+		}
+	}
+	status, err := h.client.Deliver(ctx, payload.To, *actor, payload.Object)
+	if err != nil {
+		var statusError interface{ HTTPStatusCode() int }
+		if status == 0 && errors.As(err, &statusError) {
+			status = statusError.HTTPStatusCode()
+		}
+		if h.instances != nil {
+			if _, recordErr := h.instances.RecordDeliveryFailure(ctx, host, time.Now().UTC(), status); recordErr != nil && h.logger != nil {
+				h.logger.Printf("instance: record delivery failure host=%s error=%v", host, recordErr)
+			}
+			if payload.IsSharedInbox && status == 410 {
+				if _, suspendErr := h.instances.SuspendGone(ctx, host, time.Now().UTC()); suspendErr != nil {
+					return fmt.Errorf("suspend gone instance %s: %w", host, suspendErr)
+				}
+			}
+		}
+		if status >= 300 && !retryableDeliveryStatus(status) {
+			return fmt.Errorf("%v: %w", err, asynq.SkipRetry)
+		}
 		return err
+	}
+	if h.instances != nil {
+		if instance, recordErr := h.instances.RecordDeliverySuccess(ctx, host, time.Now().UTC(), status); recordErr != nil {
+			if h.logger != nil {
+				h.logger.Printf("instance: record delivery success host=%s error=%v", host, recordErr)
+			}
+		} else {
+			h.scheduleInstanceMetadata(ctx, instance)
+		}
 	}
 	if h.logger != nil {
 		h.logger.Printf("deliver: sent actor=%s to=%s type=%v", actor.ID, payload.To, payload.Object["type"])
 	}
 	return nil
+}
+
+func retryableDeliveryStatus(status int) bool {
+	return status == 408 || status == 429 || status >= 500
 }
 
 func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) (string, error) {
@@ -439,6 +546,15 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 	if err != nil || signerHost != activityHost {
 		return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerHost, activityHost), nil
 	}
+	if h.instances != nil {
+		if instance, recordErr := h.instances.RecordReceived(ctx, signerHost, time.Now().UTC()); recordErr != nil {
+			if h.logger != nil {
+				h.logger.Printf("instance: record inbox host=%s error=%v", signerHost, recordErr)
+			}
+		} else {
+			h.scheduleInstanceMetadata(ctx, instance)
+		}
+	}
 	if h.locker != nil {
 		lockName := fmt.Sprintf("activity:%x", sha256.Sum256([]byte(activityID)))
 		unlock, acquired, err := h.locker.Acquire(ctx, lockName)
@@ -457,6 +573,18 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 		}()
 	}
 	return h.performActivity(ctx, authActor, payload.Activity)
+}
+
+func (h *Handler) scheduleInstanceMetadata(ctx context.Context, instance *instances.Instance) {
+	if h.queue == nil || instance == nil {
+		return
+	}
+	if instance.InfoUpdatedAt != nil && time.Since(*instance.InfoUpdatedAt) < 24*time.Hour {
+		return
+	}
+	if err := h.queue.Enqueue(ctx, queue.NewMetadataTask(instance.Host, false)); err != nil && h.logger != nil {
+		h.logger.Printf("instance: enqueue metadata host=%s error=%v", instance.Host, err)
+	}
 }
 
 func (h *Handler) performActivity(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
@@ -735,8 +863,10 @@ func (h *Handler) enqueueOutgoingFollow(ctx context.Context, follower, followee 
 	}
 
 	remoteInbox := followee.Inbox
+	isSharedInbox := false
 	if remoteInbox == "" {
 		remoteInbox = followee.SharedInbox
+		isSharedInbox = true
 	}
 	if remoteInbox == "" {
 		return "", fmt.Errorf("follow target inbox is empty")
@@ -766,7 +896,11 @@ func (h *Handler) enqueueOutgoingFollow(ctx context.Context, follower, followee 
 	}); err != nil {
 		return "", err
 	}
-	if err := h.queue.Enqueue(ctx, queue.NewDeliverTask(follower.ID, remoteInbox, followActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)); err != nil {
+	task := queue.NewDeliverTask(follower.ID, remoteInbox, followActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(follower.ID, remoteInbox, followActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
+	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err
 	}
 	return "ok: follow delivery enqueued", nil
@@ -949,8 +1083,10 @@ func (h *Handler) DeleteFollow(ctx context.Context, command connector.FollowDele
 	}
 
 	remoteInbox := strings.TrimSpace(followee.Inbox)
+	isSharedInbox := false
 	if remoteInbox == "" {
 		remoteInbox = strings.TrimSpace(followee.SharedInbox)
+		isSharedInbox = true
 	}
 	if remoteInbox == "" {
 		return connector.FollowDeleted{}, fmt.Errorf("follow target inbox is empty")
@@ -977,7 +1113,13 @@ func (h *Handler) DeleteFollow(ctx context.Context, command connector.FollowDele
 	if err := h.follows.Delete(ctx, follower.ID, followee.ID, ""); err != nil {
 		return connector.FollowDeleted{}, err
 	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, followee.Host); err != nil {
+		return connector.FollowDeleted{}, err
+	}
 	task := queue.NewDeliverTask(follower.ID, remoteInbox, undoActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(follower.ID, remoteInbox, undoActivity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return connector.FollowDeleted{}, fmt.Errorf("enqueue Undo(Follow) delivery: %w", err)
 	}
@@ -1036,10 +1178,16 @@ func (h *Handler) finishOutgoingFollow(ctx context.Context, actor *actors.Actor,
 		if _, err := h.follows.Approve(ctx, follower.ID, actor.ID); err != nil {
 			return "", err
 		}
+		if err := h.refreshInstanceRelationshipCounts(ctx, actor.Host); err != nil {
+			return "", err
+		}
 		return "ok: outgoing follow accepted", nil
 	}
 	activityID, _ := activity["id"].(string)
 	if err := h.follows.Delete(ctx, follower.ID, actor.ID, activityID); err != nil {
+		return "", err
+	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, actor.Host); err != nil {
 		return "", err
 	}
 	return "ok: outgoing follow rejected", nil
@@ -1384,6 +1532,9 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	if follow == nil {
 		return "skip: follow request not found", nil
 	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, follow.FollowerHost, follow.FolloweeHost); err != nil {
+		return "", err
+	}
 	followee, err := h.repo.FindLocalByID(ctx, followeeID)
 	if err != nil {
 		return "", err
@@ -1392,8 +1543,10 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 		return "skip: followee is not a local user", nil
 	}
 	inbox := follow.FollowerInbox
+	isSharedInbox := false
 	if inbox == "" {
 		inbox = follow.FollowerSharedInbox
+		isSharedInbox = true
 	}
 	if inbox == "" {
 		return "skip: follower inbox is empty", nil
@@ -1408,6 +1561,9 @@ func (h *Handler) ApproveFollow(ctx context.Context, followerID, followeeID stri
 	}
 	accept := renderAccept(followee, followActivity)
 	task := queue.NewDeliverTask(followee.ID, inbox, accept, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(followee.ID, inbox, accept, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err
 	}
@@ -1450,8 +1606,10 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 		return "skip: followee is not a local user", nil
 	}
 	inbox := follow.FollowerInbox
+	isSharedInbox := false
 	if inbox == "" {
 		inbox = follow.FollowerSharedInbox
+		isSharedInbox = true
 	}
 	if inbox == "" {
 		return "skip: follower inbox is empty", nil
@@ -1467,8 +1625,14 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 	if err := h.follows.Delete(ctx, followerID, followeeID, ""); err != nil {
 		return "", err
 	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, follow.FollowerHost, follow.FolloweeHost); err != nil {
+		return "", err
+	}
 	reject := renderReject(followee, followActivity)
 	task := queue.NewDeliverTask(followee.ID, inbox, reject, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(followee.ID, inbox, reject, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return "", err
 	}
@@ -2014,10 +2178,11 @@ func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *acto
 					continue
 				}
 				inbox := strings.TrimSpace(follow.FollowerSharedInbox)
+				isSharedInbox := inbox != ""
 				if inbox == "" {
 					inbox = strings.TrimSpace(follow.FollowerInbox)
 				}
-				if err := h.enqueueNoteActivity(ctx, actor.ID, inbox, activity, destinations); err != nil {
+				if err := h.enqueueNoteActivity(ctx, actor.ID, inbox, activity, destinations, isSharedInbox); err != nil {
 					return err
 				}
 				recipientIDs[follow.FollowerID] = struct{}{}
@@ -2053,14 +2218,14 @@ func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *acto
 		if blocked {
 			continue
 		}
-		if err := h.enqueueNoteActivity(ctx, actor.ID, strings.TrimSpace(recipient.Inbox), activity, destinations); err != nil {
+		if err := h.enqueueNoteActivity(ctx, actor.ID, strings.TrimSpace(recipient.Inbox), activity, destinations, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (h *Handler) enqueueNoteActivity(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}) error {
+func (h *Handler) enqueueNoteActivity(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}, isSharedInbox bool) error {
 	if inbox == "" {
 		return nil
 	}
@@ -2069,6 +2234,9 @@ func (h *Handler) enqueueNoteActivity(ctx context.Context, actorID, inbox string
 	}
 	destinations[inbox] = struct{}{}
 	task := queue.NewDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return fmt.Errorf("enqueue note activity delivery to %s: %w", inbox, err)
 	}
@@ -2205,6 +2373,9 @@ func (h *Handler) performBlock(ctx context.Context, blocker *actors.Actor, activ
 			return "", err
 		}
 		if err := h.follows.Delete(ctx, blockee.ID, blocker.ID, ""); err != nil {
+			return "", err
+		}
+		if err := h.refreshInstanceRelationshipCounts(ctx, blocker.Host, blockee.Host); err != nil {
 			return "", err
 		}
 	}
@@ -2587,6 +2758,9 @@ func (h *Handler) performUndo(ctx context.Context, actor *actors.Actor, activity
 	if err := h.follows.Delete(ctx, actor.ID, followee.ID, undoID); err != nil {
 		return "", err
 	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, actor.Host); err != nil {
+		return "", err
+	}
 	return "ok: unfollowed", nil
 }
 
@@ -2637,7 +2811,31 @@ func (h *Handler) performUndoAccept(ctx context.Context, actor *actors.Actor, ac
 	if err := h.follows.Delete(ctx, follower.ID, actor.ID, undoID); err != nil {
 		return "", err
 	}
+	if err := h.refreshInstanceRelationshipCounts(ctx, actor.Host); err != nil {
+		return "", err
+	}
 	return "ok: unfollowed", nil
+}
+
+func (h *Handler) refreshInstanceRelationshipCounts(ctx context.Context, hosts ...*string) error {
+	if h.instances == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		if host == nil || strings.TrimSpace(*host) == "" {
+			continue
+		}
+		normalized := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(*host), "."))
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		if _, err := h.instances.RefreshRelationshipCounts(ctx, normalized, time.Now().UTC()); err != nil {
+			return fmt.Errorf("refresh instance relationship counts for %s: %w", normalized, err)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) undoObject(ctx context.Context, value any) (map[string]any, error) {

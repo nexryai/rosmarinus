@@ -47,6 +47,14 @@ func TestClientInterface(t *testing.T) {
 	}
 }
 
+func TestNewSharedInboxDeliverTask(t *testing.T) {
+	task := NewSharedInboxDeliverTask("actor", "https://remote.example/inbox", map[string]any{"type": "Create"}, 11, time.Minute)
+	payload, ok := task.Payload.(DeliverPayload)
+	if !ok || !payload.IsSharedInbox || payload.Version != 1 {
+		t.Fatalf("unexpected shared inbox payload: %#v", task.Payload)
+	}
+}
+
 func TestNewAccountDeleteTask(t *testing.T) {
 	task := NewAccountDeleteTask("actor-id", "https://remote.example/users/alice")
 	if task.Type != TaskAccountDelete || task.Queue != QueueAccountDelete {
@@ -83,6 +91,17 @@ func TestNewMediaFetchTask(t *testing.T) {
 	payload, ok := task.Payload.(MediaFetchPayload)
 	if !ok || payload.Version != 1 || payload.MediaID != "media-id" || payload.URL != "https://remote.example/file.png" {
 		t.Fatalf("unexpected payload: %#v", task.Payload)
+	}
+}
+
+func TestNewMetadataTask(t *testing.T) {
+	task := NewMetadataTask("remote.example", true)
+	if task.Type != TaskMetadata || task.Queue != QueueMetadata || task.MaxRetry != 5 || task.Timeout != 2*time.Minute {
+		t.Fatalf("unexpected metadata task: %+v", task)
+	}
+	payload, ok := task.Payload.(MetadataPayload)
+	if !ok || payload.Version != 1 || payload.Host != "remote.example" || !payload.Force {
+		t.Fatalf("unexpected metadata payload: %#v", task.Payload)
 	}
 }
 
