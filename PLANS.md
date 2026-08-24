@@ -485,10 +485,13 @@ flags, but that is an operational option, not the default architecture.
 - [x] AP object lock by URI for note and Announce target resolution.
 - [x] Extend AP object locking to missing/stale Actor refresh paths.
 - [x] Instance metadata lock by host.
-- [ ] Public key cache keyed by `keyId`.
-- [ ] Actor URI cache.
-- [ ] Suspended host cache.
-- [ ] Optional WebFinger cache with short TTL.
+- [x] Redis public key cache keyed by `keyId`, using current Misskey's 12-hour
+      TTL and write-path invalidation.
+- [x] Redis Actor URI cache with current Misskey's five-minute TTL and
+      write-path invalidation.
+- [x] Redis instance/suspended-host cache with a one-hour TTL and immediate
+      health/suspension update propagation.
+- [x] Redis WebFinger cache with a short five-minute TTL.
 
 ## Connector Pub/Sub Design
 

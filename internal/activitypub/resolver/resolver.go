@@ -92,6 +92,10 @@ func (r *Resolver) SetMediaScheduler(scheduler MediaScheduler) {
 	r.media = scheduler
 }
 
+func (r *Resolver) SetWebFinger(webFinger WebFinger) {
+	r.webFinger = webFinger
+}
+
 func New(repo actors.Repository, fetcher Fetcher, signer *actors.Actor) *Resolver {
 	return &Resolver{repo: repo, fetcher: fetcher, signer: signer}
 }

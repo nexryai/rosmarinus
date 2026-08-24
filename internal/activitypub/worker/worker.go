@@ -155,6 +155,10 @@ func (h *Handler) SetInstanceRepository(repository instances.Repository, fetcher
 	h.metadataFetcher = fetcher
 }
 
+func (h *Handler) SetWebFingerResolver(webFinger apresolver.WebFinger) {
+	h.resolver.SetWebFinger(webFinger)
+}
+
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
 	if h.notifications == nil {
 		return connector.NotificationRead{}, fmt.Errorf("notification repository is not configured")

@@ -18,6 +18,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
+	apwebfinger "github.com/nexryai/rosmarinus/internal/activitypub/webfinger"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
 	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
@@ -38,7 +39,7 @@ type App struct {
 	mongoDB                     *mongo.Database
 	redisClient                 *redis.Client
 	apLocker                    *cache.Locker
-	actors                      *mongostore.ActorRepository
+	actors                      *cache.CachedActorRepository
 	notes                       *mongostore.NoteRepository
 	follows                     *mongostore.FollowRepository
 	blocks                      *mongostore.BlockRepository
@@ -46,7 +47,7 @@ type App struct {
 	emojis                      *mongostore.EmojiRepository
 	polls                       *mongostore.PollRepository
 	media                       *mongostore.MediaRepository
-	instances                   *mongostore.InstanceRepository
+	instances                   *cache.CachedInstanceRepository
 	accountCleanup              *mongostore.AccountCleanupRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
@@ -144,6 +145,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		_ = redisClient.Close()
 		return nil, fmt.Errorf("ping redis: %w", err)
 	}
+	valueCache := cache.NewRedisValueStore(redisClient, "rosmarinus:cache")
+	cachedActorRepo := cache.NewCachedActorRepository(actorRepo, valueCache)
+	cachedInstanceRepo := cache.NewCachedInstanceRepository(instanceRepo, valueCache)
 
 	redisCfg := queue.RedisConfig{
 		Addr:     cfg.RedisAddr,
@@ -154,12 +158,13 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, 10, cfg.WorkerQueues, logger)
 	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
-	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
+	apWorker := apworker.New(cfg, logger, cachedActorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
 	apWorker.SetMediaRepository(mediaRepo, mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
-	apWorker.SetInstanceRepository(instanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
+	apWorker.SetInstanceRepository(cachedInstanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
+	apWorker.SetWebFingerResolver(cache.NewCachedWebFinger(apwebfinger.New(nil, cfg.UserAgent), valueCache))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
@@ -186,7 +191,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			_ = queueClient.Close()
 			return nil, fmt.Errorf("create ably connector command source: %w", err)
 		}
-		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, actorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
+		connectorCommands = connector.NewCommandHandler(connectorCommandSource, salviaAccountRepo, cachedActorRepo, apWorker, connectorPublisher, connectorReceiptRepo, logger, cfg.ConnectorReceiptTTL)
 	}
 	if key := cfg.AccountControlSubscribeAPIKey(); key != "" {
 		connectorControlSource, err = connector.NewAblyCommandSource(key, cfg.ConnectorAccountControlChannel)
@@ -199,10 +204,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			}
 			return nil, fmt.Errorf("create ably connector account control source: %w", err)
 		}
-		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, actorRepo, logger)
+		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, cachedActorRepo, logger)
 	}
 	if connectorCommandSource != nil || connectorControlSource != nil {
-		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, actorRepo, actorRepo, logger)
+		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, cachedActorRepo, cachedActorRepo, logger)
 	}
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)
@@ -215,7 +220,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		mongoDB:                    mongoDB,
 		redisClient:                redisClient,
 		apLocker:                   apLocker,
-		actors:                     actorRepo,
+		actors:                     cachedActorRepo,
 		notes:                      noteRepo,
 		follows:                    followRepo,
 		blocks:                     blockRepo,
@@ -223,7 +228,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		emojis:                     emojiRepo,
 		polls:                      pollRepo,
 		media:                      mediaRepo,
-		instances:                  instanceRepo,
+		instances:                  cachedInstanceRepo,
 		accountCleanup:             accountCleanupRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
@@ -242,7 +247,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:                queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo),
+			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil
