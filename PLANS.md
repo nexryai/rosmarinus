@@ -227,12 +227,14 @@ the same style as current Misskey.
 - [x] `Announce`: reject specified Notes, other Actors' followers-only Notes,
       pure Announce targets, blocks, and blocked hosts using current Misskey's
       sharing rules.
-- [ ] `Announce`: update denormalized counters.
+- [x] `Announce`: expose normalized, indexed renote records for exact counts.
 - [x] `Like`, `EmojiReaction`, `EmojiReact`: resolve target note and create
       or replace the actor's reaction using current Misskey-compatible
       `_misskey_reaction || content || name` precedence.
-- [ ] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and update
-      note reaction counts/notification side effects.
+- [x] `Like`, `EmojiReaction`, `EmojiReact`: extract emoji tags and persist
+      notification side effects.
+- [x] `Like`, `EmojiReaction`, `EmojiReact`: expose normalized, indexed
+      reaction records for exact aggregate counts.
 - [x] `Follow`: store every remote follower -> local followee request as
       pending and do not enqueue `Accept(Follow)` automatically.
 - [x] `Follow`: basic internal approval path transitions a pending request into
@@ -338,10 +340,12 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Store basic remote attachment metadata.
 - [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
 - [x] Store resolved `replyId` and `quoteId` alongside their AP URIs.
-- [ ] Store cached files, polls, URL, and denormalized author fields.
+- [ ] Store cached files, URL, and denormalized author fields.
+- [x] Store remote poll state separately from Question Notes.
 - [x] Store the resolved ActivityPub audience URIs for specified Notes.
-- [ ] Update reply counts, renote counts, and hashtags where Rosmarinus owns
-      those writes.
+- [x] Keep reply, renote, and reaction state normalized and expose indexed
+      aggregation fields to Salvia instead of crash-prone cross-document
+      counters; store hashtags directly on Notes.
 - [x] Persist local notifications for inbound federation activities.
 
 ### Custom Emoji
@@ -358,7 +362,9 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 ### Polls
 
 - [ ] Render local polls as `Question` with `oneOf` or `anyOf`.
-- [ ] Extract remote `Question` choices and expiry.
+- [x] Extract remote `Question` choices, vote counts, multiplicity, and expiry.
+- [x] Accept authenticated `Update(Question)` vote-count refreshes without
+      allowing the remote Actor to replace stored choice identity/order.
 - [ ] Support vote activities represented as notes replying to poll notes.
 - [ ] Enqueue delayed poll-ended work in Redis.
 - [ ] Deliver question updates to remote followers when votes change.
@@ -695,7 +701,7 @@ workflow may require both services to update the same document or collection.
 - [ ] `actor_profiles`
 - [ ] `actor_public_keys`
 - [x] `notes`
-- [ ] `polls`
+- [x] `polls`
 - [x] `reactions`
 - [x] `follows`
 - [ ] `follow_requests`
@@ -719,17 +725,19 @@ workflow may require both services to update the same document or collection.
 - [x] `notes`: unique sparse `uri`
 - [x] `notes`: basic `{ authorId, createdAt }`
 - [x] `notes`: basic `{ renoteId, createdAt }`
-- [ ] `notes`: `userId`, `userHost`, `replyId`, `createdAt`
+- [x] `notes`: active reply/renote aggregation indexes by target ID
 - [ ] `notes`: tag and mention indexes suitable for MongoDB
 - [x] `follows`: unique `{ followerId, followeeId }`
 - [x] `follows`: unique partial `remoteActivityId` for non-empty values
 - [x] `follows`: basic `{ followerId, createdAt }` and
       `{ followeeId, createdAt }`
 - [ ] `follow_requests`: unique `{ followerId, followeeId }`
+- [x] `polls`: `{ authorId, expiresAt }` and sparse `expiresAt`
 - [x] `blocks`: unique `{ blockerId, blockeeId }`
 - [x] `reactions`: unique `{ noteId, actorId }`
 - [x] `reactions`: basic `{ noteId, createdAt }` and
       `{ actorId, createdAt }`
+- [x] `reactions`: active per-Note reaction aggregation index
 - [x] `abuse_reports`: unique sparse `remoteActivityId`
 - [x] `abuse_reports`: basic `{ targetUserId, createdAt }` and
       `{ reporterId, createdAt }`
@@ -914,11 +922,11 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement basic inbound `Like`, `EmojiReaction`, and undo reaction
       persistence.
 - [x] Implement reaction emoji extraction into the shared remote emoji store.
-- [ ] Implement reaction counts.
+- [x] Derive reaction counts from active indexed reaction records.
 - [x] Implement durable reaction notifications and local reaction delivery.
 - [x] Implement basic inbound `Announce` and undo announce persistence.
 - [x] Implement current-Misskey-compatible Announce visibility checks.
-- [ ] Implement Announce counter side effects.
+- [x] Derive Announce counts from active indexed renote records.
 - [x] Implement durable Announce notifications for local Note authors.
 - [x] Implement basic inbound block and unblock.
 - [x] Apply stored blocks bidirectionally to follow approval/creation,
@@ -929,14 +937,17 @@ Implement this phase before exposing additional browser-driven mutations.
 
 ### Phase 6: Updates, Deletes, Polls, And Media
 
-- [ ] Implement actor update.
-- [ ] Implement note update.
+- [x] Implement authenticated remote Actor update.
+- [x] Match current Misskey by implementing `Update(Person)` and
+      `Update(Question)`; generic `Update(Note)` remains intentionally
+      unsupported.
 - [x] Implement inbound remote note delete.
 - [ ] Implement local note delete delivery and cascaded delete behavior.
 - [x] Implement inbound remote actor delete and account cleanup queue enqueue.
 - [ ] Implement full account cleanup worker behavior.
-- [ ] Implement poll extraction, vote ingestion, delayed poll-ended jobs, and
-      poll update delivery.
+- [x] Implement poll extraction and authenticated poll count updates.
+- [ ] Implement vote ingestion, delayed poll-ended jobs, and poll update
+      delivery.
 - [ ] Implement media fetch for note attachments, avatars, banners, and emoji.
 - [ ] Add tests for quote, reply, poll, and sensitive media behavior.
 

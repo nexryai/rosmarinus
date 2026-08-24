@@ -334,6 +334,10 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       `mentionUris` as a content-authorization substitute.
 - [ ] Resolve remote custom emoji through an explicit `{ host, name }`
       projection and treat a remote `publicUrl` as untrusted remote media.
+- [ ] Join Question notes to `polls` by Note ID and zip ordered `choices` with
+      the positionally matching `votes` array.
+- [ ] Batch reply, renote, and reaction count aggregation by Note IDs, filter
+      `deletedAt: null`, and group reactions by `reaction` where needed.
 - [ ] Make relationship views tolerate Block-driven soft deletion of either
       follow direction and rebuild state from `blocks` plus active `follows`.
 - [ ] Project remote Actor `movedToUri`, `alsoKnownAs`, and `movedAt` where the

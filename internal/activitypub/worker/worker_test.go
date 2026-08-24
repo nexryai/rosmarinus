@@ -24,6 +24,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
+	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -336,6 +337,32 @@ type fakeNotificationRepo struct {
 
 type fakeEmojiRepo struct {
 	emojis map[string]*emojis.Emoji
+}
+
+type fakePollRepo struct {
+	polls map[string]*domainpolls.Poll
+}
+
+func (r *fakePollRepo) FindByNoteID(_ context.Context, noteID string) (*domainpolls.Poll, error) {
+	return r.polls[noteID], nil
+}
+
+func (r *fakePollRepo) UpsertRemote(_ context.Context, poll domainpolls.Poll) (*domainpolls.Poll, error) {
+	if r.polls == nil {
+		r.polls = map[string]*domainpolls.Poll{}
+	}
+	copy := poll
+	r.polls[poll.NoteID] = &copy
+	return &copy, nil
+}
+
+func (r *fakePollRepo) UpdateRemoteVotes(_ context.Context, noteID, authorID string, votes []int) (*domainpolls.Poll, error) {
+	poll := r.polls[noteID]
+	if poll == nil || poll.AuthorID != authorID {
+		return nil, nil
+	}
+	poll.Votes = append([]int(nil), votes...)
+	return poll, nil
 }
 
 func (r *fakeEmojiRepo) UpsertRemote(_ context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
@@ -716,6 +743,63 @@ func TestPerformCreatePersistsReplyNotificationWithoutDuplicateMention(t *testin
 	}
 	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindReply {
 		t.Fatalf("reply notification was not deduplicated: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)
+	}
+}
+
+func TestPerformCreateStoresRemoteQuestionPoll(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	noteRepo := &fakeNoteRepo{}
+	pollRepo := &fakePollRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetPollRepository(pollRepo)
+	result, err := h.performCreate(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/create-poll", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/notes/poll", "type": "Question", "attributedTo": remote.URI,
+			"to": apnotes.PublicAudience, "content": "choose", "endTime": "2026-08-25T00:00:00Z",
+			"oneOf": []any{
+				map[string]any{"name": "cats", "replies": map[string]any{"totalItems": 2}},
+				map[string]any{"name": "dogs", "_misskey_votes": 3},
+			},
+		},
+	})
+	if err != nil || result != "ok: note created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	poll := pollRepo.polls["note-id"]
+	if poll == nil || poll.Multiple || len(poll.Choices) != 2 || poll.Votes[0] != 2 || poll.Votes[1] != 3 || poll.ExpiresAt == nil {
+		t.Fatalf("unexpected poll: %+v", poll)
+	}
+}
+
+func TestPerformUpdateQuestionChangesOnlyExistingChoiceVotes(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &host}
+	noteURI := "https://remote.example/notes/poll"
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		noteURI: {ID: "poll-note", URI: noteURI, AuthorID: remote.ID, AttributedTo: remote.URI},
+	}}
+	pollRepo := &fakePollRepo{polls: map[string]*domainpolls.Poll{
+		"poll-note": {NoteID: "poll-note", AuthorID: remote.ID, Choices: []string{"cats", "dogs"}, Votes: []int{1, 1}},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetPollRepository(pollRepo)
+	result, err := h.performUpdate(context.Background(), remote, map[string]any{
+		"type": "Update", "actor": remote.URI,
+		"object": map[string]any{
+			"id": noteURI, "type": "Question", "attributedTo": remote.URI,
+			"oneOf": []any{
+				map[string]any{"name": "dogs", "replies": map[string]any{"totalItems": 4}},
+				map[string]any{"name": "cats", "replies": map[string]any{"totalItems": 3}},
+			},
+		},
+	})
+	if err != nil || result != "ok: Question updated" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if got := pollRepo.polls["poll-note"].Votes; len(got) != 2 || got[0] != 3 || got[1] != 4 {
+		t.Fatalf("votes = %#v", got)
 	}
 }
 

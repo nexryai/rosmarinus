@@ -13,10 +13,12 @@ import (
 	"unicode/utf8"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
+	appolls "github.com/nexryai/rosmarinus/internal/activitypub/polls"
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
@@ -45,6 +47,7 @@ type Resolver struct {
 	policy    FederationPolicy
 	notes     domainnotes.Repository
 	emojis    emojis.Repository
+	polls     polls.Repository
 	locker    ObjectLocker
 }
 
@@ -70,6 +73,10 @@ func (r *Resolver) SetNoteRepository(notes domainnotes.Repository) {
 
 func (r *Resolver) SetEmojiRepository(repository emojis.Repository) {
 	r.emojis = repository
+}
+
+func (r *Resolver) SetPollRepository(repository polls.Repository) {
+	r.polls = repository
 }
 
 func (r *Resolver) SetObjectLocker(locker ObjectLocker) {
@@ -340,7 +347,22 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 		note.QuoteID = quote.ID
 	}
 	_ = r.upsertRemoteEmojis(ctx, author.Host, parsed.Emojis)
-	return r.notes.UpsertRemoteNote(ctx, note)
+	stored, err := r.notes.UpsertRemoteNote(ctx, note)
+	if err != nil {
+		return nil, err
+	}
+	if r.polls != nil && aptypes.IsType(object, "Question") {
+		poll, parseErr := appolls.ParseQuestion(object)
+		if parseErr == nil {
+			poll.NoteID = stored.ID
+			poll.AuthorID = author.ID
+			poll.AuthorHost = author.Host
+			if _, err := r.polls.UpsertRemote(ctx, *poll); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return stored, nil
 }
 
 func (r *Resolver) upsertRemoteEmojis(ctx context.Context, host *string, values []domainnotes.Emoji) error {

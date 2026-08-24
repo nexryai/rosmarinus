@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
+	appolls "github.com/nexryai/rosmarinus/internal/activitypub/polls"
 	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
 	apresolver "github.com/nexryai/rosmarinus/internal/activitypub/resolver"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
@@ -29,6 +30,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
+	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -71,6 +73,7 @@ type Handler struct {
 	reactions     reactions.Repository
 	reports       reports.Repository
 	notifications notifications.Repository
+	polls         polls.Repository
 	queue         QueueClient
 	client        APClient
 	connector     ConnectorPublisher
@@ -110,6 +113,11 @@ func (h *Handler) SetNotificationRepository(repository notifications.Repository)
 func (h *Handler) SetEmojiRepository(repository emojis.Repository) {
 	h.emojis = repository
 	h.resolver.SetEmojiRepository(repository)
+}
+
+func (h *Handler) SetPollRepository(repository polls.Repository) {
+	h.polls = repository
+	h.resolver.SetPollRepository(repository)
 }
 
 func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, notificationID string) (connector.NotificationRead, error) {
@@ -394,7 +402,13 @@ func (h *Handler) performUpdate(ctx context.Context, actor *actors.Actor, activi
 	if err != nil {
 		return "", err
 	}
-	if object == nil || !aptypes.IsActor(object) {
+	if object == nil {
+		return "skip: update object is empty", nil
+	}
+	if aptypes.IsType(object, "Question") {
+		return h.performUpdateQuestion(ctx, actor, object)
+	}
+	if !aptypes.IsActor(object) {
 		return fmt.Sprintf("skip: update object type %v is not implemented", activity["object"]), nil
 	}
 	objectID, err := aptypes.GetAPID(object)
@@ -413,6 +427,45 @@ func (h *Handler) performUpdate(ctx context.Context, actor *actors.Actor, activi
 		return "", fmt.Errorf("store updated actor: %w", err)
 	}
 	return "ok: Person updated", nil
+}
+
+func (h *Handler) performUpdateQuestion(ctx context.Context, actor *actors.Actor, object map[string]any) (string, error) {
+	if h.notes == nil || h.polls == nil {
+		return "skip: poll repository is not configured", nil
+	}
+	uri, err := aptypes.GetAPID(object)
+	if err != nil {
+		return "skip: Question id is invalid", nil
+	}
+	note, err := h.notes.FindByURI(ctx, uri)
+	if err != nil {
+		return "", err
+	}
+	if note == nil {
+		return "skip: Question is not registered", nil
+	}
+	attributedTo := actor.URI
+	if object["attributedTo"] != nil {
+		attributedTo, err = aptypes.GetOneAPID(object["attributedTo"])
+	}
+	if err != nil || attributedTo != actor.URI || note.AuthorID != actor.ID {
+		return "skip: Question attribution mismatch", nil
+	}
+	existing, err := h.polls.FindByNoteID(ctx, note.ID)
+	if err != nil {
+		return "", err
+	}
+	if existing == nil {
+		return "skip: Question is not registered", nil
+	}
+	votes, err := appolls.ParseUpdatedVotes(object, existing.Choices)
+	if err != nil {
+		return "skip: invalid Question update", nil
+	}
+	if _, err := h.polls.UpdateRemoteVotes(ctx, note.ID, actor.ID, votes); err != nil {
+		return "", err
+	}
+	return "ok: Question updated", nil
 }
 
 func (h *Handler) updateObject(ctx context.Context, value any) (map[string]any, error) {
@@ -858,6 +911,23 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 		return "", err
 	}
 	if existing != nil {
+		if existing.AuthorID != actor.ID || existing.AttributedTo != actor.URI {
+			return "skip: existing note belongs to a different actor", nil
+		}
+		if err := h.storeRemotePoll(ctx, actor, existing, object); err != nil {
+			return "", err
+		}
+		var reply *domainnotes.Note
+		if existing.ReplyID != "" {
+			reply, err = h.notes.FindByID(ctx, existing.ReplyID)
+			if err != nil {
+				return "", err
+			}
+		}
+		activityID, _ := activity["id"].(string)
+		if err := h.createNoteNotifications(ctx, actor, existing, reply, activityID); err != nil {
+			return "", err
+		}
 		return "skip: note exists", nil
 	}
 	parsed, err := apnotes.ParseRemoteNote(object, uri)
@@ -900,11 +970,32 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err != nil {
 		return "", err
 	}
+	if err := h.storeRemotePoll(ctx, actor, stored, object); err != nil {
+		return "", err
+	}
 	activityID, _ := activity["id"].(string)
 	if err := h.createNoteNotifications(ctx, actor, stored, reply, activityID); err != nil {
 		return "", err
 	}
 	return "ok: note created", nil
+}
+
+func (h *Handler) storeRemotePoll(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, object map[string]any) error {
+	if h.polls == nil || actor == nil || note == nil || !aptypes.IsType(object, "Question") || !aptypes.IsType(note.Raw, "Question") {
+		return nil
+	}
+	poll, err := appolls.ParseQuestion(object)
+	if err != nil {
+		if h.logger != nil {
+			h.logger.Printf("activitypub: ignore invalid Question uri=%s: %v", note.URI, err)
+		}
+		return nil
+	}
+	poll.NoteID = note.ID
+	poll.AuthorID = actor.ID
+	poll.AuthorHost = actor.Host
+	_, err = h.polls.UpsertRemote(ctx, *poll)
+	return err
 }
 
 func (h *Handler) createObject(ctx context.Context, activity map[string]any) (map[string]any, error) {
@@ -1674,6 +1765,14 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		return "", err
 	}
 	if existing != nil && existing.Reaction == reaction {
+		activityID, _ := activity["id"].(string)
+		recipient, findErr := h.repo.FindLocalByID(ctx, note.AuthorID)
+		if findErr != nil {
+			return "", findErr
+		}
+		if err := h.createNotification(ctx, recipient, notifications.KindReaction, actor, note.ID, activityID); err != nil {
+			return "", err
+		}
 		return "skip: already reacted", nil
 	}
 	activityID, _ := activity["id"].(string)
@@ -1712,6 +1811,21 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		return "", err
 	}
 	if existing != nil {
+		if existing.AuthorID == actor.ID && existing.RenoteID != "" {
+			target, findErr := h.notes.FindByID(ctx, existing.RenoteID)
+			if findErr != nil {
+				return "", findErr
+			}
+			if target != nil {
+				recipient, findErr := h.repo.FindLocalByID(ctx, target.AuthorID)
+				if findErr != nil {
+					return "", findErr
+				}
+				if err := h.createNotification(ctx, recipient, notifications.KindRenote, actor, target.ID, activityID); err != nil {
+					return "", err
+				}
+			}
+		}
 		return "skip: announce exists", nil
 	}
 	targetURI, err := aptypes.GetAPID(activity["object"])
@@ -1807,6 +1921,9 @@ func (h *Handler) upsertRemoteEmojis(ctx context.Context, actor *actors.Actor, v
 }
 
 func (h *Handler) createNoteNotifications(ctx context.Context, source *actors.Actor, note, reply *domainnotes.Note, activityID string) error {
+	if note != nil && note.URI != "" {
+		activityID = note.URI
+	}
 	seen := map[string]struct{}{}
 	if reply != nil {
 		recipient, err := h.repo.FindLocalByID(ctx, reply.AuthorID)

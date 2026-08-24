@@ -53,6 +53,27 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetName("idx_notes_renote_created_at").
 				SetSparse(true),
 		},
+		{
+			Keys:    bson.D{{Key: "replyId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().SetName("idx_notes_reply_active_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "renoteId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().SetName("idx_notes_renote_active_created_at"),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("polls").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "authorId", Value: 1}, {Key: "expiresAt", Value: 1}},
+			Options: options.Index().SetName("idx_polls_author_expires_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "expiresAt", Value: 1}},
+			Options: options.Index().SetName("idx_polls_expires_at").SetSparse(true),
+		},
 	})
 	if err != nil {
 		return err
@@ -68,6 +89,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Keys: bson.D{{Key: "noteId", Value: 1}, {Key: "createdAt", Value: -1}},
 			Options: options.Index().
 				SetName("idx_reactions_note_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "noteId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "reaction", Value: 1}},
+			Options: options.Index().SetName("idx_reactions_note_active_reaction"),
 		},
 		{
 			Keys: bson.D{{Key: "actorId", Value: 1}, {Key: "createdAt", Value: -1}},

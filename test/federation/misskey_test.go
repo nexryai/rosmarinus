@@ -57,6 +57,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	noteRepo := mongostore.NewNoteRepository(db)
 	followRepo := mongostore.NewFollowRepository(db)
 	reactionRepo := mongostore.NewReactionRepository(db)
+	pollRepo := mongostore.NewPollRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -176,7 +177,37 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
 	})
 
-	// Phase 6: react to the Misskey note as the local Actor, verify Misskey
+	// Phase 6: publish a Misskey Question and verify Rosmarinus stores its
+	// ordered choices, initial vote counts, multiplicity, and expiration.
+	var createdPoll struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i":    admin.Token,
+		"text": "Choose a federation test answer",
+		"poll": map[string]any{
+			"choices": []string{"cats", "dogs"}, "multiple": false,
+			"expiresAt": time.Now().Add(10 * time.Minute).UnixMilli(),
+		},
+	}, &createdPoll)
+	if createdPoll.CreatedNote.ID == "" {
+		t.Fatal("Misskey poll returned an empty note id")
+	}
+	pollNoteURI := "https://a.test/notes/" + createdPoll.CreatedNote.ID
+	waitFor(t, ctx, "Question poll stored by Rosmarinus", func() bool {
+		note, findErr := noteRepo.FindByURI(ctx, pollNoteURI)
+		if findErr != nil || note == nil {
+			return false
+		}
+		poll, findErr := pollRepo.FindByNoteID(ctx, note.ID)
+		return findErr == nil && poll != nil && !poll.Multiple && poll.ExpiresAt != nil &&
+			len(poll.Choices) == 2 && poll.Choices[0] == "cats" && poll.Choices[1] == "dogs" &&
+			len(poll.Votes) == 2 && poll.Votes[0] == 0 && poll.Votes[1] == 0
+	})
+
+	// Phase 7: react to the Misskey note as the local Actor, verify Misskey
 	// applies the delivered Like, dereference it, then deliver Undo(Like) and
 	// verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
@@ -223,7 +254,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.Reactions["👍"] == 0
 	})
 
-	// Phase 7: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
+	// Phase 8: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
 	// relationship is soft-deleted, and confirm Misskey removes the relay Actor
 	// from the administrator's followers.
 	var relayOnMisskey struct {
@@ -292,7 +323,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 8: make Misskey follow Rosmarinus, approve the pending request in
+	// Phase 9: make Misskey follow Rosmarinus, approve the pending request in
 	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
@@ -319,7 +350,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 9: publish a public Rosmarinus note, dereference its Create activity,
+	// Phase 10: publish a public Rosmarinus note, dereference its Create activity,
 	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery"
@@ -359,7 +390,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 10: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 11: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -379,7 +410,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 11: publish a specified-visibility note, verify it is not publicly
+	// Phase 12: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"

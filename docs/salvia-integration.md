@@ -12,7 +12,7 @@ Each collection has one writer and one migration/index owner.
 | --- | --- | --- |
 | `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
 | Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
+| `actors`, `notes`, `polls`, `follows`, `reactions`, `blocks`, `emojis`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
 | `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
 
 Use separate MongoDB users with collection-scoped custom roles. The Salvia role
@@ -78,6 +78,21 @@ Rosmarinus-owned `emojis` collection. `uri`, `originalUrl`, `publicUrl`,
 Until Rosmarinus records a cached media URL, `publicUrl` equals the validated
 remote HTTPS `originalUrl`; Salvia must treat it as remote content.
 
+ActivityPub `Question` state is stored in `polls`, keyed by the related
+`notes._id`. The read projection contains `authorId`, `authorHost`, ordered
+`choices`, positionally matching `votes`, `multiple`, optional `expiresAt`, and
+timestamps. `Update(Question)` may change vote counts but not the stored choice
+identity or ordering. Salvia must zip `choices` and `votes` by array index and
+treat both arrays as Rosmarinus-owned.
+
+Rosmarinus intentionally keeps reply, renote, and reaction records normalized
+instead of maintaining crash-prone cross-document counters. Salvia derives
+counts for a batch of Note IDs with MongoDB aggregation over active documents:
+`notes.replyId`, `notes.renoteId`, and `reactions.noteId`, always filtering
+`deletedAt: null`. Group reactions by `reaction` when per-emoji counts are
+needed. Rosmarinus owns the supporting indexes; Salvia must not write cached
+counts back into Note documents.
+
 Local user-facing federation notifications are durable documents in the
 Rosmarinus-owned `notifications` collection:
 
@@ -88,7 +103,7 @@ recipientActorId    local Actor receiving the notification
 kind                followRequest | reaction | renote | reply | mention
 sourceActorId        remote Actor that caused the notification
 noteId               related Note ID when applicable
-remoteActivityId     source ActivityPub activity ID used for deduplication
+remoteActivityId     source ActivityPub object/activity ID used for deduplication
 createdAt            notification creation timestamp
 isRead               authoritative read state
 readAt               timestamp set when marked read

@@ -131,6 +131,14 @@ Resolve remote custom emoji by the Rosmarinus-owned `{ host, name }` key. Treat
 `originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only;
 `publicUrl` may still be a remote HTTPS URL until media caching is implemented.
 
+Join ActivityPub Question notes to `polls` by `polls._id = notes._id`. Preserve
+the stored choice order and pair each choice with the vote count at the same
+array index. Never update poll arrays directly from Salvia.
+
+Derive reply, renote, and reaction counts in batched MongoDB aggregations over
+active `notes` and `reactions`; filter `deletedAt: null`. Do not add or update
+denormalized counter fields in Rosmarinus Note documents.
+
 An accepted ActivityPub Block removes pending/active follow relationships in
 both directions. Recompute UI relationship state from Rosmarinus-owned
 `blocks` and `follows`; do not preserve or repair a separate Salvia follow flag.

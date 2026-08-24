@@ -42,6 +42,7 @@ type App struct {
 	blocks                      *mongostore.BlockRepository
 	reactions                   *mongostore.ReactionRepository
 	emojis                      *mongostore.EmojiRepository
+	polls                       *mongostore.PollRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
 	salviaAccounts              *mongostore.SalviaAccountRepository
@@ -110,6 +111,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
+	pollRepo := mongostore.NewPollRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
@@ -147,6 +149,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker := apworker.New(cfg, logger, actorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)
 	apWorker.SetEmojiRepository(emojiRepo)
+	apWorker.SetPollRepository(pollRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	var connectorPublisher *connector.Publisher
 	var connectorCommandSource *connector.AblyCommandSource
@@ -207,6 +210,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		blocks:                     blockRepo,
 		reactions:                  reactionRepo,
 		emojis:                     emojiRepo,
+		polls:                      pollRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
 		salviaAccounts:             salviaAccountRepo,
