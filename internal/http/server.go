@@ -13,12 +13,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainemojis "github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -63,6 +65,10 @@ type MediaLookup interface {
 	OpenBlob(context.Context, string) (io.ReadCloser, error)
 }
 
+type EmojiLookup interface {
+	FindLocalByName(context.Context, string) (*domainemojis.Emoji, error)
+}
+
 func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
 	return NewHandlerWithStores(cfg, logger, actorLookup, nil, nil, nil, queueClient)
 }
@@ -72,23 +78,76 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 	if len(pollLookups) > 0 {
 		pollLookup = pollLookups[0]
 	}
-	return NewHandlerWithAllStores(cfg, logger, actorLookup, noteLookup, followLookup, reactionLookup, queueClient, pollLookup, nil)
+	return NewHandlerWithAllStores(cfg, logger, actorLookup, noteLookup, followLookup, reactionLookup, queueClient, pollLookup, nil, nil)
 }
 
-func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup) http.Handler {
+func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup, emojiLookup EmojiLookup) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
 	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
 	mux.HandleFunc("/media/", mediaByID(mediaLookup))
-	mux.HandleFunc("/emojis/", notImplemented(logger, http.MethodGet))
+	mux.HandleFunc("/emojis/", emojiByName(cfg, emojiLookup))
 	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
 	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
 	return mux
+}
+
+func emojiByName(cfg config.Config, emojiLookup EmojiLookup) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if emojiLookup == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/emojis/"), "/:")
+		if name == "" || strings.Contains(name, "/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		emoji, err := emojiLookup.FindLocalByName(r.Context(), name)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if emoji == nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		iconURL := emoji.PublicURL
+		if iconURL == "" {
+			iconURL = emoji.OriginalURL
+		}
+		if iconURL == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		uri := emoji.URI
+		if uri == "" {
+			uri = strings.TrimRight(cfg.PublicURL, "/") + "/emojis/" + url.PathEscape(emoji.Name)
+		}
+		updatedAt := emoji.UpdatedAt
+		if updatedAt.IsZero() {
+			updatedAt = emoji.CreatedAt
+		}
+		mediaType := emoji.MediaType
+		if mediaType == "" {
+			mediaType = "image/png"
+		}
+		writeActivityJSON(w, map[string]any{
+			"@context": "https://www.w3.org/ns/activitystreams",
+			"id":       uri, "type": "Emoji", "name": ":" + emoji.Name + ":",
+			"updated": updatedAt.UTC().Format(time.RFC3339),
+			"icon":    map[string]any{"type": "Image", "mediaType": mediaType, "url": iconURL},
+		})
+	}
 }
 
 func mediaByID(mediaLookup MediaLookup) http.HandlerFunc {

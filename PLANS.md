@@ -188,7 +188,7 @@ ActivityPub actor URLs. Rosmarinus needs this even without a frontend API.
 - [x] `GET /users/{user}/following?page=true` backed by stored follows.
 - [x] `GET /notes/{note}`
 - [x] `GET /notes/{note}/activity`
-- [ ] `GET /emojis/{emoji}`
+- [x] `GET /emojis/{emoji}`
 - [x] `GET /likes/{like}`
 - [x] `GET /follows/{follower}/{followee}`
 
@@ -352,7 +352,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 ### Custom Emoji
 
-- [ ] Render local custom emojis as ActivityPub `Emoji` tags.
+- [x] Resolve `post.create` local emoji names from Rosmarinus-owned records and
+      render them as ActivityPub `Emoji` tags.
 - [x] Extract remote `Emoji` tags from notes.
 - [x] Extract remote `Emoji` names from Actor tags and enqueue their icons in
       the shared media pipeline.

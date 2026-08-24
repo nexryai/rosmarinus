@@ -217,8 +217,9 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       names as the Rosmarinus contract.
 - [ ] Implement `post.create` with required `note_id` and `text`, plus optional
       `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`,
-      `quote_uri`, `mention_uris`, `hashtags`, and `poll`. Allow empty text only
-      when the command includes a valid Poll.
+      `quote_uri`, `mention_uris`, `hashtags`, `emoji_names`, and `poll`. Send
+      only local emoji names and never media URLs. Allow empty text only when
+      the command includes a valid Poll.
 - [ ] Implement `post.delete` with the owned local `actor_id` and
       `data.note_id`; reuse the original request ID on retry.
 - [ ] Implement `poll.vote` with the owned local `actor_id`, `data.note_id`,

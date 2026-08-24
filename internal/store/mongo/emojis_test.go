@@ -21,6 +21,10 @@ func TestEmojiRecordPreservesRemoteSource(t *testing.T) {
 	if doc.RemoteUpdatedAt == nil || !doc.RemoteUpdatedAt.Equal(remoteUpdatedAt) {
 		t.Fatalf("remote updated time = %v", doc.RemoteUpdatedAt)
 	}
+	stored := toEmoji(doc)
+	if stored.PublicURL != doc.PublicURL {
+		t.Fatalf("public URL was not restored: %+v", stored)
+	}
 }
 
 func TestEmojiIDIsStableAndHostScoped(t *testing.T) {
@@ -30,5 +34,15 @@ func TestEmojiIDIsStableAndHostScoped(t *testing.T) {
 	}
 	if first == emojiID("other.example", "party") {
 		t.Fatal("emoji ID must be scoped to the remote host")
+	}
+}
+
+func TestLocalEmojiRecordPreservesPublicURL(t *testing.T) {
+	doc := fromEmoji(emojis.Emoji{
+		Name: "party", OriginalURL: "https://origin.example/party.webp",
+		PublicURL: "https://local.example/media/party", MediaType: "image/webp",
+	})
+	if doc.PublicURL != "https://local.example/media/party" || doc.OriginalURL != "https://origin.example/party.webp" {
+		t.Fatalf("unexpected local emoji record: %+v", doc)
 	}
 }

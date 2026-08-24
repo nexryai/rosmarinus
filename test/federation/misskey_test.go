@@ -22,6 +22,7 @@ import (
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -62,6 +63,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
 	mediaRepo := mongostore.NewMediaRepository(db)
+	emojiRepo := mongostore.NewEmojiRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -96,6 +98,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		localActor,
 	)
 	worker.SetPollRepository(pollRepo)
+	worker.SetEmojiRepository(emojiRepo)
 	worker.SetAccountCleanupRepository(mongostore.NewAccountCleanupRepository(db))
 
 	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
@@ -152,6 +155,17 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	})
 	if status, contentType, body := misskey.getRaw(ctx, cachedAvatar.PublicURL); status != http.StatusOK || !strings.HasPrefix(contentType, "image/") || len(body) == 0 {
 		t.Fatalf("cached avatar response status=%d content_type=%q bytes=%d", status, contentType, len(body))
+	}
+	if _, err := emojiRepo.UpsertLocal(ctx, emojis.Emoji{
+		Name: "party", URI: cfg.PublicURL + "/emojis/party",
+		OriginalURL: cachedAvatar.PublicURL, PublicURL: cachedAvatar.PublicURL, MediaType: cachedAvatar.ContentType,
+	}); err != nil {
+		t.Fatalf("store local emoji fixture: %v", err)
+	}
+	var localEmoji map[string]any
+	misskey.get(ctx, cfg.PublicURL+"/emojis/party", &localEmoji)
+	if localEmoji["type"] != "Emoji" || localEmoji["name"] != ":party:" {
+		t.Fatalf("unexpected local Emoji resource: %#v", localEmoji)
 	}
 
 	// Phase 5: publish a public Misskey note and verify Rosmarinus accepts,
@@ -375,11 +389,12 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// Phase 11: publish a public Rosmarinus note, dereference its Create activity,
 	// and verify the accepted Misskey follower stores the delivered Create(Note).
 	const localNoteID = "latest-misskey-outbound-note"
-	const localNoteText = "Hello from Rosmarinus federation delivery"
+	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
 		NoteID:     localNoteID,
 		Text:       localNoteText,
+		EmojiNames: []string{"party"},
 		Visibility: string(domainnotes.VisibilityPublic),
 		Poll:       &connector.PollCreateCommand{Choices: []string{"cats", "dogs"}},
 	})
@@ -391,6 +406,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	misskey.get(ctx, createdLocal.URI+"/activity", &publicActivity)
 	if publicActivity["type"] != "Create" || publicActivity["actor"] != localActor.URI {
 		t.Fatalf("unexpected public Create activity: %#v", publicActivity)
+	}
+	publicObject, _ := publicActivity["object"].(map[string]any)
+	if tags, _ := publicObject["tag"].([]any); len(tags) == 0 {
+		t.Fatalf("public Create activity omitted local Emoji tag: %#v", publicActivity)
 	}
 	var misskeyLocalNoteID string
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {

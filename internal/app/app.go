@@ -237,7 +237,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:                queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo),
+			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, actorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

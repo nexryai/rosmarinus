@@ -486,6 +486,18 @@ func (r *resolverEmojiRepository) UpsertRemote(_ context.Context, emoji domainem
 	return &emoji, nil
 }
 
+func (r *resolverEmojiRepository) UpsertLocal(_ context.Context, emoji domainemojis.Emoji) (*domainemojis.Emoji, error) {
+	return &emoji, nil
+}
+
+func (r *resolverEmojiRepository) FindLocalByName(context.Context, string) (*domainemojis.Emoji, error) {
+	return nil, nil
+}
+
+func (r *resolverEmojiRepository) FindLocalByNames(context.Context, []string) ([]domainemojis.Emoji, error) {
+	return nil, nil
+}
+
 func (r *resolverActorRepository) FindLocalByID(context.Context, string) (*actors.Actor, error) {
 	return nil, nil
 }

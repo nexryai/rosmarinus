@@ -1525,6 +1525,10 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	now := time.Now().UTC()
+	localEmojis, err := h.resolveLocalEmojis(ctx, command.EmojiNames)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
 	visibleUserURIs := []string(nil)
 	if visibility == domainnotes.VisibilitySpecified {
@@ -1544,6 +1548,7 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		MentionURIs:     mentionURIs,
 		VisibleUserURIs: visibleUserURIs,
 		Hashtags:        command.Hashtags,
+		Emojis:          localEmojis,
 		CreatedAt:       now,
 		PublishedAt:     &now,
 	})
@@ -1590,6 +1595,55 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) resolveLocalEmojis(ctx context.Context, names []string) ([]domainnotes.Emoji, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	if len(names) > 100 {
+		return nil, fmt.Errorf("at most 100 custom emojis are allowed")
+	}
+	for _, name := range names {
+		if !validLocalEmojiName(strings.Trim(strings.TrimSpace(name), ":")) {
+			return nil, fmt.Errorf("invalid local custom emoji name: %q", name)
+		}
+	}
+	if h.emojis == nil {
+		return nil, fmt.Errorf("emoji repository is not configured")
+	}
+	stored, err := h.emojis.FindLocalByNames(ctx, names)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]domainnotes.Emoji, 0, len(stored))
+	for _, emoji := range stored {
+		iconURL := emoji.PublicURL
+		if iconURL == "" {
+			iconURL = emoji.OriginalURL
+		}
+		if iconURL == "" {
+			continue
+		}
+		updatedAt := emoji.UpdatedAt
+		result = append(result, domainnotes.Emoji{
+			Name: emoji.Name, URI: emoji.URI, IconURL: iconURL,
+			MediaType: emoji.MediaType, UpdatedAt: &updatedAt,
+		})
+	}
+	return result, nil
+}
+
+func validLocalEmojiName(name string) bool {
+	if name == "" || len(name) > 100 {
+		return false
+	}
+	for _, char := range name {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *Handler) VotePoll(ctx context.Context, command connector.PollVoteCommand) (connector.PollVoted, error) {

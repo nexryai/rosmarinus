@@ -240,7 +240,9 @@ Use these Ably message names and payloads:
   `name` and `type`.
 - `post.create`: `data` contains `note_id` and `text`, and may contain
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
-  `mention_uris`, and `hashtags`. When `visibility` is `specified`,
+  `mention_uris`, `hashtags`, and `emoji_names`. `emoji_names` contains at most
+  100 local names without colons; Rosmarinus resolves the URLs. When
+  `visibility` is `specified`,
   `mention_uris` is required, must contain at least one Actor URI, and defines
   the direct recipients. It may also contain `poll` with `choices`, optional
   `multiple`, and optional RFC 3339 `expires_at`; `text` may be empty when

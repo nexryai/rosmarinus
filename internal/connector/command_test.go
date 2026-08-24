@@ -351,6 +351,20 @@ func TestCommandHandlerCreatesPollOnlyPost(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerPassesLocalEmojiNames(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	message := commandMessage(CommandPostCreate, "request-emoji-post", "actor-2", PostCreateData{
+		NoteID: "emoji-note", Text: "hello :party:", EmojiNames: []string{"party"},
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if len(executor.postCommand.EmojiNames) != 1 || executor.postCommand.EmojiNames[0] != "party" {
+		t.Fatalf("emoji names = %#v", executor.postCommand.EmojiNames)
+	}
+}
+
 func TestCommandHandlerMarksOwnedActorNotificationRead(t *testing.T) {
 	executor := &fakeCommandExecutor{}
 	publisher := &fakeCommandResultPublisher{}

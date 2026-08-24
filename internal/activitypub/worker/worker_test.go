@@ -553,6 +553,35 @@ func (r *fakeEmojiRepo) UpsertRemote(_ context.Context, emoji emojis.Emoji) (*em
 	return &copy, nil
 }
 
+func (r *fakeEmojiRepo) UpsertLocal(_ context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
+	if r.emojis == nil {
+		r.emojis = map[string]*emojis.Emoji{}
+	}
+	emoji.Host = ""
+	copy := emoji
+	r.emojis["local-"+emoji.Name] = &copy
+	return &copy, nil
+}
+
+func (r *fakeEmojiRepo) FindLocalByName(_ context.Context, name string) (*emojis.Emoji, error) {
+	for _, emoji := range r.emojis {
+		if emoji.Host == "" && emoji.Name == strings.Trim(name, ":") {
+			return emoji, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *fakeEmojiRepo) FindLocalByNames(ctx context.Context, names []string) ([]emojis.Emoji, error) {
+	result := make([]emojis.Emoji, 0, len(names))
+	for _, name := range names {
+		if emoji, _ := r.FindLocalByName(ctx, name); emoji != nil {
+			result = append(result, *emoji)
+		}
+	}
+	return result, nil
+}
+
 func (r *fakeNotificationRepo) Upsert(_ context.Context, notification notifications.Notification) (*notifications.Notification, error) {
 	if r.notifications == nil {
 		r.notifications = map[string]*notifications.Notification{}
@@ -1926,6 +1955,40 @@ func TestCreatePostStoresAndDeliversLocalQuestion(t *testing.T) {
 	object := payload.Object["object"].(map[string]any)
 	if object["type"] != "Question" || object["oneOf"] == nil {
 		t.Fatalf("unexpected delivered Question: %#v", object)
+	}
+}
+
+func TestCreatePostResolvesLocalCustomEmoji(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	noteRepo := &fakeNoteRepo{}
+	emojiRepo := &fakeEmojiRepo{emojis: map[string]*emojis.Emoji{
+		"local-party": {
+			ID: "local-party", Name: "party", URI: "https://rosmarinus.example/emojis/party",
+			PublicURL: "https://rosmarinus.example/media/party", MediaType: "image/webp", UpdatedAt: time.Now().UTC(),
+		},
+	}}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetEmojiRepository(emojiRepo)
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "emoji-note", Text: "hello :party:", EmojiNames: []string{"party"},
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	note, err := noteRepo.FindByID(context.Background(), created.NoteID)
+	if err != nil || note == nil || len(note.Emojis) != 1 || note.Emojis[0].Name != "party" {
+		t.Fatalf("local emoji was not stored on Note: note=%+v err=%v", note, err)
+	}
+	rendered := apnotes.Render(note)
+	tags, ok := rendered["tag"].([]any)
+	if !ok || len(tags) != 1 {
+		t.Fatalf("rendered tags = %#v", rendered["tag"])
+	}
+	tag, _ := tags[0].(map[string]any)
+	icon, _ := tag["icon"].(map[string]any)
+	if tag["type"] != "Emoji" || tag["name"] != ":party:" || icon["url"] != "https://rosmarinus.example/media/party" {
+		t.Fatalf("rendered emoji tag = %#v", tag)
 	}
 }
 

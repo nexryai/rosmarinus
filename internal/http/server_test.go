@@ -20,6 +20,7 @@ import (
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainemojis "github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -57,6 +58,31 @@ type fakePollLookup struct {
 type fakeMediaLookup struct {
 	media *domainmedia.Media
 	body  []byte
+}
+
+type fakeEmojiLookup struct {
+	emoji *domainemojis.Emoji
+}
+
+func (f fakeEmojiLookup) FindLocalByName(_ context.Context, name string) (*domainemojis.Emoji, error) {
+	if f.emoji != nil && f.emoji.Name == name {
+		return f.emoji, nil
+	}
+	return nil, nil
+}
+
+func TestEmojiByNameRendersLocalActivityPubEmoji(t *testing.T) {
+	updatedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
+	lookup := fakeEmojiLookup{emoji: &domainemojis.Emoji{
+		Name: "party", URI: "https://example.test/emojis/party",
+		PublicURL: "https://example.test/media/party", MediaType: "image/webp", UpdatedAt: updatedAt,
+	}}
+	handler := NewHandlerWithAllStores(testConfig(), nil, nil, nil, nil, nil, nil, nil, nil, lookup)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/emojis/party", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"type":"Emoji"`) || !strings.Contains(rec.Body.String(), `"url":"https://example.test/media/party"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func (f *fakeQueueClient) Enqueue(ctx context.Context, task queue.Task) error {
@@ -166,7 +192,7 @@ func TestMediaByIDServesOnlyReadyCachedContent(t *testing.T) {
 		ID: "media-id", State: domainmedia.StateReady, ContentType: "image/png",
 		Size: int64(len(body)), SHA256: "digest",
 	}, body: body}
-	handler := NewHandlerWithAllStores(testConfig(), nil, nil, nil, nil, nil, nil, nil, lookup)
+	handler := NewHandlerWithAllStores(testConfig(), nil, nil, nil, nil, nil, nil, nil, lookup, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/media/media-id", nil)
 	rec := httptest.NewRecorder()

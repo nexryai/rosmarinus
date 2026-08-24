@@ -121,6 +121,7 @@ type PostCreateData struct {
 	QuoteURI       string          `json:"quote_uri,omitempty"`
 	MentionURIs    []string        `json:"mention_uris,omitempty"`
 	Hashtags       []string        `json:"hashtags,omitempty"`
+	EmojiNames     []string        `json:"emoji_names,omitempty"`
 	Poll           *PollCreateData `json:"poll,omitempty"`
 }
 
@@ -135,6 +136,7 @@ type PostCreateCommand struct {
 	QuoteURI       string
 	MentionURIs    []string
 	Hashtags       []string
+	EmojiNames     []string
 	Poll           *PollCreateCommand
 }
 
@@ -481,6 +483,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			QuoteURI:       command.QuoteURI,
 			MentionURIs:    command.MentionURIs,
 			Hashtags:       command.Hashtags,
+			EmojiNames:     command.EmojiNames,
 			Poll:           poll,
 		})
 		return result, actorID, err

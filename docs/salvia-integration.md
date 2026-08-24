@@ -358,6 +358,12 @@ every recipient before storing the note, places the deduplicated Actor URIs in
 the ActivityPub `to` audience, and delivers remote recipients to their
 individual inboxes rather than a shared inbox.
 
+`post.create.data.emoji_names` may contain up to 100 local custom emoji names
+without surrounding colons. Names use Misskey-compatible ASCII letters,
+digits, and underscores. Rosmarinus resolves only locally provisioned records
+from `emojis` and embeds their owned URI/public URL as ActivityPub `Emoji`
+tags; unknown names are ignored. Salvia must not supply or override emoji URLs.
+
 To delete a local Note, publish `post.delete` with the owned local Actor in
 `actor_id` and `note_id` in `data`. Rosmarinus verifies Note ownership,
 soft-deletes the Note, and enqueues a Misskey-compatible `Delete(Tombstone)` to
