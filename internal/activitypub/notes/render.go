@@ -2,10 +2,12 @@ package notes
 
 import (
 	"net/url"
+	"strings"
 	"time"
 
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
+	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
 func Render(note *domainnotes.Note) map[string]any {
@@ -33,17 +35,19 @@ func RenderWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
 	if note.QuoteURI != "" {
 		quote = note.QuoteURI
 	}
+	publicURL := publicOrigin(note.AttributedTo)
+	rendered := mfm.ToHTML(note.Text, publicURL)
+	if note.QuoteURI != "" {
+		quotedURI := mfm.EscapeHTML(note.QuoteURI)
+		rendered.HTML += `<br><br><span class="quote-inline">RE: <a href="` + quotedURI + `">` + quotedURI + `</a></span>`
+		rendered.Advanced = true
+	}
 	body := map[string]any{
-		"id":               note.URI,
-		"type":             "Note",
-		"attributedTo":     note.AttributedTo,
-		"summary":          summary,
-		"content":          note.Text,
-		"_misskey_content": note.Text,
-		"source": map[string]any{
-			"content":   note.Text,
-			"mediaType": "text/x.misskeymarkdown",
-		},
+		"id":             note.URI,
+		"type":           "Note",
+		"attributedTo":   note.AttributedTo,
+		"summary":        summary,
+		"content":        rendered.HTML,
 		"_misskey_quote": quote,
 		"quoteUrl":       quote,
 		"published":      published.UTC().Format(time.RFC3339),
@@ -52,7 +56,14 @@ func RenderWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
 		"inReplyTo":      inReplyTo,
 		"attachment":     renderAttachments(note.Attachments),
 		"sensitive":      note.Sensitive || note.ContentWarning != nil || hasSensitiveAttachment(note.Attachments),
-		"tag":            renderTags(note),
+		"tag":            renderTags(note, publicURL),
+	}
+	if rendered.Advanced {
+		body["_misskey_content"] = note.Text
+		body["source"] = map[string]any{
+			"content":   note.Text,
+			"mediaType": "text/x.misskeymarkdown",
+		}
 	}
 	if poll != nil {
 		body["type"] = "Question"
@@ -177,12 +188,12 @@ func withContext(body map[string]any) map[string]any {
 	return body
 }
 
-func renderTags(note *domainnotes.Note) []any {
+func renderTags(note *domainnotes.Note, publicURL string) []any {
 	tags := make([]any, 0, len(note.Hashtags)+len(note.MentionURIs)+len(note.Emojis))
 	for _, tag := range note.Hashtags {
 		tags = append(tags, map[string]any{
 			"type": "Hashtag",
-			"href": "/tags/" + url.PathEscape(tag),
+			"href": publicURL + "/tags/" + url.PathEscape(tag),
 			"name": "#" + tag,
 		})
 	}
@@ -207,7 +218,7 @@ func renderTags(note *domainnotes.Note) []any {
 		}
 		id := emoji.URI
 		if id == "" {
-			id = "/emojis/" + url.PathEscape(name)
+			id = publicURL + "/emojis/" + url.PathEscape(name)
 		}
 		tags = append(tags, map[string]any{
 			"id":      id,
@@ -222,6 +233,14 @@ func renderTags(note *domainnotes.Note) []any {
 		})
 	}
 	return tags
+}
+
+func publicOrigin(actorURI string) string {
+	parsed, err := url.Parse(actorURI)
+	if err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != "" {
+		return parsed.Scheme + "://" + parsed.Host
+	}
+	return strings.TrimRight(actorURI, "/")
 }
 
 func renderAttachments(attachments []domainnotes.Attachment) []any {

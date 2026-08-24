@@ -256,7 +256,9 @@ Use these Ably message names and payloads:
   `mention_uris` is required, must contain at least one Actor URI, and defines
   the direct recipients. It may also contain `poll` with `choices`, optional
   `multiple`, and optional RFC 3339 `expires_at`; `text` may be empty when
-  `poll` is present.
+  `poll` is present. `text` is current Misskey-compatible MFM source; send it
+  unchanged and never send pre-rendered HTML. Rosmarinus owns safe ActivityPub
+  HTML rendering and conditional Misskey source metadata.
 - `post.delete`: `data` contains `note_id`; top-level `actor_id` must own the
   local Note. Treat success as a soft deletion plus queued federation delivery.
 - `poll.vote`: `data` contains `note_id` and a zero-based non-negative

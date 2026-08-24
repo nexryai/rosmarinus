@@ -328,11 +328,11 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Convert remote HTML to MFM-compatible text matching the observed behavior of
       current Misskey's `MfmService.fromHtml` (MFM.js 0.26 compatibility),
       including links, mentions, hashtags, formatting, code, quotes, and ruby.
-- [ ] Parse Salvia-authored MFM with current MFM.js-compatible syntax and render
+- [x] Parse Salvia-authored MFM with current MFM.js-compatible syntax and render
       its AST to safe ActivityPub HTML matching current Misskey behavior.
-- [ ] Omit `_misskey_content` and `source` for simple MFM ASTs, and include them
+- [x] Omit `_misskey_content` and `source` for simple MFM ASTs, and include them
       for advanced MFM, matching current Misskey `ApMfmService.getNoteHtml`.
-- [ ] Port focused MFM.js 0.26 parser fixtures for functions, nesting limits,
+- [x] Port focused MFM.js 0.26 parser fixtures for functions, nesting limits,
       mentions, URLs, emoji codes, code, math, plain blocks, and malformed input.
 - [x] Store basic URI, attributedTo, author, text, content warning, sensitive,
       reply URI, quote URI, visibility, mentions, hashtags, emojis, raw AP

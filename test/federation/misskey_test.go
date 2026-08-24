@@ -389,8 +389,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 11: publish a public Rosmarinus note, dereference its Create activity,
-	// and verify the accepted Misskey follower stores the delivered Create(Note).
+	// Phase 11: publish simple and advanced MFM from Rosmarinus, verify simple
+	// MFM is safe HTML without redundant source metadata, advanced MFM retains
+	// its source, and confirm latest Misskey stores both delivered Create(Note)s.
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
@@ -414,6 +415,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if tags, _ := publicObject["tag"].([]any); len(tags) == 0 {
 		t.Fatalf("public Create activity omitted local Emoji tag: %#v", publicActivity)
 	}
+	publicContent, _ := publicObject["content"].(string)
+	if !strings.Contains(publicContent, "\u200B:party:\u200B") || publicObject["_misskey_content"] != nil || publicObject["source"] != nil {
+		t.Fatalf("simple MFM was not rendered with current Misskey semantics: %#v", publicObject)
+	}
 	var misskeyLocalNoteID string
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
@@ -429,6 +434,42 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		for _, note := range notes {
 			if note.Text == localNoteText && note.URI == createdLocal.URI {
 				misskeyLocalNoteID = note.ID
+				return true
+			}
+		}
+		return false
+	})
+
+	const advancedNoteID = "latest-misskey-outbound-advanced-mfm"
+	const advancedNoteText = "**Hello from Rosmarinus** $[ruby 漢字 かんじ]"
+	advancedLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
+		ActorID: localActor.ID, NoteID: advancedNoteID, Text: advancedNoteText,
+		Visibility: string(domainnotes.VisibilityPublic),
+	})
+	if err != nil {
+		t.Fatalf("create advanced MFM post: %v", err)
+	}
+	var advancedActivity map[string]any
+	misskey.get(ctx, advancedLocal.URI+"/activity", &advancedActivity)
+	advancedObject, _ := advancedActivity["object"].(map[string]any)
+	advancedContent, _ := advancedObject["content"].(string)
+	advancedSource, _ := advancedObject["source"].(map[string]any)
+	if !strings.Contains(advancedContent, "<b>Hello from Rosmarinus</b>") ||
+		!strings.Contains(advancedContent, "<ruby>漢字") ||
+		advancedObject["_misskey_content"] != advancedNoteText ||
+		advancedSource["content"] != advancedNoteText || advancedSource["mediaType"] != "text/x.misskeymarkdown" {
+		t.Fatalf("advanced MFM compatibility fields are incomplete: %#v", advancedObject)
+	}
+	waitFor(t, ctx, "advanced MFM Create(Note) stored by Misskey", func() bool {
+		var notes []struct {
+			Text string `json:"text"`
+			URI  string `json:"uri"`
+		}
+		misskey.call(ctx, "users/notes", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID, "limit": 10,
+		}, &notes)
+		for _, note := range notes {
+			if note.Text == advancedNoteText && note.URI == advancedLocal.URI {
 				return true
 			}
 		}

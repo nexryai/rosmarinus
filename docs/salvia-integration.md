@@ -395,6 +395,13 @@ every recipient before storing the note, places the deduplicated Actor URIs in
 the ActivityPub `to` audience, and delivers remote recipients to their
 individual inboxes rather than a shared inbox.
 
+`post.create.data.text` is current Misskey-compatible MFM, not HTML. Salvia
+must pass the user's MFM source unchanged and must not pre-render or inject
+HTML. Rosmarinus parses it at the federation boundary, emits escaped safe HTML,
+and includes `_misskey_content` plus `source.mediaType =
+text/x.misskeymarkdown` only when advanced MFM syntax or an inline quote needs
+the original source for lossless Misskey rendering.
+
 `post.create.data.emoji_names` may contain up to 100 local custom emoji names
 without surrounding colons. Names use Misskey-compatible ASCII letters,
 digits, and underscores. Rosmarinus resolves only locally provisioned records

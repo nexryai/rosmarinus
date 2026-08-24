@@ -81,6 +81,53 @@ func TestRenderCreateWrapsNoteAudience(t *testing.T) {
 	}
 }
 
+func TestRenderSimpleMFMAsSafeHTMLWithoutMisskeySource(t *testing.T) {
+	note := &domainnotes.Note{
+		URI:          "https://rosmarinus.example/notes/simple",
+		AttributedTo: "https://rosmarinus.example/users/alice",
+		Text:         "hello <script>alert(1)</script> https://remote.example :party: #fediverse",
+		Visibility:   domainnotes.VisibilityPublic,
+		Hashtags:     []string{"fediverse"},
+		CreatedAt:    time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC),
+	}
+	rendered := Render(note)
+	content, _ := rendered["content"].(string)
+	if content == note.Text || content == "" {
+		t.Fatalf("content was not rendered as HTML: %q", content)
+	}
+	if rendered["_misskey_content"] != nil || rendered["source"] != nil {
+		t.Fatalf("simple MFM contains compatibility source: %#v", rendered)
+	}
+	tags := rendered["tag"].([]any)
+	hashtag := tags[0].(map[string]any)
+	if hashtag["href"] != "https://rosmarinus.example/tags/fediverse" {
+		t.Fatalf("hashtag href = %#v", hashtag["href"])
+	}
+}
+
+func TestRenderAdvancedMFMAndQuoteWithCompatibilitySource(t *testing.T) {
+	note := &domainnotes.Note{
+		URI:          "https://rosmarinus.example/notes/advanced",
+		AttributedTo: "https://rosmarinus.example/users/alice",
+		Text:         "**bold**",
+		QuoteURI:     "https://remote.example/notes/quoted?x=1&y=2",
+		Visibility:   domainnotes.VisibilityPublic,
+		CreatedAt:    time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC),
+	}
+	rendered := Render(note)
+	content, _ := rendered["content"].(string)
+	if content != `<b>bold</b><br><br><span class="quote-inline">RE: <a href="https://remote.example/notes/quoted?x=1&amp;y=2">https://remote.example/notes/quoted?x=1&amp;y=2</a></span>` {
+		t.Fatalf("content = %q", content)
+	}
+	if rendered["_misskey_content"] != note.Text {
+		t.Fatalf("_misskey_content = %#v", rendered["_misskey_content"])
+	}
+	source, ok := rendered["source"].(map[string]any)
+	if !ok || source["content"] != note.Text || source["mediaType"] != "text/x.misskeymarkdown" {
+		t.Fatalf("source = %#v", rendered["source"])
+	}
+}
+
 func TestRenderDeleteUsesMisskeyCompatibleTombstone(t *testing.T) {
 	deletedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
 	note := &domainnotes.Note{

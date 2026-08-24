@@ -30,17 +30,22 @@ The Go integration test performs this real federation sequence:
 12. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
    soft-deleted, and verify Misskey removes the relay from its followers;
 13. approve Misskey's inbound follow, dereference a public Rosmarinus
-   `Create(Question)` with a local custom-emoji tag, and deliver that poll;
-14. vote on that poll from Misskey and verify Rosmarinus stores the inbound
+   `Create(Question)` with a local custom-emoji tag, verify its simple MFM is
+   emitted as safe HTML without redundant Misskey source metadata, and deliver
+   that poll;
+14. publish advanced MFM containing bold and ruby syntax, verify its safe HTML
+   and `_misskey_content`/`source` compatibility fields, and confirm latest
+   Misskey stores the original MFM text;
+15. vote on that poll from Misskey and verify Rosmarinus stores the inbound
    reply Note as a poll vote;
-15. react to that note from Misskey, verify the reaction in Rosmarinus, and
+16. react to that note from Misskey, verify the reaction in Rosmarinus, and
    dereference its Like activity;
-16. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
+17. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
    and verify Misskey applies the delivered `Delete(Tombstone)`;
-17. deliver a `specified` Rosmarinus note to the second account's individual
+18. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
-18. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
+19. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
    metadata and user count, tracks authenticated receive/successful delivery
    timestamps and status, and keeps per-instance relationship counts current.
 

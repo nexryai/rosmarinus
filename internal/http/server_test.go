@@ -548,11 +548,14 @@ func TestNoteActivityByID(t *testing.T) {
 		`"id":"https://example.test/notes/note-id/activity"`,
 		`"type":"Create"`,
 		`"actor":"https://example.test/users/alice"`,
-		`"object":{"_misskey_content":"hello"`,
+		`"content":"hello"`,
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
 		}
+	}
+	if strings.Contains(rec.Body.String(), `"_misskey_content":"hello"`) || strings.Contains(rec.Body.String(), `"source"`) {
+		t.Fatalf("simple MFM activity contains redundant compatibility source: %s", rec.Body.String())
 	}
 }
 
