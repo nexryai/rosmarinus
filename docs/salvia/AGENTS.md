@@ -121,8 +121,8 @@ Treat remote Actor `summary`, `url`, `profileFields`, `birthday`, `location`,
 `featuredNoteIds` contains resolved `notes._id` values for pinned/featured
 posts. `summary` and profile-field values are already converted to
 Rosmarinus' MFM-compatible text. The avatar/banner fields are validated remote
-HTTPS source URLs. Join them to `media.originalUrl` and use `media.publicUrl`
-only when `state` is `ready`.
+HTTPS source URLs supplied directly to Salvia. Treat them as untrusted remote
+resources, not Rosmarinus cache URLs.
 
 Remote Note relationships expose both federation URIs (`inReplyToUri`,
 `quoteUri`) and resolved Rosmarinus IDs (`replyId`, `quoteId`). Use the ID fields
@@ -134,14 +134,11 @@ For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
 `mentionUris` as the authorization list.
 
 Resolve remote custom emoji by the Rosmarinus-owned `{ host, name }` key. Treat
-`originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only.
-Join `emojis.originalUrl` to `media.originalUrl`; the emoji document's
-`publicUrl` is remote compatibility metadata, not the local cache URL.
-
-Treat `media` as a read-only Rosmarinus projection. Use its `publicUrl` only for
-`state: "ready"`; tolerate `pending` and `failed` with placeholders or an
-explicitly controlled fallback. Never access the private `media_fs.files` or
-`media_fs.chunks` collections from Salvia.
+`originalUrl`, `publicUrl`, URI, media type, and update timestamps as read-only
+direct remote metadata. Rosmarinus does not download, transform, proxy, or
+cache Actor, Note, emoji, or instance media. Salvia owns browser presentation;
+if it performs server-side media fetching, enforce DNS rebinding/SSRF
+protection, byte/time limits, MIME validation, and active-content rejection.
 
 Treat `instances` as read-only Rosmarinus federation state keyed by unique
 normalized `host`. It contains NodeInfo counts and software metadata, server
@@ -150,8 +147,8 @@ receive and delivery timestamps/status, `isNotResponding`,
 `notRespondingSince`, and `suspensionState`. The relationship counters mean
 remote-host users following local Actors (`followingCount`) and local Actors
 following remote-host users (`followersCount`). Treat a suspension state other
-than `none` as delivery-disabled. Join `iconUrl` and `faviconUrl` to ready
-`media` records; never render them as trusted local cache URLs directly.
+than `none` as delivery-disabled. `iconUrl` and `faviconUrl` are validated
+direct remote URLs and remain untrusted frontend resources.
 
 Join ActivityPub Question notes to `polls` by `polls._id = notes._id`. Preserve
 the stored choice order and pair each choice with the vote count at the same

@@ -26,7 +26,6 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
-	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -168,7 +167,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetActivityLocker(apLocker)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
-	apWorker.SetMediaRepository(mediaRepo, mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetInstanceRepository(cachedInstanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetWebFingerResolver(cache.NewCachedWebFinger(apwebfinger.New(nil, cfg.UserAgent), valueCache))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)

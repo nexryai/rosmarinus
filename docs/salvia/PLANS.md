@@ -341,12 +341,12 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
 - [ ] Enforce `visibleUserUris` when projecting `specified` Notes; do not use
       `mentionUris` as a content-authorization substitute.
 - [ ] Resolve remote custom emoji through an explicit `{ host, name }`
-      projection, join `originalUrl` to ready `media` metadata, and treat the
-      emoji document's remote `publicUrl` as untrusted compatibility data.
+      projection and treat `originalUrl` and `publicUrl` as untrusted direct
+      remote resources.
 - [ ] Add a read-only `instances` projection for federation administration;
       expose software/presentation metadata, directional relationship counts,
-      recent send/receive health, and suspension state, and join icon/favicon
-      sources to ready `media` records.
+      recent send/receive health, and suspension state. Treat icon/favicon
+      sources as untrusted direct remote resources.
 - [ ] Join Question notes to `polls` by Note ID and zip ordered `choices` with
       the positionally matching `votes` array.
 - [ ] Read the current Actor's selected choices from `poll_votes` by
@@ -363,7 +363,7 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       authenticated remote account deletion suspends the Actor.
 - [ ] Project the explicit remote Actor profile fields documented in the
       integration contract; render converted summary/property text safely and
-      join remote avatar/banner source URLs to ready `media` records.
+      apply the frontend's remote-media policy to direct avatar/banner URLs.
 - [ ] Render remote featured posts by joining Actor `featuredNoteIds` to
       `notes._id`; preserve the stored order and tolerate missing/deleted Notes.
 - [ ] Model eventual consistency in loading and post-command UI states.

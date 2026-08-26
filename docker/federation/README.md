@@ -15,8 +15,8 @@ The Go integration test performs this real federation sequence:
    `accepted`;
 5. upload an avatar, update the followed Misskey Actor's profile, and verify the
    signed `Update(Person)` refreshes its Rosmarinus Actor document;
-6. verify the avatar is fetched into GridFS and served from Rosmarinus's stable
-   media URL;
+6. verify Rosmarinus preserves the validated direct avatar URL and that the
+   frontend-facing source resolves without backend caching or image processing;
 7. create a public Misskey note;
 8. wait for the delivered `Create(Note)` to be verified and stored by
    Rosmarinus;
@@ -49,15 +49,13 @@ The Go integration test performs this real federation sequence:
    metadata and user count, tracks authenticated receive/successful delivery
    timestamps and status, and keeps per-instance relationship counts current.
 
-Media downloads default to 20 MiB and a one-minute operation timeout through
-`MEDIA_MAX_BYTES` and `MEDIA_FETCH_TIMEOUT`. Production deployments should
-leave `MEDIA_ALLOWED_PRIVATE_NETWORKS` empty. The federation fixture sets it to
-the RFC1918 Docker ranges so Rosmarinus can fetch test-only Misskey media from
-the isolated compose network.
-
-Instance NodeInfo, root HTML, and manifest discovery uses the same private
-network allowlist and defaults to a 30-second operation timeout. Override the
-timeout with `INSTANCE_METADATA_TIMEOUT` when necessary.
+Rosmarinus stores validated remote media source URLs directly; it does not
+download, transform, or proxy images. Instance NodeInfo, root HTML, and manifest
+discovery defaults to a 30-second operation timeout. The federation fixture's
+`MEDIA_ALLOWED_PRIVATE_NETWORKS` value is retained only as the private-network
+allowlist used by that metadata fetcher. Production deployments should leave it
+empty. Override the metadata timeout with `INSTANCE_METADATA_TIMEOUT` when
+necessary.
 
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.

@@ -24,7 +24,6 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
-	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
@@ -63,7 +62,6 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	followRepo := mongostore.NewFollowRepository(db)
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
-	mediaRepo := mongostore.NewMediaRepository(db)
 	emojiRepo := mongostore.NewEmojiRepository(db)
 	instanceRepo := mongostore.NewInstanceRepository(db)
 
@@ -148,20 +146,16 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && remoteActor != nil && remoteActor.Name == updatedRemoteActorName && remoteActor.AvatarURL != ""
 	})
 
-	// Phase 4: wait for the updated remote avatar to be fetched into GridFS and
-	// verify Rosmarinus serves the ready cache through its public media URL.
-	var cachedAvatar *domainmedia.Media
-	waitFor(t, ctx, "Misskey avatar cached by Rosmarinus", func() bool {
-		var findErr error
-		cachedAvatar, findErr = mediaRepo.FindByID(ctx, domainmedia.IDForURL(remoteActor.AvatarURL))
-		return findErr == nil && cachedAvatar != nil && cachedAvatar.State == domainmedia.StateReady && cachedAvatar.Size > 0
-	})
-	if status, contentType, body := misskey.getRaw(ctx, cachedAvatar.PublicURL); status != http.StatusOK || !strings.HasPrefix(contentType, "image/") || len(body) == 0 {
-		t.Fatalf("cached avatar response status=%d content_type=%q bytes=%d", status, contentType, len(body))
+	// Phase 4: verify Rosmarinus preserves Misskey's validated direct avatar URL
+	// and that the frontend-facing source resolves to an image without a backend
+	// cache or image-processing step.
+	status, avatarContentType, avatarBody := misskey.getRaw(ctx, remoteActor.AvatarURL)
+	if status != http.StatusOK || !strings.HasPrefix(avatarContentType, "image/") || len(avatarBody) == 0 {
+		t.Fatalf("direct avatar response status=%d content_type=%q bytes=%d", status, avatarContentType, len(avatarBody))
 	}
 	if _, err := emojiRepo.UpsertLocal(ctx, emojis.Emoji{
 		Name: "party", URI: cfg.PublicURL + "/emojis/party",
-		OriginalURL: cachedAvatar.PublicURL, PublicURL: cachedAvatar.PublicURL, MediaType: cachedAvatar.ContentType,
+		OriginalURL: remoteActor.AvatarURL, PublicURL: remoteActor.AvatarURL, MediaType: avatarContentType,
 	}); err != nil {
 		t.Fatalf("store local emoji fixture: %v", err)
 	}

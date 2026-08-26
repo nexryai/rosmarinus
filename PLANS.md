@@ -316,8 +316,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
       or `specified`.
 - [x] Extract AP mentions and hashtags.
 - [x] Preserve remote attachment metadata on notes.
-- [x] Resolve remote attachment, avatar, banner, and emoji source URLs as
-      asynchronously fetched media records.
+- [x] Preserve validated remote attachment, avatar, banner, and emoji source
+      URLs directly for frontend presentation.
 - [x] Store and render basic reply and quote URIs.
 - [x] Resolve replies and quotes recursively with URL history/depth protection.
 - [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
@@ -341,7 +341,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Store basic remote attachment metadata.
 - [x] Soft-delete remote notes on inbound `Delete(Note/Tombstone)`.
 - [x] Store resolved `replyId` and `quoteId` alongside their AP URIs.
-- [x] Store cached files and stable public media URLs in MongoDB GridFS.
+- [x] Keep remote media out of the backend cache and expose validated direct
+      source URLs to Salvia.
 - [ ] Store denormalized author fields where justified by measured query cost.
 - [x] Store remote poll state separately from Question Notes.
 - [x] Store the resolved ActivityPub audience URIs for specified Notes.
@@ -355,8 +356,7 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Resolve `post.create` local emoji names from Rosmarinus-owned records and
       render them as ActivityPub `Emoji` tags.
 - [x] Extract remote `Emoji` tags from notes.
-- [x] Extract remote `Emoji` names from Actor tags and enqueue their icons in
-      the shared media pipeline.
+- [x] Extract remote `Emoji` names and direct icon URLs from Actor tags.
 - [x] Normalize `:name:` to `name`.
 - [x] Upsert Note, Actor, and reaction emoji tags by `(host, name)`.
 - [x] Update existing emoji if AP URI, remote updated timestamp, or original
@@ -430,8 +430,6 @@ flags, but that is an operational option, not the default architecture.
 - [x] `deliver`: outbound ActivityPub delivery jobs.
 - [ ] `system`: scheduled maintenance.
 - [x] `poll-ended`: delayed poll expiration work.
-- [x] `media`: remote attachment/avatar/banner/emoji fetch, GridFS storage, and
-      safe public serving; orphan cleanup remains a maintenance task.
 - [x] `metadata`: remote instance metadata refresh.
 - [x] `account-delete`: remote actor delete cleanup task payload/enqueue path.
 - [x] `account-delete`: validate the tombstoned remote Actor and idempotently
@@ -444,7 +442,7 @@ flags, but that is an operational option, not the default architecture.
 - [x] Create one Asynq client for enqueueing jobs from HTTP handlers and domain
       services.
 - [x] Create one Asynq server in the same process for `inbox`, `deliver`,
-      `system`, `poll-ended`, `media`, `metadata`, and `account-delete` jobs.
+      `system`, `poll-ended`, `metadata`, and `account-delete` jobs.
 - [x] Register handlers through DI so job handlers use the same repositories,
       resolver, signer, renderer, and logger wiring as HTTP handlers.
 - [x] Support graceful shutdown that stops accepting HTTP requests, stops
@@ -728,7 +726,6 @@ workflow may require both services to update the same document or collection.
 - [ ] `follow_requests`
 - [x] `blocks`
 - [x] `emojis`
-- [x] `media` plus Rosmarinus-private `media_fs.files` and `media_fs.chunks`
 - [x] `instances`
 - [x] `abuse_reports`
 - [x] `notifications`
@@ -769,8 +766,6 @@ workflow may require both services to update the same document or collection.
 - [x] `emojis`: unique `{ host, name }` and sparse `uri`
 - [x] `instances`: unique `host`, suspension/update lookup, and sparse metadata
       refresh timestamp
-- [x] `media`: unique `originalUrl`, `{ state, createdAt }`, and sparse content
-      hash
 - [x] `connector_command_receipts`: unique `{ accountId, requestId }`
 - [x] `connector_command_receipts`: TTL `expiresAt`
 
@@ -974,7 +969,8 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement poll extraction and authenticated poll count updates.
 - [x] Implement local/remote vote ingestion and poll update delivery.
 - [x] Implement delayed poll-ended jobs and durable local notifications.
-- [x] Implement media fetch for note attachments, avatars, banners, and emoji.
+- [x] Preserve validated direct media URLs for note attachments, avatars,
+      banners, emoji, and instance metadata without backend image processing.
 - [x] Add tests for quote, reply, poll, and sensitive media behavior.
 
 ### Phase 7: Federation Hardening
@@ -1189,9 +1185,8 @@ focused unit/integration coverage until the fixture can cover it.
 - [x] Decide Connector identity: Salvia owns authentication and the
       `ablyClientId` account mapping; Rosmarinus resolves that mapping from the
       Salvia-owned account collection and authorizes Actor ownership.
-- [x] Decide media ownership: Rosmarinus stores verified remote bytes in MongoDB
-      GridFS, owns metadata/indexes, and exposes immutable `/media/{id}` URLs;
-      Salvia reads only the `media` metadata projection.
+- [x] Decide media ownership: Rosmarinus stores validated direct remote URLs;
+      Salvia owns browser presentation and any separately secured image proxy.
 - [ ] Decide how much of current Misskey's antenna/word-mute/timeline side effects
       belong in this microservice.
 - [x] Decide local Actor provisioning roles: keep the environment-provisioned
