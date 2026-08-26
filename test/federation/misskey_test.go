@@ -388,6 +388,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// its source, and confirm latest Misskey stores both delivered Create(Note)s.
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
+	const misskeyLocalNoteText = "Hello from Rosmarinus federation delivery \u200B:party:\u200B"
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
 		NoteID:     localNoteID,
@@ -413,7 +414,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if !strings.Contains(publicContent, "\u200B:party:\u200B") || publicObject["_misskey_content"] != nil || publicObject["source"] != nil {
 		t.Fatalf("simple MFM was not rendered with current Misskey semantics: %#v", publicObject)
 	}
-	var misskeyLocalNoteID string
+	var misskeyLocalNoteID, storedLocalNoteText string
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
 			ID   string `json:"id"`
@@ -426,13 +427,17 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			"limit":  10,
 		}, &notes)
 		for _, note := range notes {
-			if note.Text == localNoteText && note.URI == createdLocal.URI {
+			if note.URI == createdLocal.URI {
 				misskeyLocalNoteID = note.ID
+				storedLocalNoteText = note.Text
 				return true
 			}
 		}
 		return false
 	})
+	if storedLocalNoteText != misskeyLocalNoteText {
+		t.Fatalf("Misskey stored simple MFM text %q, want %q", storedLocalNoteText, misskeyLocalNoteText)
+	}
 
 	const advancedNoteID = "latest-misskey-outbound-advanced-mfm"
 	const advancedNoteText = "**Hello from Rosmarinus** $[ruby 漢字 かんじ]"
@@ -454,6 +459,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		advancedSource["content"] != advancedNoteText || advancedSource["mediaType"] != "text/x.misskeymarkdown" {
 		t.Fatalf("advanced MFM compatibility fields are incomplete: %#v", advancedObject)
 	}
+	var storedAdvancedNoteText string
 	waitFor(t, ctx, "advanced MFM Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
 			Text string `json:"text"`
@@ -463,12 +469,16 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			"i": admin.Token, "userId": relayOnMisskey.ID, "limit": 10,
 		}, &notes)
 		for _, note := range notes {
-			if note.Text == advancedNoteText && note.URI == advancedLocal.URI {
+			if note.URI == advancedLocal.URI {
+				storedAdvancedNoteText = note.Text
 				return true
 			}
 		}
 		return false
 	})
+	if storedAdvancedNoteText != advancedNoteText {
+		t.Fatalf("Misskey stored advanced MFM text %q, want %q", storedAdvancedNoteText, advancedNoteText)
+	}
 
 	// Phase 12: vote on the delivered Rosmarinus Question from Misskey and
 	// verify Rosmarinus consumes the reply Note as a poll vote.
