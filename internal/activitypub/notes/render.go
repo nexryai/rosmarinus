@@ -150,6 +150,9 @@ func RenderQuestionUpdate(note *domainnotes.Note, poll *polls.Poll, updatedAt ti
 
 func RenderDelete(note *domainnotes.Note, deletedAt time.Time) map[string]any {
 	return withContext(map[string]any{
+		// Current Misskey rejects inbound activities without an ID even though its
+		// own Delete renderer omits one. Keep this stable so retries are idempotent.
+		"id":        note.URI + "#delete",
 		"type":      "Delete",
 		"actor":     note.AttributedTo,
 		"object":    map[string]any{"id": note.URI, "type": "Tombstone"},

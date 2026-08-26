@@ -134,7 +134,7 @@ func TestRenderDeleteUsesMisskeyCompatibleTombstone(t *testing.T) {
 		URI: "https://rosmarinus.example/notes/1", AttributedTo: "https://rosmarinus.example/users/alice",
 	}
 	rendered := RenderDelete(note, deletedAt)
-	if rendered["type"] != "Delete" || rendered["actor"] != note.AttributedTo || rendered["published"] != deletedAt.Format(time.RFC3339) {
+	if rendered["id"] != note.URI+"#delete" || rendered["type"] != "Delete" || rendered["actor"] != note.AttributedTo || rendered["published"] != deletedAt.Format(time.RFC3339) {
 		t.Fatalf("unexpected Delete activity: %#v", rendered)
 	}
 	tombstone, ok := rendered["object"].(map[string]any)

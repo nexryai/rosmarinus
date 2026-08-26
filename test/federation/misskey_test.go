@@ -511,7 +511,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	}
 
 	// Phase 14: soft-delete the local Note, verify Rosmarinus removes its Poll,
-	// votes, and reactions, and verify Misskey applies the delivered Tombstone.
+	// votes, and reactions, and verify current Misskey accepts the identified
+	// Delete(Tombstone) activity and removes its federated copy.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
 	if err != nil {
 		t.Fatalf("delete local Rosmarinus post: %v", err)

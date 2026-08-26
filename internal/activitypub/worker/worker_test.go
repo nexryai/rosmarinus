@@ -2322,6 +2322,9 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	if !ok || payload.To != "https://remote.example/inbox" || payload.Object["type"] != "Delete" {
 		t.Fatalf("unexpected delivery: %#v", q.tasks[0])
 	}
+	if payload.Object["id"] != note.URI+"#delete" {
+		t.Fatalf("Delete activity id = %#v", payload.Object["id"])
+	}
 	tombstone, ok := payload.Object["object"].(map[string]any)
 	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
 		t.Fatalf("unexpected tombstone: %#v", payload.Object["object"])
