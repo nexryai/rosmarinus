@@ -624,11 +624,13 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			t.Logf("Misskey instance snapshot: %+v", snapshot)
 			previousInstanceSnapshot = &snapshot
 		}
+		// Current Misskey derives NodeInfo user totals from an asynchronous chart,
+		// which can still report zero immediately after fixture account creation.
 		return findErr == nil && instance != nil && instance.SoftwareName == "misskey" &&
 			instance.InfoUpdatedAt != nil && instance.LatestRequestReceivedAt != nil &&
 			instance.LatestRequestSentAt != nil && instance.LatestStatus >= 200 && instance.LatestStatus < 300 &&
 			!instance.IsNotResponding && instance.SuspensionState == "none" &&
-			instance.UsersCount >= 2 && instance.FollowingCount == 1 && instance.FollowersCount == 0
+			instance.FollowingCount == 1 && instance.FollowersCount == 0
 	})
 }
 
