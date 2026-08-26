@@ -73,3 +73,7 @@
 - Always create signed git commits.
 - If signing fails, do not create an unsigned commit. Stop and notify the user
   that the commit could not be signed.
+- After every signed commit, push it to the configured upstream branch and wait
+  for the associated CI workflow to complete.
+- If CI fails, inspect the workflow logs, fix the failure, and repeat the
+  commit, push, and CI verification cycle until CI passes.
