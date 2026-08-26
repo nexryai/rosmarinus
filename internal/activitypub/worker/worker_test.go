@@ -3442,7 +3442,7 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
-			"id":        "https://remote.example/activities/announce",
+			"id":        "https://remote.example/notes/renote/activity",
 			"type":      "Announce",
 			"actor":     "https://remote.example/users/alice",
 			"object":    "https://remote.example/notes/1",
@@ -3467,7 +3467,7 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 	if target == nil {
 		t.Fatalf("announce target was not stored")
 	}
-	announce := noteRepo.notes["https://remote.example/activities/announce"]
+	announce := noteRepo.notes["https://remote.example/notes/renote/activity"]
 	if announce == nil {
 		t.Fatalf("announce was not stored")
 	}

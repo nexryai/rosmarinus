@@ -204,7 +204,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if createdRenote.CreatedNote.ID == "" {
 		t.Fatal("Misskey renote returned an empty note id")
 	}
-	announceURI := "https://a.test/notes/" + createdRenote.CreatedNote.ID
+	announceURI := "https://a.test/notes/" + createdRenote.CreatedNote.ID + "/activity"
 	waitFor(t, ctx, "Announce stored by Rosmarinus", func() bool {
 		announce, findErr := noteRepo.FindByURI(ctx, announceURI)
 		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
