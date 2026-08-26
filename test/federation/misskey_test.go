@@ -524,9 +524,17 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		var notes []struct {
 			URI string `json:"uri"`
 		}
-		misskey.call(ctx, "users/notes", map[string]any{
+		status := misskey.callStatus(ctx, "users/notes", map[string]any{
 			"i": admin.Token, "userId": relayOnMisskey.ID, "limit": 10,
 		}, &notes)
+		// Misskey removes the poll before its Note, so packing users/notes can
+		// transiently fail while the asynchronous delete converges.
+		if status >= http.StatusInternalServerError {
+			return false
+		}
+		if status < http.StatusOK || status >= http.StatusMultipleChoices {
+			t.Fatalf("Misskey users/notes status=%d", status)
+		}
 		for _, note := range notes {
 			if note.URI == createdLocal.URI {
 				return false
@@ -684,6 +692,14 @@ func (m *misskeyClient) uploadFile(ctx context.Context, token, filename string, 
 
 func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[string]any, result any) {
 	m.t.Helper()
+	status := m.callStatus(ctx, endpoint, payload, result)
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		m.t.Fatalf("Misskey %s status=%d", endpoint, status)
+	}
+}
+
+func (m *misskeyClient) callStatus(ctx context.Context, endpoint string, payload map[string]any, result any) int {
+	m.t.Helper()
 	body, err := json.Marshal(payload)
 	if err != nil {
 		m.t.Fatalf("marshal Misskey %s request: %v", endpoint, err)
@@ -706,13 +722,14 @@ func (m *misskeyClient) call(ctx context.Context, endpoint string, payload map[s
 	logBody := loggableMisskeyResponse(responseBody)
 	m.t.Logf("Misskey API response endpoint=%s status=%s body=%s", endpoint, res.Status, logBody)
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		m.t.Fatalf("Misskey %s status=%d body=%s", endpoint, res.StatusCode, logBody)
+		return res.StatusCode
 	}
 	if result != nil && len(responseBody) > 0 {
 		if err := json.Unmarshal(responseBody, result); err != nil {
 			m.t.Fatalf("decode Misskey %s response: %v body=%s", endpoint, err, logBody)
 		}
 	}
+	return res.StatusCode
 }
 
 func (m *misskeyClient) get(ctx context.Context, uri string, result any) {
