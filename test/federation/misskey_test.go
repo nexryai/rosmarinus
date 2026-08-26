@@ -591,7 +591,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			instance.InfoUpdatedAt != nil && instance.LatestRequestReceivedAt != nil &&
 			instance.LatestRequestSentAt != nil && instance.LatestStatus >= 200 && instance.LatestStatus < 300 &&
 			!instance.IsNotResponding && instance.SuspensionState == "none" &&
-			instance.UsersCount >= 2 && instance.FollowingCount == 1 && instance.FollowersCount == 0
+			instance.UsersCount >= 2 && instance.FollowingCount == 0 && instance.FollowersCount == 1
 	})
 }
 
