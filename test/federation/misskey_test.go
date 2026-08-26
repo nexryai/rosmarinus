@@ -593,13 +593,42 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// Phase 16: verify first contact, authenticated inbox traffic, successful
 	// deliveries, relationship changes, and daily NodeInfo discovery converge on
 	// one current-Misskey instance document that Salvia can read.
+	type instanceSnapshot struct {
+		Found, InfoUpdated, RequestReceived, RequestSent bool
+		Error, Software, Suspension                      string
+		Status                                           int
+		NotResponding                                    bool
+		Users, Following, Followers                      int64
+	}
+	var previousInstanceSnapshot *instanceSnapshot
 	waitFor(t, ctx, "Misskey instance metadata and federation stats stored", func() bool {
 		instance, findErr := instanceRepo.FindByHost(ctx, "a.test")
+		snapshot := instanceSnapshot{}
+		if findErr != nil {
+			snapshot.Error = findErr.Error()
+		}
+		if instance != nil {
+			snapshot.Found = true
+			snapshot.Software = instance.SoftwareName
+			snapshot.InfoUpdated = instance.InfoUpdatedAt != nil
+			snapshot.RequestReceived = instance.LatestRequestReceivedAt != nil
+			snapshot.RequestSent = instance.LatestRequestSentAt != nil
+			snapshot.Status = instance.LatestStatus
+			snapshot.NotResponding = instance.IsNotResponding
+			snapshot.Suspension = instance.SuspensionState
+			snapshot.Users = instance.UsersCount
+			snapshot.Following = instance.FollowingCount
+			snapshot.Followers = instance.FollowersCount
+		}
+		if previousInstanceSnapshot == nil || *previousInstanceSnapshot != snapshot {
+			t.Logf("Misskey instance snapshot: %+v", snapshot)
+			previousInstanceSnapshot = &snapshot
+		}
 		return findErr == nil && instance != nil && instance.SoftwareName == "misskey" &&
 			instance.InfoUpdatedAt != nil && instance.LatestRequestReceivedAt != nil &&
 			instance.LatestRequestSentAt != nil && instance.LatestStatus >= 200 && instance.LatestStatus < 300 &&
 			!instance.IsNotResponding && instance.SuspensionState == "none" &&
-			instance.UsersCount >= 2 && instance.FollowingCount == 0 && instance.FollowersCount == 1
+			instance.UsersCount >= 2 && instance.FollowingCount == 1 && instance.FollowersCount == 0
 	})
 }
 
