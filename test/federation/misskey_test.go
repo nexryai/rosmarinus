@@ -438,14 +438,14 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		var notes []struct {
 			URI    string `json:"uri"`
 			Renote *struct {
-				URI string `json:"uri"`
+				ID string `json:"id"`
 			} `json:"renote"`
 		}
 		misskey.call(ctx, "users/notes", map[string]any{
 			"i": admin.Token, "userId": relayOnMisskey.ID, "limit": 20,
 		}, &notes)
 		for _, note := range notes {
-			if note.URI == localAnnounceURI && note.Renote != nil && note.Renote.URI == remoteNote.URI {
+			if note.URI == localAnnounceURI && note.Renote != nil && note.Renote.ID == created.CreatedNote.ID {
 				return true
 			}
 		}
