@@ -113,6 +113,7 @@ type FollowDeleted struct {
 
 type PostCreateData struct {
 	NoteID         string          `json:"note_id"`
+	RenoteID       string          `json:"renote_id,omitempty"`
 	Text           string          `json:"text"`
 	Visibility     string          `json:"visibility,omitempty"`
 	ContentWarning *string         `json:"content_warning,omitempty"`
@@ -128,6 +129,7 @@ type PostCreateData struct {
 type PostCreateCommand struct {
 	ActorID        string
 	NoteID         string
+	RenoteID       string
 	Text           string
 	Visibility     string
 	ContentWarning *string
@@ -465,8 +467,10 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if err := decodeCommandData(data, &command); err != nil {
 			return nil, actorID, err
 		}
-		if strings.TrimSpace(command.NoteID) == "" || (strings.TrimSpace(command.Text) == "" && command.Poll == nil) {
-			return nil, actorID, fmt.Errorf("note_id and text or poll are required")
+		hasContent := strings.TrimSpace(command.Text) != "" || command.Poll != nil
+		hasRenote := strings.TrimSpace(command.RenoteID) != ""
+		if strings.TrimSpace(command.NoteID) == "" || hasContent == hasRenote {
+			return nil, actorID, fmt.Errorf("note_id and exactly one of text or poll, or renote_id are required")
 		}
 		var poll *PollCreateCommand
 		if command.Poll != nil {
@@ -475,6 +479,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		result, err := h.executor.CreatePost(ctx, PostCreateCommand{
 			ActorID:        actorID,
 			NoteID:         command.NoteID,
+			RenoteID:       command.RenoteID,
 			Text:           command.Text,
 			Visibility:     command.Visibility,
 			ContentWarning: command.ContentWarning,

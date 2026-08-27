@@ -245,7 +245,8 @@ Use these Ably message names and payloads:
 
 - `actor.create`: omit `actor_id`; `data` contains `username`, and may contain
   `name` and `type`.
-- `post.create`: `data` contains `note_id` and `text`, and may contain
+- `post.create`: `data` contains `note_id` and exactly one of normal content
+  (`text` or `poll`) or `renote_id`, and may contain
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
   `mention_uris`, `hashtags`, and `emoji_names`. `emoji_names` contains at most
   100 local names without colons; Rosmarinus resolves the URLs. When
@@ -255,9 +256,13 @@ Use these Ably message names and payloads:
   `multiple`, and optional RFC 3339 `expires_at`; `text` may be empty when
   `poll` is present. `text` is current Misskey-compatible MFM source; send it
   unchanged and never send pre-rendered HTML. Rosmarinus owns safe ActivityPub
-  HTML rendering and conditional Misskey source metadata.
+  HTML rendering and conditional Misskey source metadata. `renote_id` is the
+  Rosmarinus-owned ID of a stored target Note. A pure renote cannot contain any
+  content metadata or use `specified` visibility; Rosmarinus delivers it as
+  `Announce` and may narrow visibility to match the target.
 - `post.delete`: `data` contains `note_id`; top-level `actor_id` must own the
-  local Note. Treat success as a soft deletion plus queued federation delivery.
+  local Note. Treat success as a soft deletion plus queued federation delivery;
+  deleting a pure renote delivers `Undo(Announce)` when its target still exists.
 - `poll.vote`: `data` contains `note_id` and a zero-based non-negative
   `choice`; top-level `actor_id` is the owned local voting Actor.
 - `follow.create`: `data` contains `target`, which is a Fediverse handle or an

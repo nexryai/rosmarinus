@@ -370,6 +370,31 @@ a new request after the reaction is already absent fails as `command_failed`.
 Rosmarinus generates the Actor ID, URI, and key pair and derives
 `ownerAccountId` from Ably `message.clientId` through `salvia_accounts`.
 
+`post.create.data` always contains the client-generated local `note_id` and
+exactly one of normal post content (`text` or `poll`) or `renote_id`. A pure
+renote uses the Rosmarinus-owned ID of an already stored target Note:
+
+```json
+{
+  "version": 1,
+  "request_id": "request-01J...",
+  "actor_id": "actor-01J...",
+  "data": {
+    "note_id": "new-local-renote-id",
+    "renote_id": "stored-target-note-id",
+    "visibility": "public"
+  }
+}
+```
+
+A pure renote cannot also contain text, a Poll, CW, reply, quote, mentions,
+hashtags, custom emoji, or sensitive metadata, and cannot use `specified`
+visibility. Rosmarinus rejects pure-renote targets, blocks, and unshareable
+visibility; it narrows a public renote of a home Note to home and a renote of
+the local Actor's own followers-only Note to followers. Success stores a local
+renote Note, publishes the normal `post.created` result, and delivers a
+Misskey-compatible `Announce` to followers and the remote target author.
+
 For `post.create` with `visibility: "specified"`, `mention_uris` is the
 recipient list and must contain at least one Actor URI. Rosmarinus resolves
 every recipient before storing the note, places the deduplicated Actor URIs in
@@ -392,9 +417,11 @@ tags; unknown names are ignored. Salvia must not supply or override emoji URLs.
 To delete a local Note, publish `post.delete` with the owned local Actor in
 `actor_id` and `note_id` in `data`. Rosmarinus verifies Note ownership,
 soft-deletes the Note, and enqueues a Misskey-compatible `Delete(Tombstone)` to
-remote followers and direct recipients. A successful result contains
-`actor_id`, `note_id`, and the deleted Note `uri`. Reuse the same `request_id`
-when retrying the same logical deletion.
+remote followers and direct recipients. For a pure renote whose target still
+exists, the same command delivers `Undo(Announce)` to followers and the target
+author instead. A successful result contains `actor_id`, `note_id`, and the
+deleted Note `uri`. Reuse the same `request_id` when retrying the same logical
+deletion.
 
 `post.create` may include `data.poll` with `choices` (2–10 unique strings, at
 most 50 characters each), optional `multiple`, and optional RFC 3339

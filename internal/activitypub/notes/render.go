@@ -95,19 +95,42 @@ func RenderWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
 }
 
 func RenderAnnounce(note *domainnotes.Note) map[string]any {
+	return renderAnnounce(note, note.URI)
+}
+
+// RenderLocalAnnounce uses the same dereferenceable activity ID as current
+// Misskey while the local Note keeps its stable /notes/{id} application URI.
+func RenderLocalAnnounce(note *domainnotes.Note) map[string]any {
+	return renderAnnounce(note, note.URI+"/activity")
+}
+
+func renderAnnounce(note *domainnotes.Note, activityID string) map[string]any {
 	to, cc := renderAudience(note.AttributedTo, note.Visibility, note.MentionURIs, note.VisibleUserURIs)
 	published := note.CreatedAt
 	if note.PublishedAt != nil {
 		published = *note.PublishedAt
 	}
 	return withContext(map[string]any{
-		"id":        note.URI,
+		"id":        activityID,
 		"type":      "Announce",
 		"actor":     note.AttributedTo,
 		"published": published.UTC().Format(time.RFC3339),
 		"to":        to,
 		"cc":        cc,
 		"object":    note.RenoteURI,
+	})
+}
+
+func RenderUndoAnnounce(note *domainnotes.Note, deletedAt time.Time) map[string]any {
+	announce := RenderLocalAnnounce(note)
+	delete(announce, "@context")
+	activityID, _ := announce["id"].(string)
+	return withContext(map[string]any{
+		"id":        activityID + "/undo",
+		"type":      "Undo",
+		"actor":     note.AttributedTo,
+		"object":    announce,
+		"published": deletedAt.UTC().Format(time.RFC3339),
 	})
 }
 

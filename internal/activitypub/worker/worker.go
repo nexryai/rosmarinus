@@ -1713,6 +1713,13 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if actor == nil {
 		return connector.PostCreated{}, fmt.Errorf("local actor not found: %s", command.ActorID)
 	}
+	visibility, err := postVisibility(command.Visibility)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	if strings.TrimSpace(command.RenoteID) != "" {
+		return h.createRenote(ctx, actor, command, visibility)
+	}
 	var localPoll *polls.Poll
 	if command.Poll != nil {
 		if h.polls == nil {
@@ -1722,10 +1729,6 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		if err != nil {
 			return connector.PostCreated{}, err
 		}
-	}
-	visibility, err := postVisibility(command.Visibility)
-	if err != nil {
-		return connector.PostCreated{}, err
 	}
 	mentionURIs := command.MentionURIs
 	var specifiedRecipients []*actors.Actor
@@ -1811,6 +1814,89 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) createRenote(ctx context.Context, actor *actors.Actor, command connector.PostCreateCommand, visibility domainnotes.Visibility) (connector.PostCreated, error) {
+	if strings.TrimSpace(command.NoteID) == "" {
+		return connector.PostCreated{}, fmt.Errorf("note id is required")
+	}
+	if strings.TrimSpace(command.Text) != "" || command.ContentWarning != nil || command.Sensitive || command.InReplyToURI != "" || command.QuoteURI != "" || len(command.MentionURIs) != 0 || len(command.Hashtags) != 0 || len(command.EmojiNames) != 0 || command.Poll != nil {
+		return connector.PostCreated{}, fmt.Errorf("a pure renote cannot contain post content or metadata")
+	}
+	if visibility == domainnotes.VisibilitySpecified {
+		return connector.PostCreated{}, fmt.Errorf("a pure renote cannot use specified visibility")
+	}
+	target, err := h.notes.FindByID(ctx, strings.TrimSpace(command.RenoteID))
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	if target == nil {
+		return connector.PostCreated{}, fmt.Errorf("renote target not found: %s", command.RenoteID)
+	}
+	if isPureRenote(target) {
+		return connector.PostCreated{}, fmt.Errorf("cannot renote a pure renote")
+	}
+	targetHost, err := hostOf(target.URI)
+	if err != nil {
+		return connector.PostCreated{}, fmt.Errorf("invalid renote target URI: %w", err)
+	}
+	if h.cfg.IsFederationHostBlocked(targetHost) {
+		return connector.PostCreated{}, fmt.Errorf("renote target host is blocked")
+	}
+	blocked, err := h.isBlockedPair(ctx, actor.ID, target.AuthorID)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	if blocked {
+		return connector.PostCreated{}, fmt.Errorf("renote target relationship is blocked")
+	}
+	visibility, err = localRenoteVisibility(actor, target, visibility)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	now := time.Now().UTC()
+	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
+	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
+		ID: command.NoteID, URI: noteURI, AttributedTo: actor.URI, AuthorID: actor.ID,
+		RenoteID: target.ID, RenoteURI: target.URI, Visibility: visibility,
+		CreatedAt: now, PublishedAt: &now,
+	})
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
+	if err := h.enqueueNoteActivityDeliveriesTo(ctx, actor, note, apnotes.RenderLocalAnnounce(note), []string{target.AttributedTo}); err != nil {
+		return connector.PostCreated{}, err
+	}
+	payload := connector.PostCreated{AccountID: actor.OwnerAccountID, ActorID: actor.ID, NoteID: note.ID, URI: note.URI}
+	if h.connector != nil {
+		if err := h.connector.PublishPostCreated(ctx, payload); err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
+	return payload, nil
+}
+
+func localRenoteVisibility(actor *actors.Actor, target *domainnotes.Note, requested domainnotes.Visibility) (domainnotes.Visibility, error) {
+	switch target.Visibility {
+	case domainnotes.VisibilityPublic:
+		return requested, nil
+	case domainnotes.VisibilityHome:
+		if requested == domainnotes.VisibilityPublic {
+			return domainnotes.VisibilityHome, nil
+		}
+		return requested, nil
+	case domainnotes.VisibilityFollowers:
+		if actor == nil || actor.ID != target.AuthorID {
+			return "", fmt.Errorf("renote target is not shareable")
+		}
+		return domainnotes.VisibilityFollowers, nil
+	default:
+		return "", fmt.Errorf("renote target is not shareable")
+	}
+}
+
+func isPureRenote(note *domainnotes.Note) bool {
+	return note != nil && note.RenoteID != "" && note.Text == "" && note.ContentWarning == nil && note.InReplyToURI == "" && note.QuoteURI == "" && len(note.Attachments) == 0
 }
 
 func (h *Handler) resolveLocalEmojis(ctx context.Context, names []string) ([]domainnotes.Emoji, error) {
@@ -1943,6 +2029,13 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 	if note == nil || note.AuthorID != actor.ID || note.AttributedTo != actor.URI {
 		return connector.PostDeleted{}, fmt.Errorf("owned local note not found: %s", command.NoteID)
 	}
+	var renoteTarget *domainnotes.Note
+	if isPureRenote(note) {
+		renoteTarget, err = h.notes.FindAnyByID(ctx, note.RenoteID)
+		if err != nil {
+			return connector.PostDeleted{}, err
+		}
+	}
 	deletedAt := time.Now().UTC()
 	if note.DeletedAt == nil {
 		if err := h.notes.DeleteLocalNote(ctx, note.ID, actor.ID); err != nil {
@@ -1955,7 +2048,12 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 		return connector.PostDeleted{}, err
 	}
 	activity := apnotes.RenderDelete(note, deletedAt)
-	if err := h.enqueueNoteActivityDeliveries(ctx, actor, note, activity); err != nil {
+	additionalRecipients := []string(nil)
+	if renoteTarget != nil {
+		activity = apnotes.RenderUndoAnnounce(note, deletedAt)
+		additionalRecipients = []string{renoteTarget.AttributedTo}
+	}
+	if err := h.enqueueNoteActivityDeliveriesTo(ctx, actor, note, activity, additionalRecipients); err != nil {
 		return connector.PostDeleted{}, err
 	}
 	return connector.PostDeleted{ActorID: actor.ID, NoteID: note.ID, URI: note.URI}, nil
@@ -2190,6 +2288,10 @@ func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors
 }
 
 func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, activity map[string]any) error {
+	return h.enqueueNoteActivityDeliveriesTo(ctx, actor, note, activity, nil)
+}
+
+func (h *Handler) enqueueNoteActivityDeliveriesTo(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, activity map[string]any, additionalRecipientURIs []string) error {
 	if h.follows == nil || h.queue == nil {
 		return fmt.Errorf("follow repository and queue are required for post delivery")
 	}
@@ -2245,10 +2347,11 @@ func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *acto
 			afterID = followers[len(followers)-1].ID
 		}
 	}
-	directURIs := note.MentionURIs
+	directURIs := append([]string(nil), note.MentionURIs...)
 	if note.Visibility == domainnotes.VisibilitySpecified && len(note.VisibleUserURIs) > 0 {
-		directURIs = note.VisibleUserURIs
+		directURIs = append([]string(nil), note.VisibleUserURIs...)
 	}
+	directURIs = append(directURIs, additionalRecipientURIs...)
 	for _, uri := range directURIs {
 		recipient, err := h.resolver.ResolveActor(ctx, uri)
 		if err != nil {

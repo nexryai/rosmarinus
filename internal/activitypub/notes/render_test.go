@@ -31,6 +31,28 @@ func TestRenderAnnounceNote(t *testing.T) {
 	}
 }
 
+func TestRenderLocalAnnounceAndUndo(t *testing.T) {
+	createdAt := time.Date(2026, 8, 27, 1, 2, 3, 0, time.UTC)
+	deletedAt := createdAt.Add(time.Hour)
+	note := &domainnotes.Note{
+		URI: "https://rosmarinus.example/notes/renote", AttributedTo: "https://rosmarinus.example/users/alice",
+		RenoteID: "target", RenoteURI: "https://remote.example/notes/target",
+		Visibility: domainnotes.VisibilityHome, CreatedAt: createdAt,
+	}
+	announce := RenderLocalAnnounce(note)
+	if announce["id"] != note.URI+"/activity" || announce["type"] != "Announce" || announce["object"] != note.RenoteURI {
+		t.Fatalf("unexpected local Announce: %#v", announce)
+	}
+	undo := RenderUndoAnnounce(note, deletedAt)
+	if undo["id"] != note.URI+"/activity/undo" || undo["type"] != "Undo" || undo["actor"] != note.AttributedTo || undo["published"] != deletedAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected Undo: %#v", undo)
+	}
+	object, ok := undo["object"].(map[string]any)
+	if !ok || object["id"] != note.URI+"/activity" || object["type"] != "Announce" || object["@context"] != nil {
+		t.Fatalf("unexpected embedded Announce: %#v", undo["object"])
+	}
+}
+
 func TestRenderSpecifiedNoteAddressesMentionedActors(t *testing.T) {
 	note := &domainnotes.Note{
 		URI:          "https://rosmarinus.example/notes/direct",

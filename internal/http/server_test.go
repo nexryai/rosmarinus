@@ -559,6 +559,31 @@ func TestNoteActivityByID(t *testing.T) {
 	}
 }
 
+func TestLocalRenoteEndpointsReturnAnnounce(t *testing.T) {
+	note := &domainnotes.Note{
+		ID: "renote-id", URI: "https://example.test/notes/renote-id", AttributedTo: "https://example.test/users/alice",
+		RenoteID: "target", RenoteURI: "https://remote.example/notes/target",
+		Visibility: domainnotes.VisibilityPublic, CreatedAt: time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC),
+	}
+	for _, path := range []string{"/notes/renote-id", "/notes/renote-id/activity"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "application/activity+json")
+		rec := httptest.NewRecorder()
+		NewHandlerWithStores(testConfig(), nil, nil, fakeNoteLookup{note: note}, nil, nil, nil).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+		for _, want := range []string{`"id":"https://example.test/notes/renote-id/activity"`, `"type":"Announce"`, `"object":"https://remote.example/notes/target"`} {
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Fatalf("%s body does not contain %q: %s", path, want, rec.Body.String())
+			}
+		}
+		if strings.Contains(rec.Body.String(), `"type":"Create"`) {
+			t.Fatalf("%s wrapped pure renote in Create: %s", path, rec.Body.String())
+		}
+	}
+}
+
 func TestQuestionNoteByIDJoinsPollProjection(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/notes/poll-note", nil)
 	rec := httptest.NewRecorder()

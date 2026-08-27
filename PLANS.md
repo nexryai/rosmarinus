@@ -645,9 +645,13 @@ when an Ably notification is missed.
       `Undo(Follow)` to the remote Actor.
 - [x] Handle Next.js-driven `post.create` commands by storing a local note and
       publishing `post.created`.
+- [x] Accept pure renotes through `post.create.data.renote_id`, enforce current
+      Misskey visibility/block rules, and deliver `Announce` to followers and
+      the remote target author.
 - [x] Handle Next.js-driven `post.delete` commands by ownership-checking and
       soft-deleting a local Note, then delivering a Misskey-compatible
-      `Delete(Tombstone)` to remote followers and direct recipients.
+      `Delete(Tombstone)` or pure-renote `Undo(Announce)` to remote followers
+      and direct recipients.
 - [x] Accept local Poll definitions on `post.create` and handle `poll.vote`
       with single/multiple-choice uniqueness and remote vote delivery.
 - [x] Handle Next.js-driven `reaction.create` commands by checking Note
@@ -1155,8 +1159,9 @@ focused unit/integration coverage until the fixture can cover it.
       follower through the delivery queue.
 - [x] Confirm through Misskey's public API that Misskey stores the delivered
       remote note.
-- [ ] Have Rosmarinus send `Like` or `Announce` for a Misskey note.
-- [ ] Confirm Misskey accepts the activity and no retry loop remains in Asynq.
+- [x] Have Rosmarinus send `Like` and `Announce` for a Misskey note.
+- [x] Confirm Misskey accepts both activities and their Undo forms without a
+      retry loop remaining in Asynq.
 
 ### Operational Checks
 

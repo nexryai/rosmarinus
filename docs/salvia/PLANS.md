@@ -215,13 +215,16 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
 
 - [ ] Validate command data before publish and preserve the same JSON field
       names as the Rosmarinus contract.
-- [ ] Implement `post.create` with required `note_id` and `text`, plus optional
+- [ ] Implement `post.create` with required `note_id` and exactly one of
+      `text`/`poll` or `renote_id`, plus optional
       `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`,
       `quote_uri`, `mention_uris`, `hashtags`, `emoji_names`, and `poll`. Send
       only local emoji names and never media URLs. Allow empty text only when
-      the command includes a valid Poll.
+      the command includes a valid Poll or pure renote. Do not combine
+      `renote_id` with content metadata or `specified` visibility.
 - [ ] Implement `post.delete` with the owned local `actor_id` and
-      `data.note_id`; reuse the original request ID on retry.
+      `data.note_id`; expect pure-renote deletion to federate as
+      `Undo(Announce)`, and reuse the original request ID on retry.
 - [ ] Implement `poll.vote` with the owned local `actor_id`, `data.note_id`,
       and a zero-based `data.choice`.
 - [ ] Implement `follow.create` with a Fediverse handle or absolute Actor URL

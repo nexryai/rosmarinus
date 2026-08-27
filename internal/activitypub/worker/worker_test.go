@@ -2278,6 +2278,93 @@ func TestCreatePostStoresAndDeliversLocalQuestion(t *testing.T) {
 	}
 }
 
+func TestCreatePostStoresAndDeliversLocalRenote(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay", OwnerAccountID: "account-1"}
+	remote := &actors.Actor{
+		ID: "remote-author", URI: "https://remote.example/users/alice", Host: &remoteHost,
+		Inbox: "https://remote.example/users/alice/inbox",
+	}
+	target := &domainnotes.Note{
+		ID: "remote-note", URI: "https://remote.example/notes/1", AuthorID: remote.ID,
+		AttributedTo: remote.URI, Text: "hello", Visibility: domainnotes.VisibilityHome,
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{target.ID: target, target.URI: target}}
+	q := &fakeQueue{}
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "local-renote", RenoteID: target.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	note, err := noteRepo.FindByID(context.Background(), created.NoteID)
+	if err != nil || note == nil {
+		t.Fatalf("stored renote = %#v, err=%v", note, err)
+	}
+	if note.RenoteID != target.ID || note.RenoteURI != target.URI || note.Visibility != domainnotes.VisibilityHome {
+		t.Fatalf("unexpected stored renote: %+v", note)
+	}
+	if publisher.post == nil || publisher.post.NoteID != note.ID {
+		t.Fatalf("post.created event = %+v", publisher.post)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d, want 1", len(q.tasks))
+	}
+	payload := q.tasks[0].Payload.(queue.DeliverPayload)
+	if payload.To != remote.Inbox || payload.Object["type"] != "Announce" || payload.Object["id"] != note.URI+"/activity" || payload.Object["object"] != target.URI {
+		t.Fatalf("unexpected Announce delivery: %#v", payload)
+	}
+}
+
+func TestCreatePostRejectsInvalidRenoteTargets(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remoteHost := "remote.example"
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &remoteHost}
+	tests := []struct {
+		name   string
+		target *domainnotes.Note
+	}{
+		{name: "pure renote", target: &domainnotes.Note{ID: "target", URI: "https://remote.example/activities/renote", AuthorID: remote.ID, AttributedTo: remote.URI, RenoteID: "original", RenoteURI: "https://remote.example/notes/original", Visibility: domainnotes.VisibilityPublic}},
+		{name: "followers-only from another actor", target: &domainnotes.Note{ID: "target", URI: "https://remote.example/notes/private", AuthorID: remote.ID, AttributedTo: remote.URI, Text: "private", Visibility: domainnotes.VisibilityFollowers}},
+		{name: "specified", target: &domainnotes.Note{ID: "target", URI: "https://remote.example/notes/direct", AuthorID: remote.ID, AttributedTo: remote.URI, Text: "direct", Visibility: domainnotes.VisibilitySpecified}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{tt.target.ID: tt.target, tt.target.URI: tt.target}}
+			h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+				&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+			if _, err := h.CreatePost(context.Background(), connector.PostCreateCommand{ActorID: local.ID, NoteID: "local-renote", RenoteID: tt.target.ID}); err == nil {
+				t.Fatal("invalid renote target was accepted")
+			}
+			if stored, _ := noteRepo.FindByID(context.Background(), "local-renote"); stored != nil {
+				t.Fatalf("invalid renote was stored: %+v", stored)
+			}
+		})
+	}
+}
+
+func TestCreatePostRejectsBlockedRenoteTarget(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remoteHost := "remote.example"
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/alice", Host: &remoteHost}
+	target := &domainnotes.Note{ID: "target", URI: "https://remote.example/notes/target", AuthorID: remote.ID, AttributedTo: remote.URI, Text: "hello", Visibility: domainnotes.VisibilityPublic}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{target.ID: target, target.URI: target}}
+	blockRepo := &fakeBlockRepo{}
+	_, _ = blockRepo.Upsert(context.Background(), blocks.Block{BlockerID: remote.ID, BlockeeID: local.ID})
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	if _, err := h.CreatePost(context.Background(), connector.PostCreateCommand{ActorID: local.ID, NoteID: "local-renote", RenoteID: target.ID}); err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("expected blocked renote error, got %v", err)
+	}
+	if stored, _ := noteRepo.FindByID(context.Background(), "local-renote"); stored != nil {
+		t.Fatalf("blocked renote was stored: %+v", stored)
+	}
+}
+
 func TestCreatePostResolvesLocalCustomEmoji(t *testing.T) {
 	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
 	noteRepo := &fakeNoteRepo{}
@@ -2428,6 +2515,32 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	tombstone, ok := payload.Object["object"].(map[string]any)
 	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
 		t.Fatalf("unexpected tombstone: %#v", payload.Object["object"])
+	}
+}
+
+func TestDeletePostDeliversUndoAnnounceForLocalRenote(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &remoteHost, Inbox: "https://remote.example/users/alice/inbox"}
+	target := &domainnotes.Note{ID: "target", URI: "https://remote.example/notes/target", AuthorID: remote.ID, AttributedTo: remote.URI, Text: "hello", Visibility: domainnotes.VisibilityPublic}
+	renote := &domainnotes.Note{ID: "renote", URI: "https://rosmarinus.example/notes/renote", AuthorID: local.ID, AttributedTo: local.URI, RenoteID: target.ID, RenoteURI: target.URI, Visibility: domainnotes.VisibilityPublic}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{target.ID: target, target.URI: target, renote.ID: renote, renote.URI: renote}}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	if _, err := h.DeletePost(context.Background(), connector.PostDeleteCommand{ActorID: local.ID, NoteID: renote.ID}); err != nil {
+		t.Fatalf("DeletePost returned error: %v", err)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d, want 1", len(q.tasks))
+	}
+	payload := q.tasks[0].Payload.(queue.DeliverPayload)
+	if payload.To != remote.Inbox || payload.Object["type"] != "Undo" || payload.Object["id"] != renote.URI+"/activity/undo" {
+		t.Fatalf("unexpected Undo delivery: %#v", payload)
+	}
+	object, ok := payload.Object["object"].(map[string]any)
+	if !ok || object["type"] != "Announce" || object["id"] != renote.URI+"/activity" || object["object"] != target.URI {
+		t.Fatalf("unexpected embedded Announce: %#v", payload.Object["object"])
 	}
 }
 

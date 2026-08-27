@@ -351,6 +351,34 @@ func TestCommandHandlerCreatesPollOnlyPost(t *testing.T) {
 	}
 }
 
+func TestCommandHandlerCreatesPureRenote(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	message := commandMessage(CommandPostCreate, "request-renote", "actor-2", PostCreateData{
+		NoteID: "renote-note", RenoteID: "remote-note",
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.postCalls != 1 || executor.postCommand.NoteID != "renote-note" || executor.postCommand.RenoteID != "remote-note" {
+		t.Fatalf("post command = %+v calls=%d", executor.postCommand, executor.postCalls)
+	}
+}
+
+func TestCommandHandlerRejectsRenoteWithContent(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})
+	message := commandMessage(CommandPostCreate, "request-invalid-renote", "actor-2", PostCreateData{
+		NoteID: "renote-note", RenoteID: "remote-note", Text: "quote text",
+	})
+	if err := handler.Handle(context.Background(), message); err == nil {
+		t.Fatal("renote with content was accepted")
+	}
+	if executor.postCalls != 0 {
+		t.Fatalf("CreatePost calls = %d", executor.postCalls)
+	}
+}
+
 func TestCommandHandlerPassesLocalEmojiNames(t *testing.T) {
 	executor := &fakeCommandExecutor{}
 	handler := newAuthorizedCommandHandler(executor, &fakeCommandResultPublisher{}, &fakeReceiptStore{})

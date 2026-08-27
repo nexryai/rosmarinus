@@ -411,19 +411,28 @@ func noteByID(cfg config.Config, noteLookup NoteLookup, pollLookup PollLookup) h
 			}
 		}
 		localURI := strings.TrimRight(cfg.PublicURL, "/") + "/notes/" + url.PathEscape(note.ID)
+		isLocalRenote := note.URI == localURI && note.RenoteURI != "" && note.Text == "" && note.ContentWarning == nil && note.InReplyToURI == "" && note.QuoteURI == "" && len(note.Attachments) == 0
 		if len(parts) == 2 {
 			if note.URI != localURI {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			writeActivityJSON(w, apnotes.RenderCreateWithPoll(note, poll))
+			if isLocalRenote {
+				writeActivityJSON(w, apnotes.RenderLocalAnnounce(note))
+			} else {
+				writeActivityJSON(w, apnotes.RenderCreateWithPoll(note, poll))
+			}
 			return
 		}
 		if note.URI != localURI {
 			http.Redirect(w, r, note.URI, http.StatusFound)
 			return
 		}
-		writeActivityJSON(w, apnotes.RenderWithPoll(note, poll))
+		if isLocalRenote {
+			writeActivityJSON(w, apnotes.RenderLocalAnnounce(note))
+		} else {
+			writeActivityJSON(w, apnotes.RenderWithPoll(note, poll))
+		}
 	}
 }
 
