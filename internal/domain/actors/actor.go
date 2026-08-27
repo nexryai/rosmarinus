@@ -65,5 +65,7 @@ type Repository interface {
 	FilterActiveRemoteIDs(context.Context, []string) (map[string]struct{}, error)
 	FindByPublicKeyID(context.Context, string) (*Actor, error)
 	UpsertRemoteActor(context.Context, Actor) (*Actor, error)
+	AddRemoteFeaturedNote(context.Context, string, string, int) (*Actor, error)
+	RemoveRemoteFeaturedNote(context.Context, string, string) (*Actor, error)
 	MarkRemoteActorDeleted(context.Context, string) error
 }

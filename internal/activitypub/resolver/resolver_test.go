@@ -554,6 +554,35 @@ func (r *resolverActorRepository) UpsertRemoteActor(_ context.Context, actor act
 	return &actor, nil
 }
 
+func (r *resolverActorRepository) AddRemoteFeaturedNote(_ context.Context, actorURI, noteID string, limit int) (*actors.Actor, error) {
+	if r.existing == nil || r.existing.URI != actorURI {
+		return nil, nil
+	}
+	for _, existing := range r.existing.FeaturedNoteIDs {
+		if existing == noteID {
+			return r.existing, nil
+		}
+	}
+	if len(r.existing.FeaturedNoteIDs) < limit {
+		r.existing.FeaturedNoteIDs = append(r.existing.FeaturedNoteIDs, noteID)
+	}
+	return r.existing, nil
+}
+
+func (r *resolverActorRepository) RemoveRemoteFeaturedNote(_ context.Context, actorURI, noteID string) (*actors.Actor, error) {
+	if r.existing == nil || r.existing.URI != actorURI {
+		return nil, nil
+	}
+	featured := r.existing.FeaturedNoteIDs[:0]
+	for _, existing := range r.existing.FeaturedNoteIDs {
+		if existing != noteID {
+			featured = append(featured, existing)
+		}
+	}
+	r.existing.FeaturedNoteIDs = featured
+	return r.existing, nil
+}
+
 func (r *resolverActorRepository) MarkRemoteActorDeleted(context.Context, string) error {
 	return nil
 }

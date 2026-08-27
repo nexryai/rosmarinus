@@ -20,33 +20,35 @@ The Go integration test performs this real federation sequence:
 7. create a public Misskey note;
 8. wait for the delivered `Create(Note)` to be verified and stored by
    Rosmarinus;
-9. renote that public Misskey note and verify Rosmarinus stores the delivered
+9. pin and unpin that Misskey note and verify Rosmarinus applies the delivered
+   `Add`/`Remove` activities to the remote Actor's `featuredNoteIds`;
+10. renote that public Misskey note and verify Rosmarinus stores the delivered
    `Announce` with its resolved target reference;
-10. publish a Misskey `Question` and verify Rosmarinus stores its ordered poll
+11. publish a Misskey `Question` and verify Rosmarinus stores its ordered poll
    choices, vote counts, multiplicity, and expiration;
-11. react to that Misskey note from Rosmarinus, verify Misskey applies the
+12. react to that Misskey note from Rosmarinus, verify Misskey applies the
    delivered Like, dereference its Rosmarinus Like activity, then deliver
    `Undo(Like)` and verify Misskey removes the reaction;
-12. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
+13. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
    soft-deleted, and verify Misskey removes the relay from its followers;
-13. approve Misskey's inbound follow, dereference a public Rosmarinus
+14. approve Misskey's inbound follow, dereference a public Rosmarinus
    `Create(Question)` with a local custom-emoji tag, verify its simple MFM is
    emitted as safe HTML without redundant Misskey source metadata, and deliver
    that poll;
-14. publish advanced MFM containing bold and ruby syntax, verify its safe HTML
+15. publish advanced MFM containing bold and ruby syntax, verify its safe HTML
    and `_misskey_content`/`source` compatibility fields, and confirm latest
    Misskey stores the original MFM text;
-15. vote on that poll from Misskey and verify Rosmarinus stores the inbound
+16. vote on that poll from Misskey and verify Rosmarinus stores the inbound
    reply Note as a poll vote;
-16. react to that note from Misskey, verify the reaction in Rosmarinus, and
+17. react to that note from Misskey, verify the reaction in Rosmarinus, and
    dereference its Like activity;
-17. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
+18. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
    and verify Misskey applies the delivered `Delete(Tombstone)`;
-18. deliver a `specified` Rosmarinus note to the second account's individual
+19. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
-19. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
-   metadata and user count, tracks authenticated receive/successful delivery
+20. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
+   metadata, tracks authenticated receive/successful delivery
    timestamps and status, and keeps per-instance relationship counts current.
 
 Rosmarinus stores validated remote media source URLs directly; it does not

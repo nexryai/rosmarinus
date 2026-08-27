@@ -50,6 +50,7 @@ type APClient interface {
 const (
 	postDeliveryFollowerLimit = 100
 	collectionActivityLimit   = 256
+	remoteFeaturedNoteLimit   = 5
 )
 
 type QueueClient interface {
@@ -716,11 +717,58 @@ func (h *Handler) performOneActivity(ctx context.Context, actor *actors.Actor, a
 		return h.performRejectFollow(ctx, actor, activity)
 	case aptypes.IsUpdate(activity):
 		return h.performUpdate(ctx, actor, activity)
+	case aptypes.IsAdd(activity):
+		return h.performFeaturedChange(ctx, actor, activity, true)
+	case aptypes.IsRemove(activity):
+		return h.performFeaturedChange(ctx, actor, activity, false)
 	case aptypes.IsMove(activity):
 		return h.performMove(ctx, actor, activity)
 	default:
 		return fmt.Sprintf("skip: unrecognized activity type %v", activity["type"]), nil
 	}
+}
+
+func (h *Handler) performFeaturedChange(ctx context.Context, actor *actors.Actor, activity map[string]any, add bool) (string, error) {
+	if actor == nil || actor.Host == nil {
+		return "skip: featured change actor is not remote", nil
+	}
+	activityActorURI, err := aptypes.GetAPID(activity["actor"])
+	if err != nil || activityActorURI != actor.URI {
+		return "skip: featured change actor mismatch", nil
+	}
+	targetURI, err := aptypes.GetAPID(activity["target"])
+	if err != nil {
+		return "skip: featured change target is invalid", nil
+	}
+	if actor.FeaturedURI == "" || targetURI != actor.FeaturedURI {
+		return "skip: featured change target is not actor featured collection", nil
+	}
+	noteURI, err := aptypes.GetAPID(activity["object"])
+	if err != nil {
+		return "skip: featured change object is invalid", nil
+	}
+	if h.resolver == nil || h.notes == nil {
+		return "skip: note resolver is not configured", nil
+	}
+	note, err := h.resolver.ResolveNote(ctx, noteURI)
+	if err != nil {
+		return "", fmt.Errorf("resolve featured note: %w", err)
+	}
+	// Misskey only permits an Actor to pin its own Notes. Enforcing ownership
+	// here prevents a valid signer from mutating another Actor's profile state.
+	if note == nil || note.AuthorID != actor.ID || note.AttributedTo != actor.URI {
+		return "skip: featured note attribution mismatch", nil
+	}
+	if add {
+		if _, err := h.repo.AddRemoteFeaturedNote(ctx, actor.URI, note.ID, remoteFeaturedNoteLimit); err != nil {
+			return "", fmt.Errorf("add remote featured note: %w", err)
+		}
+		return "ok: featured note added", nil
+	}
+	if _, err := h.repo.RemoveRemoteFeaturedNote(ctx, actor.URI, note.ID); err != nil {
+		return "", fmt.Errorf("remove remote featured note: %w", err)
+	}
+	return "ok: featured note removed", nil
 }
 
 func (h *Handler) performUpdate(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {

@@ -190,7 +190,42 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && remoteNote != nil && remoteNote.Text == "Hello from latest Misskey federation test"
 	})
 
-	// Phase 6: renote the public Misskey note and verify Rosmarinus accepts the
+	// Phase 6: pin and unpin the Misskey Note, verifying Rosmarinus applies the
+	// delivered Add/Remove pair to the remote Actor's featured Note IDs.
+	misskey.call(ctx, "i/pin", map[string]any{
+		"i": admin.Token, "noteId": created.CreatedNote.ID,
+	}, nil)
+	waitFor(t, ctx, "Add featured Note stored by Rosmarinus", func() bool {
+		var findErr error
+		remoteActor, findErr = actorRepo.FindByURI(ctx, remoteActorURI)
+		if findErr != nil || remoteActor == nil {
+			return false
+		}
+		for _, noteID := range remoteActor.FeaturedNoteIDs {
+			if noteID == remoteNote.ID {
+				return true
+			}
+		}
+		return false
+	})
+	misskey.call(ctx, "i/unpin", map[string]any{
+		"i": admin.Token, "noteId": created.CreatedNote.ID,
+	}, nil)
+	waitFor(t, ctx, "Remove featured Note stored by Rosmarinus", func() bool {
+		var findErr error
+		remoteActor, findErr = actorRepo.FindByURI(ctx, remoteActorURI)
+		if findErr != nil || remoteActor == nil {
+			return false
+		}
+		for _, noteID := range remoteActor.FeaturedNoteIDs {
+			if noteID == remoteNote.ID {
+				return false
+			}
+		}
+		return true
+	})
+
+	// Phase 7: renote the public Misskey note and verify Rosmarinus accepts the
 	// delivered Announce and stores its reference to the resolved target Note.
 	var createdRenote struct {
 		CreatedNote struct {
@@ -210,7 +245,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
 	})
 
-	// Phase 7: publish a Misskey Question and verify Rosmarinus stores its
+	// Phase 8: publish a Misskey Question and verify Rosmarinus stores its
 	// ordered choices, initial vote counts, multiplicity, and expiration.
 	var createdPoll struct {
 		CreatedNote struct {
@@ -240,7 +275,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			len(poll.Votes) == 2 && poll.Votes[0] == 0 && poll.Votes[1] == 0
 	})
 
-	// Phase 8: react to the Misskey note as the local Actor, verify Misskey
+	// Phase 9: react to the Misskey note as the local Actor, verify Misskey
 	// applies the delivered Like, dereference it, then deliver Undo(Like) and
 	// verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
@@ -287,7 +322,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.Reactions["👍"] == 0
 	})
 
-	// Phase 9: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
+	// Phase 10: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB
 	// relationship is soft-deleted, and confirm Misskey removes the relay Actor
 	// from the administrator's followers.
 	var relayOnMisskey struct {
@@ -356,7 +391,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 10: make Misskey follow Rosmarinus, approve the pending request in
+	// Phase 11: make Misskey follow Rosmarinus, approve the pending request in
 	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
@@ -383,7 +418,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 11: publish simple and advanced MFM from Rosmarinus, verify simple
+	// Phase 12: publish simple and advanced MFM from Rosmarinus, verify simple
 	// MFM is safe HTML without redundant source metadata, advanced MFM retains
 	// its source, and confirm latest Misskey stores both delivered Create(Note)s.
 	const localNoteID = "latest-misskey-outbound-note"
@@ -480,7 +515,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("Misskey stored advanced MFM text %q, want %q", storedAdvancedNoteText, advancedNoteText)
 	}
 
-	// Phase 12: vote on the delivered Rosmarinus Question from Misskey and
+	// Phase 13: vote on the delivered Rosmarinus Question from Misskey and
 	// verify Rosmarinus consumes the reply Note as a poll vote.
 	misskey.call(ctx, "notes/polls/vote", map[string]any{
 		"i": admin.Token, "noteId": misskeyLocalNoteID, "choice": 1,
@@ -490,7 +525,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && poll != nil && len(poll.Votes) == 2 && poll.Votes[1] == 1
 	})
 
-	// Phase 13: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 14: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -510,7 +545,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 14: soft-delete the local Note, verify Rosmarinus removes its Poll,
+	// Phase 15: soft-delete the local Note, verify Rosmarinus removes its Poll,
 	// votes, and reactions, and verify current Misskey accepts the identified
 	// Delete(Tombstone) activity and removes its federated copy.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
@@ -552,7 +587,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("deleted Note poll votes remain: count=%d err=%v", votes, countErr)
 	}
 
-	// Phase 15: publish a specified-visibility note, verify it is not publicly
+	// Phase 16: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"
@@ -590,7 +625,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 16: verify first contact, authenticated inbox traffic, successful
+	// Phase 17: verify first contact, authenticated inbox traffic, successful
 	// deliveries, relationship changes, and daily NodeInfo discovery converge on
 	// one current-Misskey instance document that Salvia can read.
 	type instanceSnapshot struct {

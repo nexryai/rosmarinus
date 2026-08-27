@@ -261,7 +261,9 @@ the same style as current Misskey.
 - [ ] `Update`: update notes and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
-- [ ] `Add` and `Remove`: inspect current Misskey handling before deciding exact scope.
+- [x] `Add` and `Remove`: authenticate remote featured-collection changes,
+      require the Note to belong to the sending Actor, and update the Actor's
+      bounded `featuredNoteIds` state atomically.
 - [x] Ingest `Collection` / `OrderedCollection` activities only when they stay
       below the current Misskey recursion limit, resolving and processing each
       signer-hosted activity independently.

@@ -318,6 +318,62 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	return r.FindByURI(ctx, actor.URI)
 }
 
+func (r *ActorRepository) AddRemoteFeaturedNote(ctx context.Context, actorURI, noteID string, limit int) (*actors.Actor, error) {
+	if actorURI == "" || noteID == "" {
+		return nil, fmt.Errorf("remote actor uri and featured note id are required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("featured note limit must be positive")
+	}
+	existing := bson.M{"$ifNull": bson.A{"$featuredNoteIds", bson.A{}}}
+	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"featuredNoteIds": bson.M{"$cond": bson.A{
+			bson.M{"$in": bson.A{noteID, existing}},
+			existing,
+			bson.M{"$slice": bson.A{
+				bson.M{"$concatArrays": bson.A{existing, bson.A{noteID}}},
+				limit,
+			}},
+		}},
+	}}}}
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"uri":  actorURI,
+		"host": bson.M{"$ne": nil},
+	}, update)
+	if err != nil {
+		return nil, err
+	}
+	if result.MatchedCount == 0 {
+		return nil, fmt.Errorf("remote actor not found")
+	}
+	return r.FindAnyByURI(ctx, actorURI)
+}
+
+func (r *ActorRepository) RemoveRemoteFeaturedNote(ctx context.Context, actorURI, noteID string) (*actors.Actor, error) {
+	if actorURI == "" || noteID == "" {
+		return nil, fmt.Errorf("remote actor uri and featured note id are required")
+	}
+	existing := bson.M{"$ifNull": bson.A{"$featuredNoteIds", bson.A{}}}
+	update := mongo.Pipeline{bson.D{{Key: "$set", Value: bson.M{
+		"featuredNoteIds": bson.M{"$filter": bson.M{
+			"input": existing,
+			"as":    "noteId",
+			"cond":  bson.M{"$ne": bson.A{"$$noteId", noteID}},
+		}},
+	}}}}
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"uri":  actorURI,
+		"host": bson.M{"$ne": nil},
+	}, update)
+	if err != nil {
+		return nil, err
+	}
+	if result.MatchedCount == 0 {
+		return nil, fmt.Errorf("remote actor not found")
+	}
+	return r.FindAnyByURI(ctx, actorURI)
+}
+
 func (r *ActorRepository) MarkRemoteActorDeleted(ctx context.Context, uri string) error {
 	if uri == "" {
 		return fmt.Errorf("remote actor uri is required")

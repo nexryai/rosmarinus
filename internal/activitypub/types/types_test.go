@@ -50,4 +50,10 @@ func TestPredicates(t *testing.T) {
 	if !IsMove(map[string]any{"type": "Move"}) {
 		t.Fatalf("Move was not detected")
 	}
+	if !IsAdd(map[string]any{"type": "Add"}) {
+		t.Fatalf("Add was not detected")
+	}
+	if !IsRemove(map[string]any{"type": "Remove"}) {
+		t.Fatalf("Remove was not detected")
+	}
 }

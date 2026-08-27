@@ -150,6 +150,37 @@ func (f *fakeRepo) UpsertRemoteActor(ctx context.Context, actor actors.Actor) (*
 	return f.remote, nil
 }
 
+func (f *fakeRepo) AddRemoteFeaturedNote(ctx context.Context, actorURI, noteID string, limit int) (*actors.Actor, error) {
+	actor, err := f.FindAnyByURI(ctx, actorURI)
+	if err != nil || actor == nil || actor.Host == nil {
+		return actor, err
+	}
+	for _, existing := range actor.FeaturedNoteIDs {
+		if existing == noteID {
+			return actor, nil
+		}
+	}
+	if len(actor.FeaturedNoteIDs) < limit {
+		actor.FeaturedNoteIDs = append(actor.FeaturedNoteIDs, noteID)
+	}
+	return actor, nil
+}
+
+func (f *fakeRepo) RemoveRemoteFeaturedNote(ctx context.Context, actorURI, noteID string) (*actors.Actor, error) {
+	actor, err := f.FindAnyByURI(ctx, actorURI)
+	if err != nil || actor == nil || actor.Host == nil {
+		return actor, err
+	}
+	featured := actor.FeaturedNoteIDs[:0]
+	for _, existing := range actor.FeaturedNoteIDs {
+		if existing != noteID {
+			featured = append(featured, existing)
+		}
+	}
+	actor.FeaturedNoteIDs = featured
+	return actor, nil
+}
+
 func (f *fakeRepo) MarkRemoteActorDeleted(ctx context.Context, uri string) error {
 	f.deletedRemoteURI = uri
 	if f.remote != nil && f.remote.URI == uri {
@@ -1263,6 +1294,75 @@ func TestPerformUpdateQuestionChangesOnlyExistingChoiceVotes(t *testing.T) {
 	}
 	if got := pollRepo.polls["poll-note"].Votes; len(got) != 2 || got[0] != 3 || got[1] != 4 {
 		t.Fatalf("votes = %#v", got)
+	}
+}
+
+func TestPerformAddAndRemoveFeaturedNote(t *testing.T) {
+	host := "remote.example"
+	actorURI := "https://remote.example/users/alice"
+	featuredURI := actorURI + "/collections/featured"
+	noteURI := "https://remote.example/notes/pinned"
+	remote := &actors.Actor{
+		ID: "remote", URI: actorURI, Host: &host, FeaturedURI: featuredURI,
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		noteURI: {ID: "pinned-note", URI: noteURI, AuthorID: remote.ID, AttributedTo: remote.URI},
+	}}
+	actorRepo := &fakeRepo{remote: remote}
+	h := New(config.Config{}, nil, actorRepo, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+
+	result, err := h.performOneActivity(context.Background(), remote, map[string]any{
+		"type": "Add", "actor": actorURI, "target": featuredURI, "object": noteURI,
+	})
+	if err != nil || result != "ok: featured note added" {
+		t.Fatalf("Add result=%q err=%v", result, err)
+	}
+	if len(remote.FeaturedNoteIDs) != 1 || remote.FeaturedNoteIDs[0] != "pinned-note" {
+		t.Fatalf("featured notes after Add = %#v", remote.FeaturedNoteIDs)
+	}
+
+	result, err = h.performOneActivity(context.Background(), remote, map[string]any{
+		"type": "Remove", "actor": actorURI, "target": featuredURI, "object": noteURI,
+	})
+	if err != nil || result != "ok: featured note removed" {
+		t.Fatalf("Remove result=%q err=%v", result, err)
+	}
+	if len(remote.FeaturedNoteIDs) != 0 {
+		t.Fatalf("featured notes after Remove = %#v", remote.FeaturedNoteIDs)
+	}
+}
+
+func TestPerformFeaturedChangeRejectsInvalidTargetAndAttribution(t *testing.T) {
+	host := "remote.example"
+	actorURI := "https://remote.example/users/alice"
+	featuredURI := actorURI + "/collections/featured"
+	remote := &actors.Actor{ID: "remote", URI: actorURI, Host: &host, FeaturedURI: featuredURI}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"https://remote.example/notes/other": {
+			ID: "other-note", URI: "https://remote.example/notes/other",
+			AuthorID: "other-actor", AttributedTo: "https://remote.example/users/bob",
+		},
+	}}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+
+	result, err := h.performOneActivity(context.Background(), remote, map[string]any{
+		"type": "Add", "actor": actorURI,
+		"target": actorURI + "/collections/not-featured",
+		"object": "https://remote.example/notes/other",
+	})
+	if err != nil || result != "skip: featured change target is not actor featured collection" {
+		t.Fatalf("invalid target result=%q err=%v", result, err)
+	}
+
+	result, err = h.performOneActivity(context.Background(), remote, map[string]any{
+		"type": "Add", "actor": actorURI, "target": featuredURI,
+		"object": "https://remote.example/notes/other",
+	})
+	if err != nil || result != "skip: featured note attribution mismatch" {
+		t.Fatalf("invalid attribution result=%q err=%v", result, err)
+	}
+	if len(remote.FeaturedNoteIDs) != 0 {
+		t.Fatalf("invalid featured change mutated actor: %#v", remote.FeaturedNoteIDs)
 	}
 }
 

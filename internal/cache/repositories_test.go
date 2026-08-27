@@ -122,6 +122,38 @@ func (r *cachedActorBacking) UpsertRemoteActor(_ context.Context, actor actors.A
 	return &copy, nil
 }
 
+func (r *cachedActorBacking) AddRemoteFeaturedNote(_ context.Context, actorURI, noteID string, limit int) (*actors.Actor, error) {
+	if r.actor == nil || r.actor.URI != actorURI {
+		return nil, nil
+	}
+	for _, existing := range r.actor.FeaturedNoteIDs {
+		if existing == noteID {
+			copy := *r.actor
+			return &copy, nil
+		}
+	}
+	if len(r.actor.FeaturedNoteIDs) < limit {
+		r.actor.FeaturedNoteIDs = append(r.actor.FeaturedNoteIDs, noteID)
+	}
+	copy := *r.actor
+	return &copy, nil
+}
+
+func (r *cachedActorBacking) RemoveRemoteFeaturedNote(_ context.Context, actorURI, noteID string) (*actors.Actor, error) {
+	if r.actor == nil || r.actor.URI != actorURI {
+		return nil, nil
+	}
+	featured := r.actor.FeaturedNoteIDs[:0]
+	for _, existing := range r.actor.FeaturedNoteIDs {
+		if existing != noteID {
+			featured = append(featured, existing)
+		}
+	}
+	r.actor.FeaturedNoteIDs = featured
+	copy := *r.actor
+	return &copy, nil
+}
+
 func (r *cachedActorBacking) MarkRemoteActorDeleted(_ context.Context, uri string) error {
 	if r.actor != nil && r.actor.URI == uri {
 		r.actor.IsSuspended = true

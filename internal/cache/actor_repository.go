@@ -109,6 +109,34 @@ func (r *CachedActorRepository) UpsertRemoteActor(ctx context.Context, actor act
 	return updated, nil
 }
 
+func (r *CachedActorRepository) AddRemoteFeaturedNote(ctx context.Context, actorURI, noteID string, limit int) (*actors.Actor, error) {
+	existing, err := r.repository.FindAnyByURI(ctx, actorURI)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := r.repository.AddRemoteFeaturedNote(ctx, actorURI, noteID, limit)
+	if err != nil {
+		return nil, err
+	}
+	r.invalidateActor(ctx, existing)
+	r.cacheActor(ctx, updated)
+	return updated, nil
+}
+
+func (r *CachedActorRepository) RemoveRemoteFeaturedNote(ctx context.Context, actorURI, noteID string) (*actors.Actor, error) {
+	existing, err := r.repository.FindAnyByURI(ctx, actorURI)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := r.repository.RemoveRemoteFeaturedNote(ctx, actorURI, noteID)
+	if err != nil {
+		return nil, err
+	}
+	r.invalidateActor(ctx, existing)
+	r.cacheActor(ctx, updated)
+	return updated, nil
+}
+
 func (r *CachedActorRepository) MarkRemoteActorDeleted(ctx context.Context, uri string) error {
 	existing, err := r.repository.FindAnyByURI(ctx, uri)
 	if err != nil {

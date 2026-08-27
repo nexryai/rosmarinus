@@ -132,6 +132,14 @@ func IsUpdate(value any) bool {
 	return IsType(value, "Update")
 }
 
+func IsAdd(value any) bool {
+	return IsType(value, "Add")
+}
+
+func IsRemove(value any) bool {
+	return IsType(value, "Remove")
+}
+
 func IsFollow(value any) bool {
 	return IsType(value, "Follow")
 }
