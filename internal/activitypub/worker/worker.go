@@ -2818,6 +2818,9 @@ func (h *Handler) CreateActor(ctx context.Context, accountID string, command con
 	if err != nil {
 		return connector.ActorCreated{}, err
 	}
+	if actor == nil {
+		return connector.ActorCreated{}, fmt.Errorf("created owned actor could not be reloaded")
+	}
 	return connector.ActorCreated{ActorID: actor.ID, URI: actor.URI, Username: actor.Username}, nil
 }
 

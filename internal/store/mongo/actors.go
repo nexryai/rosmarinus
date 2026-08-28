@@ -25,7 +25,7 @@ type ActorRepository struct {
 type actorDocument struct {
 	ID              string                      `bson:"_id,omitempty"`
 	OwnerAccountID  string                      `bson:"ownerAccountId,omitempty"`
-	IsSystemActor   bool                        `bson:"isSystemActor,omitempty"`
+	IsSystemActor   bool                        `bson:"isSystemActor"`
 	Username        string                      `bson:"username"`
 	UsernameLower   string                      `bson:"usernameLower"`
 	Name            string                      `bson:"name,omitempty"`
@@ -119,7 +119,7 @@ func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, act
 		"_id":            actorID,
 		"ownerAccountId": accountID,
 		"host":           nil,
-		"isSystemActor":  false,
+		"isSystemActor":  bson.M{"$ne": true},
 		"isSuspended":    false,
 	})
 }
@@ -177,7 +177,7 @@ func (r *ActorRepository) UpdateOwnedLocalActor(ctx context.Context, accountID, 
 		"_id":            actorID,
 		"ownerAccountId": accountID,
 		"host":           nil,
-		"isSystemActor":  false,
+		"isSystemActor":  bson.M{"$ne": true},
 		"isSuspended":    false,
 	}, update)
 	if err != nil {
@@ -257,7 +257,7 @@ func (r *ActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID
 	result, err := r.collection.UpdateMany(ctx, bson.M{
 		"ownerAccountId": accountID,
 		"host":           nil,
-		"isSystemActor":  false,
+		"isSystemActor":  bson.M{"$ne": true},
 		"isSuspended":    false,
 	}, bson.M{"$set": bson.M{
 		"isSuspended": true,
@@ -274,7 +274,7 @@ func (r *ActorRepository) ListOwnedAccountIDs(ctx context.Context) ([]string, er
 	err := r.collection.Distinct(ctx, "ownerAccountId", bson.M{
 		"ownerAccountId": bson.M{"$exists": true, "$ne": ""},
 		"host":           nil,
-		"isSystemActor":  false,
+		"isSystemActor":  bson.M{"$ne": true},
 	}).Decode(&accountIDs)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, nil

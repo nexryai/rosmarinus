@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
 
@@ -18,6 +20,14 @@ func TestActorDocumentPreservesOwnership(t *testing.T) {
 	}
 	if doc.IsSystemActor {
 		t.Fatal("owned actor must not be a system actor")
+	}
+	encoded, err := bson.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := bson.Raw(encoded)
+	if value, ok := raw.Lookup("isSystemActor").BooleanOK(); !ok || value {
+		t.Fatalf("owned actor isSystemActor BSON value = %v, present=%v", value, ok)
 	}
 }
 
