@@ -37,6 +37,7 @@ const salviaCollections = [
 ];
 
 const rosmarinusInternalCollections = [
+  "inbox_activity_receipts",
   "media_fs.files",
   "media_fs.chunks",
 ];
