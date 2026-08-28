@@ -7,7 +7,7 @@ require (
 	github.com/go-fed/httpsig v1.1.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.21.0
-	go.mongodb.org/mongo-driver/v2 v2.8.0
+	go.mongodb.org/mongo-driver/v2 v2.8.1
 	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
 )
