@@ -37,6 +37,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour || cfg.ConnectorAccountReconcileInterval != 5*time.Minute {
 		t.Fatalf("unexpected Salvia/receipt config: %+v", cfg)
 	}
+	if cfg.InboxActivityReceiptTTL != 7*24*time.Hour {
+		t.Fatalf("InboxActivityReceiptTTL = %s", cfg.InboxActivityReceiptTTL)
+	}
 	if len(cfg.FederationBlockedHosts) != 0 {
 		t.Fatalf("unexpected blocked hosts: %v", cfg.FederationBlockedHosts)
 	}
@@ -91,6 +94,18 @@ func TestLoadQueueControls(t *testing.T) {
 	}
 	if cfg.InboxQueue.Concurrency != 8 || cfg.InboxQueue.RatePerSecond != 24 || cfg.DeliverQueue.Concurrency != 64 || cfg.DeliverQueue.RatePerSecond != 96 {
 		t.Fatalf("unexpected queue controls: inbox=%+v deliver=%+v", cfg.InboxQueue, cfg.DeliverQueue)
+	}
+}
+
+func TestLoadRejectsActivityReceiptTTLShorterThanLease(t *testing.T) {
+	_, err := Load(func(key string) (string, bool) {
+		if key == "INBOX_ACTIVITY_RECEIPT_TTL" {
+			return "5m", true
+		}
+		return "", false
+	})
+	if err == nil {
+		t.Fatal("short activity receipt TTL was accepted")
 	}
 }
 

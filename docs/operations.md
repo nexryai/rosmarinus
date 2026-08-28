@@ -19,6 +19,22 @@ concurrency and rate values must be positive. Redis rate buckets are shared by
 split worker processes using the same Redis database, so adding processes does
 not multiply the configured federation request rate.
 
+## Inbox activity receipts
+
+After signature verification, inbox workers claim the Activity URI in the
+MongoDB `inbox_activity_receipts` collection. A processing lease prevents
+concurrent execution, and a completed receipt prevents sequential peer retries
+or promoted queue jobs from repeating side effects. `INBOX_ACTIVITY_RECEIPT_TTL`
+controls retention and defaults to `168h`; it must exceed `INBOX_TIMEOUT` plus
+the one-minute lease margin. MongoDB removes expired receipts through the
+`expiresAt` TTL index.
+
+Handler mutations still use their own unique keys because a crash can happen
+after a mutation but before its receipt is completed. If processing fails, the
+worker releases only its token-matched lease so an Asynq retry can safely
+resume. This receipt collection is internal to Rosmarinus and does not change
+the Salvia shared-data or Ably contracts.
+
 ## Failed task inspection
 
 Asynq archives a task after its configured retries are exhausted. Inspect the

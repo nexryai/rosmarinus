@@ -27,6 +27,7 @@ import (
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
+	"github.com/nexryai/rosmarinus/internal/domain/activities"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
@@ -328,6 +329,8 @@ type fakeConnectorPublisher struct {
 	post         *connector.PostCreated
 	notification *connector.NotificationCreated
 	requested    *connector.FollowApproval
+	requestedErr error
+	requestCalls int
 	completed    *connector.FollowApproval
 	rejected     *connector.FollowApproval
 }
@@ -345,6 +348,10 @@ func (f *fakeConnectorPublisher) PublishPostCreated(ctx context.Context, payload
 
 func (f *fakeConnectorPublisher) PublishFollowApprovalRequested(ctx context.Context, payload connector.FollowApproval) error {
 	_ = ctx
+	f.requestCalls++
+	if f.requestedErr != nil {
+		return f.requestedErr
+	}
 	f.requested = &payload
 	return nil
 }
@@ -950,6 +957,53 @@ type fakeActivityLocker struct {
 	unlocked bool
 }
 
+type fakeActivityReceiptRepo struct {
+	completed map[string]string
+	active    map[string]activities.Claim
+	claims    int
+	completes int
+	releases  int
+	lease     time.Duration
+	retention time.Duration
+}
+
+func (r *fakeActivityReceiptRepo) Claim(_ context.Context, activityID, actorURI string, _ time.Time, lease, retention time.Duration) (*activities.Claim, bool, error) {
+	r.claims++
+	r.lease = lease
+	r.retention = retention
+	if owner, ok := r.completed[activityID]; ok {
+		if owner != actorURI {
+			return nil, false, errors.New("activity id is already owned by a different actor")
+		}
+		return nil, false, nil
+	}
+	if _, ok := r.active[activityID]; ok {
+		return nil, false, nil
+	}
+	if r.active == nil {
+		r.active = map[string]activities.Claim{}
+	}
+	claim := activities.Claim{ActivityID: activityID, ActorURI: actorURI, Token: fmt.Sprintf("lease-%d", r.claims)}
+	r.active[activityID] = claim
+	return &claim, true, nil
+}
+
+func (r *fakeActivityReceiptRepo) Complete(_ context.Context, claim activities.Claim, _ time.Time) error {
+	r.completes++
+	if r.completed == nil {
+		r.completed = map[string]string{}
+	}
+	r.completed[claim.ActivityID] = claim.ActorURI
+	delete(r.active, claim.ActivityID)
+	return nil
+}
+
+func (r *fakeActivityReceiptRepo) Release(_ context.Context, claim activities.Claim) error {
+	r.releases++
+	delete(r.active, claim.ActivityID)
+	return nil
+}
+
 func (l *fakeActivityLocker) Acquire(_ context.Context, name string) (func(context.Context) error, bool, error) {
 	l.name = name
 	if !l.acquired {
@@ -1543,17 +1597,21 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
 	q := &fakeQueue{}
-	connectorPublisher := &fakeConnectorPublisher{}
+	connectorPublisher := &fakeConnectorPublisher{requestedErr: errors.New("publish failed")}
 	followsRepo := &fakeFollowRepo{}
 	h := New(config.Config{
-		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+		InboxQueue:              config.QueueConfig{Timeout: 5 * time.Minute},
+		DeliverQueue:            config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+		InboxActivityReceiptTTL: 7 * 24 * time.Hour,
 	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followsRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	notificationRepo := &fakeNotificationRepo{}
 	h.SetNotificationRepository(notificationRepo)
 	locker := &fakeActivityLocker{acquired: true}
 	h.SetActivityLocker(locker)
 	h.SetConnectorPublisher(connectorPublisher)
-	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
+	receipts := &fakeActivityReceiptRepo{}
+	h.SetActivityReceiptRepository(receipts)
+	payload := queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
 			"id":     "https://remote.example/activities/follow",
@@ -1568,7 +1626,15 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 			"signature":     base64.StdEncoding.EncodeToString(rawSig),
 			"signingString": signingString,
 		},
-	})
+	}
+	if _, err := h.ProcessInbox(context.Background(), payload); err == nil {
+		t.Fatalf("expected publisher failure")
+	}
+	if receipts.releases != 1 || len(receipts.active) != 0 {
+		t.Fatalf("failed activity receipt was not released: %+v", receipts)
+	}
+	connectorPublisher.requestedErr = nil
+	result, err := h.ProcessInbox(context.Background(), payload)
 	if err != nil {
 		t.Fatalf("ProcessInbox returned error: %v", err)
 	}
@@ -1599,6 +1665,22 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 	if !strings.HasPrefix(locker.name, "activity:") || !locker.unlocked {
 		t.Fatalf("activity lock was not used and released: %+v", locker)
+	}
+	result, err = h.ProcessInbox(context.Background(), payload)
+	if err != nil {
+		t.Fatalf("duplicate ProcessInbox returned error: %v", err)
+	}
+	if result != "skip: activity was already processed or is in progress" {
+		t.Fatalf("duplicate result = %q", result)
+	}
+	if receipts.claims != 3 || receipts.completes != 1 || receipts.releases != 1 {
+		t.Fatalf("unexpected activity receipt transitions: %+v", receipts)
+	}
+	if receipts.lease != 6*time.Minute || receipts.retention != 7*24*time.Hour {
+		t.Fatalf("unexpected receipt timings: lease=%s retention=%s", receipts.lease, receipts.retention)
+	}
+	if connectorPublisher.requestCalls != 2 {
+		t.Fatalf("duplicate activity repeated connector side effects: calls=%d", connectorPublisher.requestCalls)
 	}
 }
 

@@ -52,6 +52,7 @@ type App struct {
 	notifications               *mongostore.NotificationRepository
 	salviaAccounts              *mongostore.SalviaAccountRepository
 	connectorReceipts           *mongostore.ConnectorReceiptRepository
+	activityReceipts            *mongostore.ActivityReceiptRepository
 	localActor                  *actors.Actor
 	apClient                    *apclient.Client
 	apWorker                    *apworker.Handler
@@ -124,6 +125,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
 	connectorReceiptRepo := mongostore.NewConnectorReceiptRepository(mongoDB)
+	activityReceiptRepo := mongostore.NewActivityReceiptRepository(mongoDB)
 	var localActor *actors.Actor
 	if cfg.LocalActorUsername != "" {
 		localActor, err = actorRepo.EnsureLocalActor(ctx, localActorFromConfig(cfg))
@@ -165,6 +167,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apLocker := cache.NewLocker(cache.NewRedisLockStore(redisClient), "rosmarinus:ap", 5*time.Minute)
 	apWorker := apworker.New(cfg, logger, cachedActorRepo, noteRepo, followRepo, blockRepo, reactionRepo, reportRepo, queueClient, apClient, localActor)
 	apWorker.SetActivityLocker(apLocker)
+	apWorker.SetActivityReceiptRepository(activityReceiptRepo)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
 	apWorker.SetInstanceRepository(cachedInstanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
@@ -238,6 +241,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		notifications:              notificationRepo,
 		salviaAccounts:             salviaAccountRepo,
 		connectorReceipts:          connectorReceiptRepo,
+		activityReceipts:           activityReceiptRepo,
 		localActor:                 localActor,
 		apClient:                   apClient,
 		apWorker:                   apWorker,

@@ -45,6 +45,7 @@ type Config struct {
 	SalviaAccountCollection           string
 	ConnectorReceiptTTL               time.Duration
 	ConnectorAccountReconcileInterval time.Duration
+	InboxActivityReceiptTTL           time.Duration
 
 	RunHTTP      bool
 	RunWorkers   bool
@@ -96,6 +97,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		SalviaAccountCollection:           get(lookup, "SALVIA_ACCOUNT_COLLECTION", "salvia_accounts"),
 		ConnectorReceiptTTL:               getDuration(lookup, "CONNECTOR_RECEIPT_TTL", 7*24*time.Hour),
 		ConnectorAccountReconcileInterval: getDuration(lookup, "CONNECTOR_ACCOUNT_RECONCILE_INTERVAL", 5*time.Minute),
+		InboxActivityReceiptTTL:           getDuration(lookup, "INBOX_ACTIVITY_RECEIPT_TTL", 7*24*time.Hour),
 		UserAgent:                         get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
 		FederationBlockedHosts:            normalizeHosts(splitCSV(get(lookup, "FEDERATION_BLOCKED_HOSTS", ""))),
 		WorkerQueues:                      splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
@@ -226,6 +228,9 @@ func (c Config) Validate() error {
 	}
 	if c.ConnectorAccountReconcileInterval <= 0 {
 		return fmt.Errorf("CONNECTOR_ACCOUNT_RECONCILE_INTERVAL must be positive")
+	}
+	if c.InboxActivityReceiptTTL <= c.InboxQueue.Timeout+time.Minute {
+		return fmt.Errorf("INBOX_ACTIVITY_RECEIPT_TTL must exceed INBOX_TIMEOUT by more than one minute")
 	}
 	if c.InboxQueue.MaxRetry < 0 || c.DeliverQueue.MaxRetry < 0 {
 		return fmt.Errorf("queue retry counts must not be negative")

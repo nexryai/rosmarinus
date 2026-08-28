@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
@@ -42,14 +43,15 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// Phase 1: connect to the real MongoDB/Redis fixture, load Rosmarinus's
 	// local Actor, and create two Misskey accounts for public and direct flows.
 	cfg := config.Config{
-		Host:          "rosmarinus.test",
-		PublicURL:     "https://rosmarinus.test",
-		MongoURI:      envRequired(t, "MONGO_URI"),
-		MongoDatabase: envRequired(t, "MONGO_DATABASE"),
-		RedisAddr:     envRequired(t, "REDIS_ADDR"),
-		UserAgent:     "rosmarinus-federation-test/1.0",
-		InboxQueue:    config.QueueConfig{Name: queue.QueueInbox, MaxRetry: 7, Timeout: 5 * time.Minute},
-		DeliverQueue:  config.QueueConfig{Name: queue.QueueDeliver, MaxRetry: 11, Timeout: time.Minute},
+		Host:                    "rosmarinus.test",
+		PublicURL:               "https://rosmarinus.test",
+		MongoURI:                envRequired(t, "MONGO_URI"),
+		MongoDatabase:           envRequired(t, "MONGO_DATABASE"),
+		RedisAddr:               envRequired(t, "REDIS_ADDR"),
+		UserAgent:               "rosmarinus-federation-test/1.0",
+		InboxActivityReceiptTTL: 7 * 24 * time.Hour,
+		InboxQueue:              config.QueueConfig{Name: queue.QueueInbox, MaxRetry: 7, Timeout: 5 * time.Minute},
+		DeliverQueue:            config.QueueConfig{Name: queue.QueueDeliver, MaxRetry: 11, Timeout: time.Minute},
 	}
 
 	mongoClient, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
@@ -66,6 +68,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	pollRepo := mongostore.NewPollRepository(db)
 	emojiRepo := mongostore.NewEmojiRepository(db)
 	instanceRepo := mongostore.NewInstanceRepository(db)
+	activityReceiptRepo := mongostore.NewActivityReceiptRepository(db)
 
 	localActor, err := actorRepo.FindLocalByUsername(ctx, "relay")
 	if err != nil || localActor == nil {
@@ -102,6 +105,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	)
 	worker.SetPollRepository(pollRepo)
 	worker.SetEmojiRepository(emojiRepo)
+	worker.SetActivityReceiptRepository(activityReceiptRepo)
 	worker.SetAccountCleanupRepository(mongostore.NewAccountCleanupRepository(db))
 	worker.SetInstanceRepository(instanceRepo, instancemetadata.New(30*time.Second, cfg.UserAgent, nil, misskey.httpClient))
 
@@ -870,6 +874,33 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			!instance.IsNotResponding && instance.SuspensionState == "none" &&
 			instance.FollowingCount == 2 && instance.FollowersCount == 0
 	})
+
+	// Phase 21: inspect a completed receipt from authenticated Misskey traffic
+	// and verify the MongoDB claim rejects its Activity URI as a duplicate.
+	var receipt struct {
+		ActivityID string `bson:"_id"`
+		ActorURI   string `bson:"actorUri"`
+		Status     string `bson:"status"`
+	}
+	if err := db.Collection("inbox_activity_receipts").FindOne(ctx, bson.M{
+		"actorUri": remoteActorURI,
+		"status":   "completed",
+	}).Decode(&receipt); err != nil {
+		t.Fatalf("find completed Misskey activity receipt: %v", err)
+	}
+	if receipt.ActivityID == "" || receipt.ActorURI != remoteActorURI {
+		t.Fatalf("unexpected completed activity receipt: %+v", receipt)
+	}
+	if _, claimed, err := activityReceiptRepo.Claim(
+		ctx,
+		receipt.ActivityID,
+		receipt.ActorURI,
+		time.Now().UTC(),
+		cfg.InboxQueue.Timeout+time.Minute,
+		cfg.InboxActivityReceiptTTL,
+	); err != nil || claimed {
+		t.Fatalf("completed Misskey activity was claimable again: claimed=%t err=%v", claimed, err)
+	}
 }
 
 type misskeyClient struct {

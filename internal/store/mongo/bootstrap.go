@@ -236,6 +236,15 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
+	_, err = db.Collection("inbox_activity_receipts").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "expiresAt", Value: 1}},
+		Options: options.Index().
+			SetName("ttl_inbox_activity_receipts_expires_at").
+			SetExpireAfterSeconds(0),
+	})
+	if err != nil {
+		return err
+	}
 	_, err = db.Collection("notifications").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},

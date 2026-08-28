@@ -28,6 +28,7 @@ import (
 	apwebfinger "github.com/nexryai/rosmarinus/internal/activitypub/webfinger"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
+	"github.com/nexryai/rosmarinus/internal/domain/activities"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
@@ -81,28 +82,29 @@ type InstanceMetadataFetcher interface {
 }
 
 type Handler struct {
-	cfg             config.Config
-	logger          *log.Logger
-	repo            actors.Repository
-	notes           domainnotes.Repository
-	follows         follows.Repository
-	blocks          blocks.Repository
-	emojis          emojis.Repository
-	reactions       reactions.Repository
-	reports         reports.Repository
-	notifications   notifications.Repository
-	polls           polls.Repository
-	cleanup         cleanup.Repository
-	media           domainmedia.Repository
-	mediaFetcher    MediaFetcher
-	instances       instances.Repository
-	metadataFetcher InstanceMetadataFetcher
-	queue           QueueClient
-	client          APClient
-	connector       ConnectorPublisher
-	locker          ActivityLocker
-	resolver        *apresolver.Resolver
-	localActor      *actors.Actor
+	cfg              config.Config
+	logger           *log.Logger
+	repo             actors.Repository
+	notes            domainnotes.Repository
+	follows          follows.Repository
+	blocks           blocks.Repository
+	emojis           emojis.Repository
+	reactions        reactions.Repository
+	reports          reports.Repository
+	notifications    notifications.Repository
+	polls            polls.Repository
+	cleanup          cleanup.Repository
+	media            domainmedia.Repository
+	mediaFetcher     MediaFetcher
+	instances        instances.Repository
+	metadataFetcher  InstanceMetadataFetcher
+	queue            QueueClient
+	client           APClient
+	connector        ConnectorPublisher
+	locker           ActivityLocker
+	resolver         *apresolver.Resolver
+	localActor       *actors.Actor
+	activityReceipts activities.ReceiptRepository
 }
 
 func New(cfg config.Config, logger *log.Logger, repo actors.Repository, noteRepo domainnotes.Repository, followRepo follows.Repository, blockRepo blocks.Repository, reactionRepo reactions.Repository, reportRepo reports.Repository, queueClient QueueClient, apClient APClient, localActor *actors.Actor) *Handler {
@@ -179,6 +181,10 @@ func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, 
 func (h *Handler) SetActivityLocker(locker ActivityLocker) {
 	h.locker = locker
 	h.resolver.SetObjectLocker(locker)
+}
+
+func (h *Handler) SetActivityReceiptRepository(repository activities.ReceiptRepository) {
+	h.activityReceipts = repository
 }
 
 func (h *Handler) Register(server *queue.AsynqServer) {
@@ -579,7 +585,42 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 			}
 		}()
 	}
-	return h.performActivity(ctx, authActor, payload.Activity)
+	var receiptClaim *activities.Claim
+	if h.activityReceipts != nil {
+		lease := h.cfg.InboxQueue.Timeout + time.Minute
+		claim, claimed, err := h.activityReceipts.Claim(ctx, activityID, authActor.URI, time.Now().UTC(), lease, h.cfg.InboxActivityReceiptTTL)
+		if err != nil {
+			return "", fmt.Errorf("claim activity receipt: %w", err)
+		}
+		if !claimed {
+			return "skip: activity was already processed or is in progress", nil
+		}
+		receiptClaim = claim
+	}
+	result, performErr := h.performActivity(ctx, authActor, payload.Activity)
+	if receiptClaim == nil {
+		return result, performErr
+	}
+	if performErr != nil {
+		h.releaseActivityReceipt(*receiptClaim)
+		return result, performErr
+	}
+	if err := h.activityReceipts.Complete(ctx, *receiptClaim, time.Now().UTC()); err != nil {
+		// Complete can fail before MongoDB applies the transition. A token-scoped
+		// release makes that case retryable without deleting a completed receipt
+		// when the response was lost after a successful write.
+		h.releaseActivityReceipt(*receiptClaim)
+		return "", fmt.Errorf("complete activity receipt: %w", err)
+	}
+	return result, nil
+}
+
+func (h *Handler) releaseActivityReceipt(claim activities.Claim) {
+	releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.activityReceipts.Release(releaseCtx, claim); err != nil && h.logger != nil {
+		h.logger.Printf("inbox: release activity receipt id=%s err=%v", claim.ActivityID, err)
+	}
 }
 
 func (h *Handler) scheduleInstanceMetadata(ctx context.Context, instance *instances.Instance) {

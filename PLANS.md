@@ -110,6 +110,11 @@ dependencies when a checkpoint needs more detail:
   UI, and unrelated side effects are out of scope.
 - Rosmarinus uses `github.com/go-fed/httpsig`. Match current Misskey's wire
   behavior without copying its Node signature implementation.
+- Rosmarinus keeps completed inbound Activity IDs in MongoDB for seven days by
+  default. Current Misskey retains completed and failed BullMQ inbox jobs for
+  up to seven days, but does not use the Activity URI as a durable domain
+  receipt. The stricter Rosmarinus receipt prevents sequential peer retries or
+  queue replays from repeating federation side effects.
 - Salvia integration remains limited to the shared MongoDB read contracts and
   Ably commands/events documented elsewhere in this plan.
 
@@ -215,7 +220,7 @@ the same style as current Misskey.
 - [x] Require signer actor URI to match `activity.actor`.
 - [x] Require every `activity.id` to be a string and its host to match the
       verified signer host, including for `Accept` and `Reject`.
-- [ ] Update instance communication stats after accepted requests.
+- [x] Update instance communication stats after authenticated requests.
 - [x] Enqueue the activity and return `202 Accepted`.
 
 ### Activity Processing
@@ -464,8 +469,10 @@ flags, but that is an operational option, not the default architecture.
 - [x] At-least-once processing.
 - [x] Idempotent inbound `Follow` persistence keyed by
       `{ followerId, followeeId }`.
-- [ ] Idempotent handlers keyed by AP URI for notes, reactions, announces,
-      and updates where possible.
+- [x] Idempotent inbox processing keyed by the verified Activity URI, with an
+      expiring processing lease and completed receipts retained for seven
+      days by default. Handler-level unique indexes remain the final guard for
+      retries after ambiguous partial failures.
 - [x] Worker concurrency per queue.
 - [x] Redis-backed per-second rate limits matching current Misskey:
       `deliver` defaults to 128/sec and `inbox` defaults to 32/sec, with
