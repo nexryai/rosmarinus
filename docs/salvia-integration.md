@@ -353,6 +353,19 @@ Its successful result contains `reaction_id`, `note_id`, and the Undo activity
 `uri`. Retrying the same logical removal must reuse its original `request_id`;
 a new request after the reaction is already absent fails as `command_failed`.
 
+To block a remote Actor, publish `block.create` with the owned local Actor in
+top-level `actor_id` and a handle or absolute Actor URL in `data.target`.
+Rosmarinus resolves the remote Actor, stores the block, removes active Follow
+relationships in both directions, and delivers `Block` to the remote Actor.
+The successful result contains `block_id`, `blockee_id`, and the local Block
+activity `uri`.
+
+To unblock the same Actor, publish `block.delete` with the same data shape.
+Rosmarinus removes the active block and delivers `Undo(Block)`. Its result
+contains `block_id`, `blockee_id`, and the Undo activity `uri`. A new request
+for an absent block fails; retries of the same logical operation must reuse the
+original `request_id`.
+
 `actor.create` omits `actor_id` because the Actor does not exist yet:
 
 ```json

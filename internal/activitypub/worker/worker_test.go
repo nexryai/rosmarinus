@@ -1838,6 +1838,64 @@ func TestDeleteFollowRemovesRelationshipAndEnqueuesUndo(t *testing.T) {
 	}
 }
 
+func TestCreateAndDeleteBlockRemovesFollowsAndDeliversActivities(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local-alice", URI: "https://rosmarinus.example/users/local-alice"}
+	remote := &actors.Actor{
+		ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host,
+		Inbox: "https://remote.example/users/bob/inbox", SharedInbox: "https://remote.example/inbox",
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: local.ID, FolloweeID: remote.ID, FollowerURI: local.URI, FolloweeURI: remote.URI, Status: follows.StatusAccepted,
+	})
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: remote.ID, FolloweeID: local.ID, FollowerURI: remote.URI, FolloweeURI: local.URI, Status: follows.StatusAccepted,
+	})
+	blockRepo := &fakeBlockRepo{}
+	q := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+
+	created, err := h.CreateBlock(context.Background(), connector.BlockCreateCommand{ActorID: local.ID, Target: remote.URI})
+	if err != nil {
+		t.Fatalf("CreateBlock returned error: %v", err)
+	}
+	if created.BlockID != "block-id" || created.BlockeeID != remote.ID || created.URI != "https://rosmarinus.example/blocks/block-id" {
+		t.Fatalf("created block = %+v", created)
+	}
+	if outgoing, _ := followRepo.Find(context.Background(), local.ID, remote.ID); outgoing != nil {
+		t.Fatalf("outgoing follow remains: %+v", outgoing)
+	}
+	if incoming, _ := followRepo.Find(context.Background(), remote.ID, local.ID); incoming != nil {
+		t.Fatalf("incoming follow remains: %+v", incoming)
+	}
+	blockPayload, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	if !ok || blockPayload.To != remote.Inbox || blockPayload.Object["type"] != "Block" || blockPayload.Object["actor"] != local.URI || blockPayload.Object["object"] != remote.URI {
+		t.Fatalf("unexpected Block delivery: %+v", q.tasks[0])
+	}
+
+	deleted, err := h.DeleteBlock(context.Background(), connector.BlockDeleteCommand{ActorID: local.ID, Target: remote.URI})
+	if err != nil {
+		t.Fatalf("DeleteBlock returned error: %v", err)
+	}
+	if deleted.BlockID != "block-id" || deleted.BlockeeID != remote.ID || deleted.URI != "https://rosmarinus.example/blocks/block-id/undo" {
+		t.Fatalf("deleted block = %+v", deleted)
+	}
+	if existing, _ := blockRepo.Find(context.Background(), local.ID, remote.ID); existing != nil {
+		t.Fatalf("block remains: %+v", existing)
+	}
+	undoPayload, ok := q.tasks[1].Payload.(queue.DeliverPayload)
+	if !ok || undoPayload.To != remote.Inbox || undoPayload.Object["type"] != "Undo" || undoPayload.Object["actor"] != local.URI {
+		t.Fatalf("unexpected Undo(Block) delivery: %+v", q.tasks[1])
+	}
+	object, ok := undoPayload.Object["object"].(map[string]any)
+	if !ok || object["id"] != "https://rosmarinus.example/blocks/block-id" || object["type"] != "Block" || object["object"] != remote.URI {
+		t.Fatalf("unexpected embedded Block: %+v", undoPayload.Object["object"])
+	}
+}
+
 func TestPerformUpdateRefreshesRemoteActorAndPreservesOmittedKey(t *testing.T) {
 	host := "remote.example"
 	local := &actors.Actor{

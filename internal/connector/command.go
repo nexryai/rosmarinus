@@ -22,6 +22,8 @@ const (
 	CommandPollVote             = "poll.vote"
 	CommandReactionCreate       = "reaction.create"
 	CommandReactionDelete       = "reaction.delete"
+	CommandBlockCreate          = "block.create"
+	CommandBlockDelete          = "block.delete"
 	CommandActorCreate          = "actor.create"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
@@ -62,6 +64,8 @@ type CommandExecutor interface {
 	VotePoll(context.Context, PollVoteCommand) (PollVoted, error)
 	CreateReaction(context.Context, ReactionCreateCommand) (ReactionCreated, error)
 	DeleteReaction(context.Context, ReactionDeleteCommand) (ReactionDeleted, error)
+	CreateBlock(context.Context, BlockCreateCommand) (BlockCreated, error)
+	DeleteBlock(context.Context, BlockDeleteCommand) (BlockDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
 	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
 }
@@ -220,6 +224,36 @@ type ReactionDeleted struct {
 	URI        string `json:"uri" bson:"uri"`
 }
 
+type BlockCreateData struct {
+	Target string `json:"target"`
+}
+
+type BlockCreateCommand struct {
+	ActorID string
+	Target  string
+}
+
+type BlockCreated struct {
+	BlockID   string `json:"block_id" bson:"block_id"`
+	BlockeeID string `json:"blockee_id" bson:"blockee_id"`
+	URI       string `json:"uri" bson:"uri"`
+}
+
+type BlockDeleteData struct {
+	Target string `json:"target"`
+}
+
+type BlockDeleteCommand struct {
+	ActorID string
+	Target  string
+}
+
+type BlockDeleted struct {
+	BlockID   string `json:"block_id" bson:"block_id"`
+	BlockeeID string `json:"blockee_id" bson:"blockee_id"`
+	URI       string `json:"uri" bson:"uri"`
+}
+
 type ActorCreateData struct {
 	Username string `json:"username"`
 	Name     string `json:"name,omitempty"`
@@ -268,7 +302,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -539,6 +573,26 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			NoteID:  command.NoteID,
 		})
 		return result, actorID, err
+	case CommandBlockCreate:
+		var command BlockCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := h.executor.CreateBlock(ctx, BlockCreateCommand{ActorID: actorID, Target: command.Target})
+		return result, actorID, err
+	case CommandBlockDelete:
+		var command BlockDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := h.executor.DeleteBlock(ctx, BlockDeleteCommand{ActorID: actorID, Target: command.Target})
+		return result, actorID, err
 	case CommandNotificationMarkRead:
 		var command NotificationMarkReadData
 		if err := decodeCommandData(data, &command); err != nil {
@@ -596,7 +650,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandActorCreate, CommandNotificationMarkRead:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandNotificationMarkRead:
 		return true
 	default:
 		return false

@@ -274,6 +274,10 @@ Use these Ably message names and payloads:
   `actor_id` is the owned local Actor applying the reaction.
 - `reaction.delete`: `data` contains `note_id`; top-level `actor_id` is the
   owned local Actor whose reaction is removed.
+- `block.create`: `data` contains a remote handle or absolute Actor URL in
+  `target`; top-level `actor_id` is the owned local Actor creating the block.
+- `block.delete`: uses the same target shape and owned local `actor_id` to
+  remove the block and federate `Undo(Block)`.
 - `follow.approve`: `data` contains `follower_id`; top-level `actor_id` is the
   local followee Actor.
 - `follow.reject`: the same addressing rules as `follow.approve`.

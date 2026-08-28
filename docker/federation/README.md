@@ -33,24 +33,27 @@ The Go integration test performs this real federation sequence:
    soft-deleted, and verify Misskey removes the relay from its followers;
 14. approve Misskey's inbound follow and verify Misskey applies the delivered
    `Accept`;
-15. renote the stored Misskey Note from Rosmarinus, dereference and deliver its
+15. deliver `Block` from Rosmarinus, verify Misskey removes its Follow and
+   exposes the blocked relationship, then deliver `Undo(Block)` and prove the
+   Misskey Actor can follow Rosmarinus again;
+16. renote the stored Misskey Note from Rosmarinus, dereference and deliver its
    `Announce`, then delete it and verify Misskey applies `Undo(Announce)`;
-16. dereference a public Rosmarinus `Create(Question)` with a local custom-emoji
+17. dereference a public Rosmarinus `Create(Question)` with a local custom-emoji
    tag, verify its simple MFM is emitted as safe HTML without redundant Misskey
    source metadata, and deliver that poll;
-17. publish advanced MFM containing bold and ruby syntax, verify its safe HTML
+18. publish advanced MFM containing bold and ruby syntax, verify its safe HTML
    and `_misskey_content`/`source` compatibility fields, and confirm latest
    Misskey stores the original MFM text;
-18. vote on that poll from Misskey and verify Rosmarinus stores the inbound
+19. vote on that poll from Misskey and verify Rosmarinus stores the inbound
    reply Note as a poll vote;
-19. react to that note from Misskey, verify the reaction in Rosmarinus, and
+20. react to that note from Misskey, verify the reaction in Rosmarinus, and
    dereference its Like activity;
-20. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
+21. delete that Rosmarinus note, verify its Poll/votes/reactions are cleaned,
    and verify Misskey applies the delivered `Delete(Tombstone)`;
-21. deliver a `specified` Rosmarinus note to the second account's individual
+22. deliver a `specified` Rosmarinus note to the second account's individual
    inbox, verify that Misskey exposes it to that recipient, and verify that its
    private `Create` activity endpoint returns `404`.
-22. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
+23. verify Rosmarinus registers `a.test`, stores its latest NodeInfo software
    metadata, tracks authenticated receive/successful delivery
    timestamps and status, and keeps per-instance relationship counts current.
 

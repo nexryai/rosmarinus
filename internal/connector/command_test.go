@@ -62,6 +62,10 @@ type fakeCommandExecutor struct {
 	reactionCalls       int
 	reactionDelete      ReactionDeleteCommand
 	reactionDeleteCalls int
+	blockCommand        BlockCreateCommand
+	blockCalls          int
+	blockDelete         BlockDeleteCommand
+	blockDeleteCalls    int
 	notificationID      string
 	err                 error
 }
@@ -140,6 +144,20 @@ func (f *fakeCommandExecutor) DeleteReaction(ctx context.Context, command Reacti
 		NoteID:     command.NoteID,
 		URI:        "https://example.test/likes/reaction-created/undo",
 	}, f.err
+}
+
+func (f *fakeCommandExecutor) CreateBlock(ctx context.Context, command BlockCreateCommand) (BlockCreated, error) {
+	_ = ctx
+	f.blockCalls++
+	f.blockCommand = command
+	return BlockCreated{BlockID: "block-created", BlockeeID: "remote-actor", URI: "https://example.test/blocks/block-created"}, f.err
+}
+
+func (f *fakeCommandExecutor) DeleteBlock(ctx context.Context, command BlockDeleteCommand) (BlockDeleted, error) {
+	_ = ctx
+	f.blockDeleteCalls++
+	f.blockDelete = command
+	return BlockDeleted{BlockID: "block-created", BlockeeID: "remote-actor", URI: "https://example.test/blocks/block-created/undo"}, f.err
 }
 
 func (f *fakeCommandExecutor) CreateActor(ctx context.Context, accountID string, command ActorCreateCommand) (ActorCreated, error) {
@@ -258,12 +276,33 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 11 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandActorCreate || source.names[10] != CommandNotificationMarkRead {
+	if len(source.names) != 13 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandBlockCreate || source.names[10] != CommandBlockDelete || source.names[11] != CommandActorCreate || source.names[12] != CommandNotificationMarkRead {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
 		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
+	}
+}
+
+func TestCommandHandlerCreatesAndDeletesBlockAsOwnedActor(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	if err := handler.Handle(context.Background(), commandMessage(CommandBlockCreate, "request-block", "actor-2", BlockCreateData{Target: "bob@remote.example"})); err != nil {
+		t.Fatalf("create Handle returned error: %v", err)
+	}
+	if err := handler.Handle(context.Background(), commandMessage(CommandBlockDelete, "request-unblock", "actor-2", BlockDeleteData{Target: "https://remote.example/users/bob"})); err != nil {
+		t.Fatalf("delete Handle returned error: %v", err)
+	}
+	if executor.blockCalls != 1 || executor.blockCommand.ActorID != "actor-2" || executor.blockCommand.Target != "bob@remote.example" {
+		t.Fatalf("block command = %+v calls=%d", executor.blockCommand, executor.blockCalls)
+	}
+	if executor.blockDeleteCalls != 1 || executor.blockDelete.ActorID != "actor-2" || executor.blockDelete.Target != "https://remote.example/users/bob" {
+		t.Fatalf("block delete command = %+v calls=%d", executor.blockDelete, executor.blockDeleteCalls)
+	}
+	if len(publisher.succeeded) != 2 || publisher.succeeded[0].command != CommandBlockCreate || publisher.succeeded[1].command != CommandBlockDelete {
+		t.Fatalf("unexpected command results: %+v", publisher.succeeded)
 	}
 }
 

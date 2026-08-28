@@ -235,6 +235,8 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       `data.note_id`, and `data.reaction`.
 - [ ] Implement `reaction.delete` with the owned local `actor_id` and
       `data.note_id`.
+- [ ] Implement `block.create` and `block.delete` with the owned local
+      `actor_id` and a remote handle or absolute Actor URL in `data.target`.
 - [ ] Implement `follow.approve` with top-level local followee `actor_id` and
       `data.follower_id`.
 - [ ] Implement `follow.reject` with the same addressing model.
@@ -426,7 +428,8 @@ The current Rosmarinus contract provides:
 - account status and authorization revision checks;
 - one-account-to-many-Actor ownership through `ownerAccountId`;
 - `actor.create`, `post.create`, `post.delete`, `poll.vote`, `follow.create`, `follow.delete`,
-  `reaction.create`, `reaction.delete`, `follow.approve`, and `follow.reject`
+  `reaction.create`, `reaction.delete`, `block.create`, `block.delete`,
+  `follow.approve`, and `follow.reject`
   commands;
 - command receipt persistence for request ID idempotency;
 - account-scoped result and domain event publication;

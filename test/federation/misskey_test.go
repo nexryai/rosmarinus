@@ -60,6 +60,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	actorRepo := mongostore.NewActorRepository(db)
 	noteRepo := mongostore.NewNoteRepository(db)
 	followRepo := mongostore.NewFollowRepository(db)
+	blockRepo := mongostore.NewBlockRepository(db)
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
 	emojiRepo := mongostore.NewEmojiRepository(db)
@@ -90,7 +91,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		actorRepo,
 		noteRepo,
 		followRepo,
-		mongostore.NewBlockRepository(db),
+		blockRepo,
 		reactionRepo,
 		mongostore.NewReportRepository(db),
 		queueClient,
@@ -418,7 +419,72 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 12: renote the stored Misskey Note from Rosmarinus, verify Misskey
+	// Phase 12: block the Misskey Actor from Rosmarinus, verify Misskey removes
+	// its local Follow and exposes the blocked relationship, then undo the Block
+	// and prove the Misskey Actor can follow Rosmarinus again.
+	createdBlock, err := worker.CreateBlock(ctx, connector.BlockCreateCommand{
+		ActorID: localActor.ID,
+		Target:  remoteActorURI,
+	})
+	if err != nil {
+		t.Fatalf("create outbound Block: %v", err)
+	}
+	if createdBlock.BlockeeID != remoteActor.ID || createdBlock.URI == "" {
+		t.Fatalf("unexpected created Block: %+v", createdBlock)
+	}
+	waitFor(t, ctx, "Block applied by Misskey", func() bool {
+		var shown struct {
+			IsFollowing bool `json:"isFollowing"`
+			IsBlocked   bool `json:"isBlocked"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID,
+		}, &shown)
+		return !shown.IsFollowing && shown.IsBlocked
+	})
+	deletedBlock, err := worker.DeleteBlock(ctx, connector.BlockDeleteCommand{
+		ActorID: localActor.ID,
+		Target:  remoteActorURI,
+	})
+	if err != nil {
+		t.Fatalf("delete outbound Block: %v", err)
+	}
+	if deletedBlock.BlockID != createdBlock.BlockID || deletedBlock.URI != createdBlock.URI+"/undo" {
+		t.Fatalf("unexpected deleted Block: %+v", deletedBlock)
+	}
+	waitFor(t, ctx, "Undo(Block) applied by Misskey", func() bool {
+		var shown struct {
+			IsBlocked bool `json:"isBlocked"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID,
+		}, &shown)
+		return !shown.IsBlocked
+	})
+	misskey.call(ctx, "following/create", map[string]any{
+		"i": admin.Token, "userId": relayOnMisskey.ID,
+	}, nil)
+	waitFor(t, ctx, "post-unblock Follow stored as pending", func() bool {
+		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
+		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
+	})
+	if _, err := worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID); err != nil {
+		t.Fatalf("approve post-unblock Follow: %v", err)
+	}
+	waitFor(t, ctx, "post-unblock Follow accepted by Misskey", func() bool {
+		var shown struct {
+			IsFollowing bool `json:"isFollowing"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID,
+		}, &shown)
+		return shown.IsFollowing
+	})
+	if stored, findErr := blockRepo.Find(ctx, localActor.ID, remoteActor.ID); findErr != nil || stored != nil {
+		t.Fatalf("outbound Block remains after undo: block=%+v err=%v", stored, findErr)
+	}
+
+	// Phase 13: renote the stored Misskey Note from Rosmarinus, verify Misskey
 	// accepts the outbound Announce, then delete it and verify Undo(Announce).
 	const localRenoteID = "latest-misskey-outbound-renote"
 	createdLocalRenote, err := worker.CreatePost(ctx, connector.PostCreateCommand{
@@ -469,7 +535,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 13: publish simple and advanced MFM from Rosmarinus, verify simple
+	// Phase 14: publish simple and advanced MFM from Rosmarinus, verify simple
 	// MFM is safe HTML without redundant source metadata, advanced MFM retains
 	// its source, and confirm latest Misskey stores both delivered Create(Note)s.
 	const localNoteID = "latest-misskey-outbound-note"
@@ -566,7 +632,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("Misskey stored advanced MFM text %q, want %q", storedAdvancedNoteText, advancedNoteText)
 	}
 
-	// Phase 14: vote on the delivered Rosmarinus Question from Misskey and
+	// Phase 15: vote on the delivered Rosmarinus Question from Misskey and
 	// verify Rosmarinus consumes the reply Note as a poll vote.
 	misskey.call(ctx, "notes/polls/vote", map[string]any{
 		"i": admin.Token, "noteId": misskeyLocalNoteID, "choice": 1,
@@ -576,7 +642,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return findErr == nil && poll != nil && len(poll.Votes) == 2 && poll.Votes[1] == 1
 	})
 
-	// Phase 15: react to the delivered Rosmarinus note from Misskey, verify
+	// Phase 16: react to the delivered Rosmarinus note from Misskey, verify
 	// Rosmarinus stores the federated reaction, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
@@ -596,7 +662,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected Like activity: %#v", likeActivity)
 	}
 
-	// Phase 16: soft-delete the local Note, verify Rosmarinus removes its Poll,
+	// Phase 17: soft-delete the local Note, verify Rosmarinus removes its Poll,
 	// votes, and reactions, and verify current Misskey accepts the identified
 	// Delete(Tombstone) activity and removes its federated copy.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
@@ -638,7 +704,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("deleted Note poll votes remain: count=%d err=%v", votes, countErr)
 	}
 
-	// Phase 17: publish a specified-visibility note, verify it is not publicly
+	// Phase 18: publish a specified-visibility note, verify it is not publicly
 	// dereferenceable, and confirm that the non-following Misskey recipient
 	// still receives it through the individual inbox delivery.
 	const specifiedNoteID = "latest-misskey-specified-note"
@@ -676,7 +742,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return false
 	})
 
-	// Phase 18: verify first contact, authenticated inbox traffic, successful
+	// Phase 19: verify first contact, authenticated inbox traffic, successful
 	// deliveries, relationship changes, and daily NodeInfo discovery converge on
 	// one current-Misskey instance document that Salvia can read.
 	type instanceSnapshot struct {

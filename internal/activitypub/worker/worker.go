@@ -17,6 +17,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	apblocks "github.com/nexryai/rosmarinus/internal/activitypub/blocks"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	appolls "github.com/nexryai/rosmarinus/internal/activitypub/polls"
 	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
@@ -1180,6 +1181,132 @@ func (h *Handler) DeleteFollow(ctx context.Context, command connector.FollowDele
 		FolloweeID: followee.ID,
 		URI:        undoActivityID,
 	}, nil
+}
+
+func (h *Handler) CreateBlock(ctx context.Context, command connector.BlockCreateCommand) (connector.BlockCreated, error) {
+	if h.blocks == nil || h.queue == nil {
+		return connector.BlockCreated{}, fmt.Errorf("block repository and queue are required")
+	}
+	blocker, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.BlockCreated{}, err
+	}
+	if blocker == nil {
+		return connector.BlockCreated{}, fmt.Errorf("local blocker not found: %s", command.ActorID)
+	}
+	blockee, err := h.resolveRemoteActorTarget(ctx, command.Target)
+	if err != nil {
+		return connector.BlockCreated{}, fmt.Errorf("resolve block target: %w", err)
+	}
+	inbox, isSharedInbox, err := deliveryInbox(blockee)
+	if err != nil {
+		return connector.BlockCreated{}, fmt.Errorf("block target %w", err)
+	}
+	stored, err := h.blocks.Upsert(ctx, blocks.Block{
+		BlockerID:   blocker.ID,
+		BlockeeID:   blockee.ID,
+		BlockerURI:  blocker.URI,
+		BlockeeURI:  blockee.URI,
+		BlockerHost: blocker.Host,
+		BlockeeHost: blockee.Host,
+		CreatedAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		return connector.BlockCreated{}, err
+	}
+	if h.follows != nil {
+		if err := h.follows.Delete(ctx, blocker.ID, blockee.ID, ""); err != nil {
+			return connector.BlockCreated{}, err
+		}
+		if err := h.follows.Delete(ctx, blockee.ID, blocker.ID, ""); err != nil {
+			return connector.BlockCreated{}, err
+		}
+		if err := h.refreshInstanceRelationshipCounts(ctx, blockee.Host); err != nil {
+			return connector.BlockCreated{}, err
+		}
+	}
+	activity := apblocks.RenderBlock(h.cfg.PublicURL, stored)
+	task := queue.NewDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return connector.BlockCreated{}, fmt.Errorf("enqueue Block delivery: %w", err)
+	}
+	return connector.BlockCreated{BlockID: stored.ID, BlockeeID: stored.BlockeeID, URI: activity["id"].(string)}, nil
+}
+
+func (h *Handler) DeleteBlock(ctx context.Context, command connector.BlockDeleteCommand) (connector.BlockDeleted, error) {
+	if h.blocks == nil || h.queue == nil {
+		return connector.BlockDeleted{}, fmt.Errorf("block repository and queue are required")
+	}
+	blocker, err := h.repo.FindLocalByID(ctx, strings.TrimSpace(command.ActorID))
+	if err != nil {
+		return connector.BlockDeleted{}, err
+	}
+	if blocker == nil {
+		return connector.BlockDeleted{}, fmt.Errorf("local blocker not found: %s", command.ActorID)
+	}
+	blockee, err := h.resolveRemoteActorTarget(ctx, command.Target)
+	if err != nil {
+		return connector.BlockDeleted{}, fmt.Errorf("resolve block target: %w", err)
+	}
+	existing, err := h.blocks.Find(ctx, blocker.ID, blockee.ID)
+	if err != nil {
+		return connector.BlockDeleted{}, err
+	}
+	if existing == nil {
+		return connector.BlockDeleted{}, fmt.Errorf("block relationship not found")
+	}
+	inbox, isSharedInbox, err := deliveryInbox(blockee)
+	if err != nil {
+		return connector.BlockDeleted{}, fmt.Errorf("block target %w", err)
+	}
+	activity := apblocks.RenderUndoBlock(h.cfg.PublicURL, existing, time.Now().UTC())
+	if err := h.blocks.Delete(ctx, blocker.ID, blockee.ID, activity["id"].(string)); err != nil {
+		return connector.BlockDeleted{}, err
+	}
+	task := queue.NewDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return connector.BlockDeleted{}, fmt.Errorf("enqueue Undo(Block) delivery: %w", err)
+	}
+	return connector.BlockDeleted{BlockID: existing.ID, BlockeeID: existing.BlockeeID, URI: activity["id"].(string)}, nil
+}
+
+func (h *Handler) resolveRemoteActorTarget(ctx context.Context, target string) (*actors.Actor, error) {
+	target = strings.TrimSpace(target)
+	var (
+		actor *actors.Actor
+		err   error
+	)
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		actor, err = h.resolver.ResolveActor(ctx, target)
+	} else {
+		actor, err = h.resolver.ResolveActorHandle(ctx, target)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil || actor.Host == nil {
+		return nil, fmt.Errorf("target must be a remote actor")
+	}
+	return actor, nil
+}
+
+func deliveryInbox(actor *actors.Actor) (string, bool, error) {
+	if actor == nil {
+		return "", false, fmt.Errorf("actor is missing")
+	}
+	if inbox := strings.TrimSpace(actor.Inbox); inbox != "" {
+		return inbox, false, nil
+	}
+	if inbox := strings.TrimSpace(actor.SharedInbox); inbox != "" {
+		return inbox, true, nil
+	}
+	return "", false, fmt.Errorf("inbox is empty")
 }
 
 func (h *Handler) performAcceptFollow(ctx context.Context, actor *actors.Actor, activity map[string]any) (string, error) {
