@@ -11,6 +11,7 @@ on:
       - "internal/store/mongo/**"
       - "test/federation/**"
       - "docker/federation/**"
+      - "docker/mongo/**"
       - ".github/workflows/federation.yml"
 
   pull_request:
@@ -22,6 +23,7 @@ on:
       - "internal/store/mongo/**"
       - "test/federation/**"
       - "docker/federation/**"
+      - "docker/mongo/**"
       - ".github/workflows/federation.yml"
 
   workflow_dispatch:
