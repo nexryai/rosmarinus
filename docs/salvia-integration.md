@@ -383,6 +383,30 @@ original `request_id`.
 Rosmarinus generates the Actor ID, URI, and key pair and derives
 `ownerAccountId` from Ably `message.clientId` through `salvia_accounts`.
 
+To change an account-owned Actor profile, publish `actor.update` with that
+Actor in top-level `actor_id`. `data` is a patch and must contain at least one
+of `name`, `summary`, `url`, `profile_fields`, `birthday`, `location`,
+`avatar_url`, `banner_url`, `tags`, `emoji_names`, `is_bot`, `is_cat`,
+`is_locked`, or `is_discoverable`. An omitted field is unchanged, JSON `null`
+clears a nullable value, and an empty array explicitly replaces an existing
+array. `profile_fields` is an array of `{ "name": "...", "value": "..." }`.
+`emoji_names` contains at most 100 existing local names using only ASCII
+letters, digits, and underscores; do not include surrounding colons.
+Identity, ownership, username, Actor type, federation endpoint, and key fields
+cannot be supplied directly. For an owned Person/Service, `is_bot` controls the
+federated `Person` versus `Service` type; other Actor types reject `is_bot`.
+Rosmarinus requires explicit approval for every inbound Follow,
+so `is_locked` may only be set to `true` and cannot be cleared. A successful
+update atomically checks ownership, updates MongoDB, and queues a full
+`Update(Person)` or `Update(Service)` to accepted active remote followers with
+shared-inbox deduplication.
+
+Rosmarinus publishes `actor.updated` followed by `command.succeeded` for a
+successful command. `actor.updated.data` contains `actor_id`, the Actor `uri`,
+and `fields`, the stable contract-order list of patched JSON field names. Treat
+the event as an invalidation hint and re-read the Actor document rather than
+merging its payload into cached state.
+
 `post.create.data` always contains the client-generated local `note_id` and
 exactly one of normal post content (`text` or `poll`) or `renote_id`. A pure
 renote uses the Rosmarinus-owned ID of an already stored target Note:

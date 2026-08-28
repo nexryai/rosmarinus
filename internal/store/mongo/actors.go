@@ -119,6 +119,7 @@ func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, act
 		"_id":            actorID,
 		"ownerAccountId": accountID,
 		"host":           nil,
+		"isSystemActor":  false,
 		"isSuspended":    false,
 	})
 }
@@ -150,6 +151,101 @@ func (r *ActorRepository) CreateOwnedLocalActor(ctx context.Context, actor actor
 		return nil, err
 	}
 	return r.FindOwnedLocalByID(ctx, actor.OwnerAccountID, actor.ID)
+}
+
+// UpdateOwnedLocalActor applies only profile fields. The ownership and local
+// actor predicates are part of the same MongoDB update filter so a stale
+// authorization lookup cannot update an actor after ownership/state changes.
+func (r *ActorRepository) UpdateOwnedLocalActor(ctx context.Context, accountID, actorID string, patch actors.ActorPatch) (*actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	actorID = strings.TrimSpace(actorID)
+	if accountID == "" || actorID == "" {
+		return nil, fmt.Errorf("owner account id and actor id are required")
+	}
+	set, unset := actorPatchUpdate(patch)
+	if len(set) == 0 && len(unset) == 0 {
+		return r.FindOwnedLocalByID(ctx, accountID, actorID)
+	}
+	update := bson.M{}
+	if len(set) != 0 {
+		update["$set"] = set
+	}
+	if len(unset) != 0 {
+		update["$unset"] = unset
+	}
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id":            actorID,
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  false,
+		"isSuspended":    false,
+	}, update)
+	if err != nil {
+		return nil, err
+	}
+	if result.MatchedCount == 0 {
+		return nil, nil
+	}
+	return r.FindOwnedLocalByID(ctx, accountID, actorID)
+}
+
+func actorPatchUpdate(patch actors.ActorPatch) (bson.M, bson.M) {
+	set := bson.M{}
+	unset := bson.M{}
+	setString := func(field actors.Optional[string], key string) {
+		if !field.IsSet() {
+			return
+		}
+		if field.Value == nil {
+			unset[key] = ""
+			return
+		}
+		set[key] = *field.Value
+	}
+	setString(patch.Name, "name")
+	setString(patch.Summary, "summary")
+	setString(patch.URL, "url")
+	setString(patch.Birthday, "birthday")
+	setString(patch.Location, "location")
+	setString(patch.AvatarURL, "avatarUrl")
+	setString(patch.BannerURL, "bannerUrl")
+
+	if patch.ProfileFields.IsSet() {
+		if patch.ProfileFields.Value == nil {
+			unset["profileFields"] = ""
+		} else {
+			set["profileFields"] = profileFieldDocuments(*patch.ProfileFields.Value)
+		}
+	}
+	if patch.Tags.IsSet() {
+		if patch.Tags.Value == nil {
+			unset["tags"] = ""
+		} else {
+			set["tags"] = append([]string(nil), (*patch.Tags.Value)...)
+		}
+	}
+	if patch.EmojiNames.IsSet() {
+		if patch.EmojiNames.Value == nil {
+			unset["emojiNames"] = ""
+		} else {
+			set["emojiNames"] = append([]string(nil), (*patch.EmojiNames.Value)...)
+		}
+	}
+	setBool := func(field actors.Optional[bool], key string) {
+		if !field.IsSet() {
+			return
+		}
+		if field.Value == nil {
+			unset[key] = ""
+			return
+		}
+		set[key] = *field.Value
+	}
+	setBool(patch.IsBot, "isBot")
+	setBool(patch.IsCat, "isCat")
+	setBool(patch.IsLocked, "isLocked")
+	setBool(patch.IsDiscoverable, "isDiscoverable")
+	return set, unset
 }
 
 func (r *ActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {

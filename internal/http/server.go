@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	apreactions "github.com/nexryai/rosmarinus/internal/activitypub/reactions"
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
@@ -67,6 +68,7 @@ type MediaLookup interface {
 
 type EmojiLookup interface {
 	FindLocalByName(context.Context, string) (*domainemojis.Emoji, error)
+	FindLocalByNames(context.Context, []string) ([]domainemojis.Emoji, error)
 }
 
 func NewHandler(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, queueClient QueueClient) http.Handler {
@@ -85,7 +87,7 @@ func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
-	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, queueClient, logger))
+	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, emojiLookup, queueClient, logger))
 	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
 	mux.HandleFunc("/media/", mediaByID(mediaLookup))
 	mux.HandleFunc("/emojis/", emojiByName(cfg, emojiLookup))
@@ -93,7 +95,7 @@ func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup 
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
-	mux.HandleFunc("/", fallback(cfg, actorLookup, logger))
+	mux.HandleFunc("/", fallback(cfg, actorLookup, emojiLookup, logger))
 	return mux
 }
 
@@ -319,7 +321,7 @@ func notImplemented(logger *log.Logger, methods ...string) http.HandlerFunc {
 	}
 }
 
-func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLookup, queueClient QueueClient, logger *log.Logger) http.HandlerFunc {
+func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLookup, emojiLookup EmojiLookup, queueClient QueueClient, logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/inbox") {
 			inbox(cfg, queueClient)(w, r)
@@ -346,7 +348,7 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLo
 			return
 		}
 		if len(parts) == 2 && parts[1] == "publickey" {
-			writeActivityJSON(w, renderPublicKey(actor))
+			writeActivityJSON(w, apactors.RenderPublicKey(actor))
 			return
 		}
 		if len(parts) == 2 {
@@ -366,7 +368,12 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLo
 			return
 		}
 		if len(parts) == 1 {
-			writeActivityJSON(w, renderActor(cfg, actor))
+			body, err := renderLocalActor(r.Context(), cfg, actor, emojiLookup)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			writeActivityJSON(w, body)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -493,7 +500,7 @@ func inbox(cfg config.Config, queueClient QueueClient) http.HandlerFunc {
 	}
 }
 
-func actorByUsername(cfg config.Config, actorLookup ActorLookup, logger *log.Logger) http.HandlerFunc {
+func actorByUsername(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLookup, logger *log.Logger) http.HandlerFunc {
 	_ = logger
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -515,12 +522,28 @@ func actorByUsername(cfg config.Config, actorLookup ActorLookup, logger *log.Log
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		writeActivityJSON(w, renderActor(cfg, actor))
+		body, err := renderLocalActor(r.Context(), cfg, actor, emojiLookup)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeActivityJSON(w, body)
 	}
 }
 
-func fallback(cfg config.Config, actorLookup ActorLookup, logger *log.Logger) http.HandlerFunc {
-	actorHandler := actorByUsername(cfg, actorLookup, logger)
+func renderLocalActor(ctx context.Context, cfg config.Config, actor *actors.Actor, emojiLookup EmojiLookup) (map[string]any, error) {
+	if emojiLookup == nil || len(actor.EmojiNames) == 0 {
+		return apactors.RenderLocalActor(cfg, actor), nil
+	}
+	localEmojis, err := emojiLookup.FindLocalByNames(ctx, actor.EmojiNames)
+	if err != nil {
+		return nil, fmt.Errorf("find local Actor emojis: %w", err)
+	}
+	return apactors.RenderLocalActorWithEmojis(cfg, actor, localEmojis), nil
+}
+
+func fallback(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLookup, logger *log.Logger) http.HandlerFunc {
+	actorHandler := actorByUsername(cfg, actorLookup, emojiLookup, logger)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/@") {
 			actorHandler(w, r)
@@ -668,59 +691,6 @@ func writeActivityJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Cache-Control", "public, max-age=180")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(body)
-}
-
-func renderActor(cfg config.Config, actor *actors.Actor) map[string]any {
-	actorType := actor.Type
-	if actorType == "" {
-		actorType = "Service"
-	}
-	actorURI := actor.URI
-	if actorURI == "" {
-		actorURI = strings.TrimRight(cfg.PublicURL, "/") + "/users/" + url.PathEscape(actor.ID)
-	}
-	inbox := actor.Inbox
-	if inbox == "" {
-		inbox = actorURI + "/inbox"
-	}
-	sharedInbox := actor.SharedInbox
-	if sharedInbox == "" {
-		sharedInbox = strings.TrimRight(cfg.PublicURL, "/") + "/inbox"
-	}
-	return withActivityContext(map[string]any{
-		"type":                      actorType,
-		"id":                        actorURI,
-		"inbox":                     inbox,
-		"outbox":                    actorURI + "/outbox",
-		"followers":                 actorURI + "/followers",
-		"following":                 actorURI + "/following",
-		"featured":                  actorURI + "/collections/featured",
-		"sharedInbox":               sharedInbox,
-		"endpoints":                 map[string]any{"sharedInbox": sharedInbox},
-		"url":                       strings.TrimRight(cfg.PublicURL, "/") + "/@" + url.PathEscape(actor.Username),
-		"preferredUsername":         actor.Username,
-		"name":                      actor.Name,
-		"summary":                   nil,
-		"manuallyApprovesFollowers": true,
-		"discoverable":              true,
-		"publicKey":                 renderPublicKey(actor),
-		"alsoKnownAs":               []string{},
-		"attachment":                []any{},
-		"tag":                       []any{},
-	})
-}
-
-func renderPublicKey(actor *actors.Actor) map[string]any {
-	keyID := actor.PublicKeyID
-	if keyID == "" && actor.URI != "" {
-		keyID = actor.URI + "#main-key"
-	}
-	return withActivityContext(map[string]any{
-		"id":           keyID,
-		"type":         "Key",
-		"owner":        actor.URI,
-		"publicKeyPem": actor.PublicKeyPEM,
-	})
 }
 
 func renderActorCollection(r *http.Request, cfg config.Config, actor *actors.Actor, name string, followLookup FollowLookup) (map[string]any, error) {

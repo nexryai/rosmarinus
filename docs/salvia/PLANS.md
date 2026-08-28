@@ -237,6 +237,10 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       `data.note_id`.
 - [ ] Implement `block.create` and `block.delete` with the owned local
       `actor_id` and a remote handle or absolute Actor URL in `data.target`.
+- [ ] Implement `actor.update` with the owned local `actor_id` and a non-empty
+      profile patch. Preserve omitted versus JSON-null fields, allow empty
+      arrays as explicit replacements, never send immutable identity/key fields,
+      and never send `is_locked: false` or `null`.
 - [ ] Implement `follow.approve` with top-level local followee `actor_id` and
       `data.follower_id`.
 - [ ] Implement `follow.reject` with the same addressing model.
@@ -276,7 +280,8 @@ idempotently retryable Ably command and never a direct database write.
 
 - [ ] Implement `command.succeeded` and `command.failed` correlation.
 - [ ] Implement refresh/invalidation handlers for `actor.created`,
-      `post.created`, `notification.created`, `follow.approval.requested`,
+      `actor.updated`, `post.created`, `notification.created`,
+      `follow.approval.requested`,
       `follow.approval.completed`, and `follow.approval.rejected`.
 - [ ] Treat domain events as refresh hints and render durable state from
       MongoDB wherever possible.

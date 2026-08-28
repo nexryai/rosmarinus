@@ -23,6 +23,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
@@ -72,6 +73,15 @@ func (f *fakeRepo) FindOwnedLocalByID(ctx context.Context, accountID, actorID st
 
 func (f *fakeRepo) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
 	f.local = &actor
+	return f.local, nil
+}
+
+func (f *fakeRepo) UpdateOwnedLocalActor(ctx context.Context, accountID, actorID string, patch actors.ActorPatch) (*actors.Actor, error) {
+	if f.local == nil || f.local.ID != actorID || f.local.OwnerAccountID != accountID || f.local.Host != nil || f.local.IsSystemActor || f.local.IsSuspended {
+		return nil, nil
+	}
+	updated := patch.Apply(*f.local)
+	f.local = &updated
 	return f.local, nil
 }
 
@@ -2887,7 +2897,7 @@ func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
 	if created.ActorID == "" || created.Username != "alice-work" || created.URI != "https://rosmarinus.example/users/"+created.ActorID {
 		t.Fatalf("unexpected result: %+v", created)
 	}
-	if repo.local == nil || repo.local.OwnerAccountID != "account-1" || repo.local.IsSystemActor || repo.local.PublicKeyID != created.URI+"#main-key" {
+	if repo.local == nil || repo.local.OwnerAccountID != "account-1" || repo.local.IsSystemActor || !repo.local.IsLocked || !repo.local.IsDiscoverable || repo.local.PublicKeyID != created.URI+"#main-key" {
 		t.Fatalf("unexpected stored actor: %+v", repo.local)
 	}
 }
@@ -2896,6 +2906,187 @@ func TestCreateActorRejectsInvalidUsername(t *testing.T) {
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	if _, err := h.CreateActor(context.Background(), "account-1", connector.ActorCreateCommand{Username: ".bad"}); err == nil {
 		t.Fatal("expected invalid username to fail")
+	}
+}
+
+func TestCreateServiceActorStoresBotSemantics(t *testing.T) {
+	repo := &fakeRepo{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	if _, err := h.CreateActor(context.Background(), "account-1", connector.ActorCreateCommand{Username: "service", Type: "Service"}); err != nil {
+		t.Fatalf("CreateActor returned error: %v", err)
+	}
+	if repo.local == nil || !repo.local.IsBot || apactors.RenderLocalActor(config.Config{PublicURL: "https://rosmarinus.example"}, repo.local)["type"] != "Service" {
+		t.Fatalf("service Actor did not preserve bot semantics: %+v", repo.local)
+	}
+}
+
+func TestUpdateActorPersistsPatchRendersPersonAndFansOutToRemoteFollowers(t *testing.T) {
+	remoteHost := "remote.example"
+	blockedHost := "blocked.example"
+	local := &actors.Actor{
+		ID: "local-alice", OwnerAccountID: "account-1", Username: "alice", Type: "Person",
+		URI: "https://rosmarinus.example/users/local-alice", Inbox: "https://rosmarinus.example/users/local-alice/inbox",
+		SharedInbox: "https://rosmarinus.example/inbox", PublicKeyID: "https://rosmarinus.example/users/local-alice#main-key",
+		PublicKeyPEM: "public", PrivateKeyPEM: "private", IsDiscoverable: true,
+	}
+	remoteShared := &actors.Actor{
+		ID: "remote-shared", URI: "https://remote.example/users/shared", Host: &remoteHost,
+		Inbox: "https://remote.example/users/shared/inbox", SharedInbox: "https://remote.example/inbox",
+	}
+	remoteIndividual := &actors.Actor{
+		ID: "remote-individual", URI: "https://remote.example/users/individual", Host: &remoteHost,
+		Inbox: "https://remote.example/users/individual/inbox",
+	}
+	inactive := &actors.Actor{
+		ID: "remote-inactive", URI: "https://remote.example/users/inactive", Host: &remoteHost,
+		Inbox: "https://remote.example/users/inactive/inbox", IsSuspended: true,
+	}
+	blocked := &actors.Actor{
+		ID: "remote-blocked", URI: "https://blocked.example/users/blocked", Host: &blockedHost,
+		Inbox: "https://blocked.example/users/blocked/inbox",
+	}
+	repo := &fakeRepo{local: local, remotes: map[string]*actors.Actor{
+		remoteShared.URI: remoteShared, remoteIndividual.URI: remoteIndividual,
+		inactive.URI: inactive, blocked.URI: blocked,
+	}}
+	followRepo := &fakeFollowRepo{}
+	for _, follow := range []follows.Follow{
+		{ID: "follow-shared", FollowerID: remoteShared.ID, FolloweeID: local.ID, FollowerHost: &remoteHost, FollowerInbox: remoteShared.Inbox, FollowerSharedInbox: remoteShared.SharedInbox, Status: follows.StatusAccepted},
+		{ID: "follow-individual", FollowerID: remoteIndividual.ID, FolloweeID: local.ID, FollowerHost: &remoteHost, FollowerInbox: remoteIndividual.Inbox, Status: follows.StatusAccepted},
+		{ID: "follow-inactive", FollowerID: inactive.ID, FolloweeID: local.ID, FollowerHost: &remoteHost, FollowerInbox: inactive.Inbox, Status: follows.StatusAccepted},
+		{ID: "follow-blocked", FollowerID: blocked.ID, FolloweeID: local.ID, FollowerHost: &blockedHost, FollowerInbox: blocked.Inbox, Status: follows.StatusAccepted},
+	} {
+		if _, err := followRepo.Upsert(context.Background(), follow); err != nil {
+			t.Fatal(err)
+		}
+	}
+	blockRepo := &fakeBlockRepo{blocks: map[string]*blocks.Block{
+		local.ID + "\x00" + blocked.ID: {BlockerID: local.ID, BlockeeID: blocked.ID},
+	}}
+	emojiRepo := &fakeEmojiRepo{emojis: map[string]*emojis.Emoji{
+		"local-blob": {
+			ID: "local-blob", Name: "blob", URI: "https://rosmarinus.example/emojis/blob",
+			PublicURL: "https://rosmarinus.example/media/blob.webp", MediaType: "image/webp",
+			UpdatedAt: time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC),
+		},
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 9, Timeout: time.Minute}}, nil, repo, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetEmojiRepository(emojiRepo)
+	patch := connector.ActorUpdateData{
+		Name: "Alice Updated", Summary: "Hello **world**", URL: "https://rosmarinus.example/@alice",
+		ProfileFields: []connector.ActorProfileFieldData{{Name: "Site", Value: "https://example.com"}}, Birthday: "2000-01-02",
+		Location: "Somewhere", AvatarURL: "https://rosmarinus.example/avatar.png", BannerURL: "https://rosmarinus.example/banner.png",
+		Tags: []string{"go"}, EmojiNames: []string{"blob"}, IsBot: true, IsCat: true, IsLocked: true,
+		IsDiscoverable: false, Present: map[string]bool{},
+	}
+	for _, field := range []string{"name", "summary", "url", "profile_fields", "birthday", "location", "avatar_url", "banner_url", "tags", "emoji_names", "is_bot", "is_cat", "is_locked", "is_discoverable"} {
+		patch.Present[field] = true
+	}
+	updated, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch})
+	if err != nil {
+		t.Fatalf("UpdateActor returned error: %v", err)
+	}
+	if updated.ActorID != local.ID || updated.URI != local.URI || len(updated.Fields) != 14 {
+		t.Fatalf("updated result = %+v", updated)
+	}
+	if repo.local.Name != patch.Name || repo.local.Summary != patch.Summary || repo.local.URL != patch.URL || !repo.local.IsCat || repo.local.IsDiscoverable {
+		t.Fatalf("patch not persisted: %+v", repo.local)
+	}
+	if len(q.tasks) != 2 {
+		t.Fatalf("deliveries = %d, want shared inbox plus individual inbox: %+v", len(q.tasks), q.tasks)
+	}
+	seen := map[string]bool{}
+	for _, task := range q.tasks {
+		payload, ok := task.Payload.(queue.DeliverPayload)
+		if !ok || payload.Object["type"] != "Update" || payload.To == "" {
+			t.Fatalf("unexpected delivery: %+v", task)
+		}
+		seen[payload.To] = true
+		person, ok := payload.Object["object"].(map[string]any)
+		if !ok || person["type"] != "Service" || person["id"] != local.URI || person["name"] != patch.Name || person["summary"] == nil || person["url"] != patch.URL {
+			t.Fatalf("unexpected Person object: %+v", payload.Object["object"])
+		}
+		if person["inbox"] != local.Inbox || person["isCat"] != true || person["discoverable"] != false {
+			t.Fatalf("unexpected identity/profile fields: %+v", person)
+		}
+		tags, ok := person["tag"].([]any)
+		if !ok || len(tags) != 2 {
+			t.Fatalf("unexpected Actor tags: %#v", person["tag"])
+		}
+		emojiTag := tags[0].(map[string]any)
+		icon := emojiTag["icon"].(map[string]any)
+		if emojiTag["name"] != ":blob:" || icon["url"] != "https://rosmarinus.example/media/blob.webp" {
+			t.Fatalf("unexpected Actor emoji tag: %#v", emojiTag)
+		}
+	}
+	if !seen[remoteShared.SharedInbox] || !seen[remoteIndividual.Inbox] {
+		t.Fatalf("unexpected destinations: %+v", seen)
+	}
+}
+
+func TestUpdateActorHonorsExplicitNullAndRejectsUnownedActor(t *testing.T) {
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", Username: "alice", URI: "https://rosmarinus.example/users/local", Name: "Alice"}
+	repo := &fakeRepo{local: local}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, nil, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, nil, &fakeClient{}, local)
+	patch := connector.ActorUpdateData{
+		Name: "", Summary: "", Tags: nil, IsCat: false,
+		Present: map[string]bool{"name": true, "summary": true, "tags": true, "is_cat": true},
+		Null:    map[string]bool{"name": true, "summary": true, "tags": true},
+	}
+	if _, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err == nil {
+		t.Fatal("expected missing follow/queue configuration to fail before mutation")
+	}
+	h.follows = &fakeFollowRepo{}
+	h.queue = &fakeQueue{}
+	if _, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err != nil {
+		t.Fatalf("UpdateActor returned error: %v", err)
+	}
+	if repo.local.Name != "" || repo.local.Summary != "" || repo.local.Tags != nil || repo.local.IsCat {
+		t.Fatalf("explicit null patch was not applied: %+v", repo.local)
+	}
+	if _, err := h.UpdateActor(context.Background(), "other-account", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err == nil {
+		t.Fatal("unowned actor update was accepted")
+	}
+}
+
+func TestUpdateActorRejectsDisablingMandatoryApproval(t *testing.T) {
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", Username: "alice", URI: "https://rosmarinus.example/users/local", IsLocked: true}
+	repo := &fakeRepo{local: local}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	patch := connector.ActorUpdateData{IsLocked: false, Present: map[string]bool{"is_locked": true}}
+	if _, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err == nil {
+		t.Fatal("accepted an update that disables mandatory approval")
+	}
+	if !repo.local.IsLocked {
+		t.Fatal("invalid approval update mutated actor")
+	}
+}
+
+func TestUpdateActorRejectsUnknownCustomEmojiBeforeMutation(t *testing.T) {
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", Username: "alice", URI: "https://rosmarinus.example/users/local", Name: "Alice"}
+	repo := &fakeRepo{local: local}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetEmojiRepository(&fakeEmojiRepo{})
+	patch := connector.ActorUpdateData{
+		Name: "Mutated", EmojiNames: []string{"missing"},
+		Present: map[string]bool{"name": true, "emoji_names": true},
+	}
+	if _, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err == nil {
+		t.Fatal("accepted an unknown local custom emoji")
+	}
+	if repo.local.Name != "Alice" {
+		t.Fatalf("invalid emoji update mutated Actor: %+v", repo.local)
+	}
+}
+
+func TestUpdateActorRejectsBotFlagForNonUserActorType(t *testing.T) {
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", Username: "group", URI: "https://rosmarinus.example/users/local", Type: "Group"}
+	repo := &fakeRepo{local: local}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	patch := connector.ActorUpdateData{IsBot: true, Present: map[string]bool{"is_bot": true}}
+	if _, err := h.UpdateActor(context.Background(), "account-1", connector.ActorUpdateCommand{ActorID: local.ID, Patch: patch}); err == nil {
+		t.Fatal("accepted is_bot for a Group Actor")
 	}
 }
 

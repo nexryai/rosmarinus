@@ -258,6 +258,9 @@ the same style as current Misskey.
 - [ ] `Delete`: implement full cascaded account cleanup side effects.
 - [x] `Update`: authenticate remote Actor updates, require the updated Actor ID
       to match the signer, and refresh the stored remote Actor.
+- [x] `Update`: patch account-owned local Actor profiles through an authorized
+      `actor.update` command and fan out a full current Person/Service object to
+      accepted, active, unblocked remote followers with shared-inbox dedupe.
 - [ ] `Update`: update notes and questions/polls.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
@@ -570,8 +573,8 @@ when an Ably notification is missed.
       `message.ClientID`. This includes `post.create`, `post.delete`, `poll.vote`,
       `follow.create`, `follow.delete`, `reaction.create`, `reaction.delete`,
       `block.create`, `block.delete`, `follow.approve`, and `follow.reject`.
-- [ ] Apply the same owned-Actor authorization to future Actor update/delete
-      commands when those commands are implemented.
+- [x] Apply the same owned-Actor authorization to `actor.update`; retain this
+      requirement for a future Actor delete command.
 - [x] Add `actor.create`. Rosmarinus generates the Actor ID, URI, and key pair,
       and derives `ownerAccountId` from the authenticated account; the browser
       cannot supply or override the owner.

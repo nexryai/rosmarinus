@@ -78,6 +78,15 @@ func (r *cachedActorBacking) CreateOwnedLocalActor(_ context.Context, actor acto
 	return r.actor, nil
 }
 
+func (r *cachedActorBacking) UpdateOwnedLocalActor(_ context.Context, accountID, actorID string, patch actors.ActorPatch) (*actors.Actor, error) {
+	if r.actor == nil || r.actor.ID != actorID || r.actor.OwnerAccountID != accountID || r.actor.IsSystemActor || r.actor.IsSuspended {
+		return nil, nil
+	}
+	updated := patch.Apply(*r.actor)
+	r.actor = &updated
+	return r.actor, nil
+}
+
 func (r *cachedActorBacking) SuspendOwnedLocalActors(context.Context, string) (int64, error) {
 	return 0, nil
 }

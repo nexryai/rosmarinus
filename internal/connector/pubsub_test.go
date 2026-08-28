@@ -102,6 +102,27 @@ func TestPublisherRoutesAccountEvent(t *testing.T) {
 	}
 }
 
+func TestPublisherPublishesActorUpdatedEvent(t *testing.T) {
+	channel := &dummyChannel{}
+	publisher := NewPublisher(channel)
+	if err := publisher.PublishActorUpdated(context.Background(), "account-1", "request-1", ActorUpdated{
+		ActorID: "actor-1", URI: "https://example.test/users/actor-1", Fields: []string{"name", "is_cat"},
+	}); err != nil {
+		t.Fatalf("PublishActorUpdated returned error: %v", err)
+	}
+	if channel.name != EventActorUpdated {
+		t.Fatalf("event name = %q", channel.name)
+	}
+	envelope, ok := channel.data.(Envelope)
+	if !ok || envelope.Type != EventActorUpdated || envelope.RequestID != "request-1" || envelope.ActorID != "actor-1" {
+		t.Fatalf("unexpected envelope: %#v", channel.data)
+	}
+	payload, ok := envelope.Data.(ActorUpdated)
+	if !ok || payload.URI != "https://example.test/users/actor-1" || len(payload.Fields) != 2 {
+		t.Fatalf("unexpected payload: %#v", envelope.Data)
+	}
+}
+
 func TestPublisherRejectsUnsafeAccountChannelSegment(t *testing.T) {
 	publisher := NewAccountPublisher(&dummyChannelProvider{}, "test:accounts")
 	if err := publisher.PublishCommandFailed(context.Background(), "account:*", "request-1", "actor-1", CommandPostCreate, "failed"); err == nil {

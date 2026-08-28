@@ -17,6 +17,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
 	apblocks "github.com/nexryai/rosmarinus/internal/activitypub/blocks"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	appolls "github.com/nexryai/rosmarinus/internal/activitypub/polls"
@@ -2525,6 +2526,251 @@ func (h *Handler) enqueueNoteActivity(ctx context.Context, actorID, inbox string
 	return nil
 }
 
+func (h *Handler) UpdateActor(ctx context.Context, accountID string, command connector.ActorUpdateCommand) (connector.ActorUpdated, error) {
+	if h.repo == nil || h.follows == nil || h.queue == nil {
+		return connector.ActorUpdated{}, fmt.Errorf("actor repository, follow repository, and queue are required")
+	}
+	accountID = strings.TrimSpace(accountID)
+	actorID := strings.TrimSpace(command.ActorID)
+	if accountID == "" || actorID == "" {
+		return connector.ActorUpdated{}, fmt.Errorf("owner account id and actor id are required")
+	}
+	actor, err := h.repo.FindOwnedLocalByID(ctx, accountID, actorID)
+	if err != nil {
+		return connector.ActorUpdated{}, fmt.Errorf("find owned actor: %w", err)
+	}
+	if actor == nil {
+		return connector.ActorUpdated{}, fmt.Errorf("owned local actor not found: %s", actorID)
+	}
+	if actor.Host != nil || actor.IsSystemActor {
+		return connector.ActorUpdated{}, fmt.Errorf("actor is not an owned local actor: %s", actorID)
+	}
+	patch := actorPatchFromCommand(command.Patch)
+	if patch.IsEmpty() {
+		return connector.ActorUpdated{}, fmt.Errorf("at least one actor update field is required")
+	}
+	if command.Patch.IsPresent("is_locked") && (command.Patch.IsNull("is_locked") || !command.Patch.IsLocked) {
+		return connector.ActorUpdated{}, fmt.Errorf("is_locked cannot disable mandatory follow approval")
+	}
+	if command.Patch.IsPresent("is_bot") && actor.Type != "Person" && actor.Type != "Service" {
+		return connector.ActorUpdated{}, fmt.Errorf("is_bot can only update Person or Service actors")
+	}
+	emojiNames := actor.EmojiNames
+	strictEmojiNames := false
+	if command.Patch.IsPresent("emoji_names") {
+		strictEmojiNames = true
+		if command.Patch.IsNull("emoji_names") {
+			emojiNames = nil
+		} else {
+			emojiNames = command.Patch.EmojiNames
+		}
+	}
+	localEmojis, err := h.resolveActorProfileEmojis(ctx, emojiNames, strictEmojiNames)
+	if err != nil {
+		return connector.ActorUpdated{}, err
+	}
+	updated, err := h.repo.UpdateOwnedLocalActor(ctx, accountID, actorID, patch)
+	if err != nil {
+		return connector.ActorUpdated{}, fmt.Errorf("update owned actor: %w", err)
+	}
+	if updated == nil {
+		return connector.ActorUpdated{}, fmt.Errorf("owned local actor disappeared during update: %s", actorID)
+	}
+	if updated.Host != nil || updated.IsSystemActor {
+		return connector.ActorUpdated{}, fmt.Errorf("updated actor is not an owned local actor: %s", actorID)
+	}
+	published := time.Now().UTC()
+	activity := apactors.RenderUpdateAtWithEmojis(h.cfg, updated, localEmojis, "", published)
+	if activity == nil {
+		return connector.ActorUpdated{}, fmt.Errorf("render actor update: actor is missing")
+	}
+	if err := h.enqueueActorUpdateDeliveries(ctx, updated, activity); err != nil {
+		return connector.ActorUpdated{}, err
+	}
+	return connector.ActorUpdated{
+		ActorID: updated.ID,
+		URI:     updated.URI,
+		Fields:  actorUpdateChangedFields(command.Patch),
+	}, nil
+}
+
+func (h *Handler) resolveActorProfileEmojis(ctx context.Context, names []string, strict bool) ([]emojis.Emoji, error) {
+	if len(names) == 0 {
+		return []emojis.Emoji{}, nil
+	}
+	if len(names) > 100 {
+		return nil, fmt.Errorf("at most 100 actor custom emojis are allowed")
+	}
+	for _, name := range names {
+		if name != strings.TrimSpace(name) || !validLocalEmojiName(name) {
+			return nil, fmt.Errorf("invalid actor custom emoji name: %q", name)
+		}
+	}
+	if h.emojis == nil {
+		return nil, fmt.Errorf("emoji repository is not configured")
+	}
+	stored, err := h.emojis.FindLocalByNames(ctx, names)
+	if err != nil {
+		return nil, fmt.Errorf("resolve actor custom emojis: %w", err)
+	}
+	if !strict {
+		return stored, nil
+	}
+	byName := make(map[string]emojis.Emoji, len(stored))
+	for _, emoji := range stored {
+		byName[emoji.Name] = emoji
+	}
+	for _, name := range names {
+		emoji, ok := byName[name]
+		if !ok || (emoji.PublicURL == "" && emoji.OriginalURL == "") {
+			return nil, fmt.Errorf("local actor custom emoji not found: %s", name)
+		}
+	}
+	return stored, nil
+}
+
+func actorPatchFromCommand(data connector.ActorUpdateData) actors.ActorPatch {
+	patch := actors.ActorPatch{}
+	stringField := func(field, value string) actors.Optional[string] {
+		if !data.IsPresent(field) {
+			return actors.Optional[string]{}
+		}
+		if data.IsNull(field) {
+			return actors.Clear[string]()
+		}
+		return actors.Present(value)
+	}
+	stringSliceField := func(field string, value []string) actors.Optional[[]string] {
+		if !data.IsPresent(field) {
+			return actors.Optional[[]string]{}
+		}
+		if data.IsNull(field) {
+			return actors.Clear[[]string]()
+		}
+		return actors.Present(append([]string(nil), value...))
+	}
+	boolField := func(field string, value bool) actors.Optional[bool] {
+		if !data.IsPresent(field) {
+			return actors.Optional[bool]{}
+		}
+		if data.IsNull(field) {
+			return actors.Clear[bool]()
+		}
+		return actors.Present(value)
+	}
+	patch.Name = stringField("name", data.Name)
+	patch.Summary = stringField("summary", data.Summary)
+	patch.URL = stringField("url", data.URL)
+	patch.Birthday = stringField("birthday", data.Birthday)
+	patch.Location = stringField("location", data.Location)
+	patch.AvatarURL = stringField("avatar_url", data.AvatarURL)
+	patch.BannerURL = stringField("banner_url", data.BannerURL)
+	patch.Tags = stringSliceField("tags", data.Tags)
+	patch.EmojiNames = stringSliceField("emoji_names", data.EmojiNames)
+	patch.IsBot = boolField("is_bot", data.IsBot)
+	patch.IsCat = boolField("is_cat", data.IsCat)
+	patch.IsLocked = boolField("is_locked", data.IsLocked)
+	patch.IsDiscoverable = boolField("is_discoverable", data.IsDiscoverable)
+	if data.IsPresent("profile_fields") {
+		if data.IsNull("profile_fields") {
+			patch.ProfileFields = actors.Clear[[]actors.ProfileField]()
+		} else {
+			fields := make([]actors.ProfileField, 0, len(data.ProfileFields))
+			for _, field := range data.ProfileFields {
+				fields = append(fields, actors.ProfileField{Name: field.Name, Value: field.Value})
+			}
+			patch.ProfileFields = actors.Present(fields)
+		}
+	}
+	return patch
+}
+
+func actorUpdateChangedFields(data connector.ActorUpdateData) []string {
+	fields := make([]string, 0, 14)
+	for _, field := range []string{
+		"name", "summary", "url", "profile_fields", "birthday", "location", "avatar_url",
+		"banner_url", "tags", "emoji_names", "is_bot", "is_cat", "is_locked", "is_discoverable",
+	} {
+		if data.IsPresent(field) {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+func (h *Handler) enqueueActorUpdateDeliveries(ctx context.Context, actor *actors.Actor, activity map[string]any) error {
+	if actor == nil || h.follows == nil || h.queue == nil {
+		return fmt.Errorf("actor, follow repository, and queue are required for actor update delivery")
+	}
+	destinations := make(map[string]struct{})
+	afterID := ""
+	for {
+		followers, err := h.follows.ListFollowersPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
+		if err != nil {
+			return fmt.Errorf("list followers for actor update delivery: %w", err)
+		}
+		remoteIDs := make([]string, 0, len(followers))
+		for _, follow := range followers {
+			if follow.Status == follows.StatusAccepted && follow.FollowerHost != nil {
+				remoteIDs = append(remoteIDs, follow.FollowerID)
+			}
+		}
+		activeRemoteIDs, err := h.repo.FilterActiveRemoteIDs(ctx, remoteIDs)
+		if err != nil {
+			return fmt.Errorf("filter active actor update recipients: %w", err)
+		}
+		for _, follow := range followers {
+			if follow.Status != follows.StatusAccepted || follow.FollowerHost == nil {
+				continue
+			}
+			if _, active := activeRemoteIDs[follow.FollowerID]; !active {
+				continue
+			}
+			if h.cfg.IsFederationHostBlocked(*follow.FollowerHost) {
+				continue
+			}
+			blocked, err := h.isBlockedPair(ctx, actor.ID, follow.FollowerID)
+			if err != nil {
+				return err
+			}
+			if blocked {
+				continue
+			}
+			inbox := strings.TrimSpace(follow.FollowerSharedInbox)
+			isSharedInbox := inbox != ""
+			if inbox == "" {
+				inbox = strings.TrimSpace(follow.FollowerInbox)
+			}
+			if err := h.enqueueActorUpdate(ctx, actor.ID, inbox, activity, destinations, isSharedInbox); err != nil {
+				return err
+			}
+		}
+		if len(followers) < postDeliveryFollowerLimit {
+			break
+		}
+		afterID = followers[len(followers)-1].ID
+	}
+	return nil
+}
+
+func (h *Handler) enqueueActorUpdate(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}, isSharedInbox bool) error {
+	if inbox == "" {
+		return nil
+	}
+	if _, exists := destinations[inbox]; exists {
+		return nil
+	}
+	destinations[inbox] = struct{}{}
+	task := queue.NewDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if isSharedInbox {
+		task = queue.NewSharedInboxDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	}
+	if err := h.queue.Enqueue(ctx, task); err != nil {
+		return fmt.Errorf("enqueue actor Update delivery to %s: %w", inbox, err)
+	}
+	return nil
+}
+
 func (h *Handler) CreateActor(ctx context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {
 	accountID = strings.TrimSpace(accountID)
 	username := strings.TrimSpace(command.Username)
@@ -2558,6 +2804,9 @@ func (h *Handler) CreateActor(ctx context.Context, accountID string, command con
 		UsernameLower:  strings.ToLower(username),
 		Name:           name,
 		Type:           actorType,
+		IsBot:          actorType == "Service",
+		IsLocked:       true,
+		IsDiscoverable: true,
 		URI:            uri,
 		Inbox:          uri + "/inbox",
 		SharedInbox:    base + "/inbox",

@@ -46,6 +46,10 @@ func (r *CachedActorRepository) CreateOwnedLocalActor(ctx context.Context, actor
 	return r.repository.CreateOwnedLocalActor(ctx, actor)
 }
 
+func (r *CachedActorRepository) UpdateOwnedLocalActor(ctx context.Context, accountID, actorID string, patch actors.ActorPatch) (*actors.Actor, error) {
+	return r.repository.UpdateOwnedLocalActor(ctx, accountID, actorID, patch)
+}
+
 func (r *CachedActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
 	return r.repository.SuspendOwnedLocalActors(ctx, accountID)
 }

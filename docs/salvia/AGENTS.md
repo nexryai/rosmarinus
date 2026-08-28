@@ -245,6 +245,17 @@ Use these Ably message names and payloads:
 
 - `actor.create`: omit `actor_id`; `data` contains `username`, and may contain
   `name` and `type`.
+- `actor.update`: top-level `actor_id` must be an owned local Actor; `data` is
+  a non-empty patch over `name`, `summary`, `url`, `profile_fields`,
+  `birthday`, `location`, `avatar_url`, `banner_url`, `tags`, `emoji_names`,
+  `is_bot`, `is_cat`, `is_locked`, and `is_discoverable`. Omitted fields remain
+  unchanged, JSON `null` clears nullable values, and empty arrays replace prior
+  arrays. `emoji_names` contains at most 100 existing local names made from
+  ASCII letters, digits, and underscores, without surrounding colons. Identity,
+  ownership, username, raw Actor type, endpoint, and key fields cannot be sent.
+  For owned Person/Service Actors, `is_bot` controls the federated `Person`
+  versus `Service` type; other Actor types reject it. Because follow approval
+  is mandatory, `is_locked` can only be `true` and cannot be cleared.
 - `post.create`: `data` contains `note_id` and exactly one of normal content
   (`text` or `poll`) or `renote_id`, and may contain
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
@@ -304,6 +315,7 @@ Subscribe only to `rosmarinus:accounts:{accountId}:events`. Events use:
 ```
 
 Handle at least `command.succeeded`, `command.failed`, `actor.created`,
+`actor.updated`,
 `post.created`, `notification.created`, `follow.approval.requested`,
 `follow.approval.completed`, and `follow.approval.rejected`.
 `command.succeeded.data` contains `command` and optional `result`;

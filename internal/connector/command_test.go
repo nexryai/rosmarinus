@@ -66,6 +66,8 @@ type fakeCommandExecutor struct {
 	blockCalls          int
 	blockDelete         BlockDeleteCommand
 	blockDeleteCalls    int
+	actorUpdate         ActorUpdateCommand
+	actorUpdateCalls    int
 	notificationID      string
 	err                 error
 }
@@ -165,6 +167,13 @@ func (f *fakeCommandExecutor) CreateActor(ctx context.Context, accountID string,
 	return ActorCreated{ActorID: "actor-created", URI: "https://example.test/users/actor-created", Username: command.Username}, f.err
 }
 
+func (f *fakeCommandExecutor) UpdateActor(ctx context.Context, accountID string, command ActorUpdateCommand) (ActorUpdated, error) {
+	_ = ctx
+	f.actorUpdateCalls++
+	f.actorUpdate = command
+	return ActorUpdated{ActorID: command.ActorID, URI: "https://example.test/users/" + command.ActorID}, f.err
+}
+
 func (f *fakeCommandExecutor) MarkNotificationRead(_ context.Context, accountID, actorID, notificationID string) (NotificationRead, error) {
 	f.notificationID = notificationID
 	return NotificationRead{NotificationID: notificationID, IsRead: true}, f.err
@@ -183,11 +192,18 @@ type fakeCommandResultPublisher struct {
 	succeeded []publishedCommandResult
 	failed    []publishedCommandResult
 	actors    []ActorCreated
+	updated   []ActorUpdated
 }
 
 func (f *fakeCommandResultPublisher) PublishActorCreated(ctx context.Context, accountID, requestID string, created ActorCreated) error {
 	_ = ctx
 	f.actors = append(f.actors, created)
+	return nil
+}
+
+func (f *fakeCommandResultPublisher) PublishActorUpdated(ctx context.Context, accountID, requestID string, updated ActorUpdated) error {
+	_ = ctx
+	f.updated = append(f.updated, updated)
 	return nil
 }
 
@@ -276,12 +292,57 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 13 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandBlockCreate || source.names[10] != CommandBlockDelete || source.names[11] != CommandActorCreate || source.names[12] != CommandNotificationMarkRead {
+	if len(source.names) != 14 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandBlockCreate || source.names[10] != CommandBlockDelete || source.names[11] != CommandActorCreate || source.names[12] != CommandActorUpdate || source.names[13] != CommandNotificationMarkRead {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
 		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
+	}
+}
+
+func TestCommandHandlerUpdatesOwnedActorAndPreservesPatchPresence(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, &fakeReceiptStore{})
+	message := commandMessage(CommandActorUpdate, "request-update", "actor-2", map[string]any{
+		"name":    nil,
+		"summary": "hello",
+		"is_cat":  false,
+	})
+	if err := handler.Handle(context.Background(), message); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.actorUpdateCalls != 1 || executor.actorUpdate.ActorID != "actor-2" {
+		t.Fatalf("update command = %+v calls=%d", executor.actorUpdate, executor.actorUpdateCalls)
+	}
+	patch := executor.actorUpdate.Patch
+	if !patch.Present["name"] || patch.Name != "" || !patch.Present["is_cat"] || patch.IsCat {
+		t.Fatalf("explicit null/false presence lost: %+v", patch)
+	}
+	if !patch.Present["summary"] || patch.Summary != "hello" || len(patch.Present) != 3 {
+		t.Fatalf("unexpected patch presence: %+v", patch.Present)
+	}
+	if len(publisher.updated) != 1 || publisher.updated[0].ActorID != "actor-2" {
+		t.Fatalf("updated events = %+v", publisher.updated)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandActorUpdate {
+		t.Fatalf("command results = %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerRejectsImmutableOrEmptyActorUpdate(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	for _, data := range []any{
+		map[string]any{"type": "Service"},
+		map[string]any{"unknown": "value"},
+		map[string]any{"is_locked": false},
+		map[string]any{"is_locked": nil},
+		map[string]any{},
+	} {
+		if err := handler.Handle(context.Background(), commandMessage(CommandActorUpdate, "request-update", "actor-2", data)); err == nil {
+			t.Fatalf("accepted invalid actor update: %#v", data)
+		}
 	}
 }
 

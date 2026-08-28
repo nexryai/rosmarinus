@@ -514,6 +514,10 @@ func (r *resolverActorRepository) CreateOwnedLocalActor(context.Context, actors.
 	return nil, nil
 }
 
+func (r *resolverActorRepository) UpdateOwnedLocalActor(context.Context, string, string, actors.ActorPatch) (*actors.Actor, error) {
+	return nil, nil
+}
+
 func (r *resolverActorRepository) SuspendOwnedLocalActors(context.Context, string) (int64, error) {
 	return 0, nil
 }

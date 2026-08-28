@@ -25,6 +25,7 @@ const (
 	CommandBlockCreate          = "block.create"
 	CommandBlockDelete          = "block.delete"
 	CommandActorCreate          = "actor.create"
+	CommandActorUpdate          = "actor.update"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
 
@@ -67,6 +68,7 @@ type CommandExecutor interface {
 	CreateBlock(context.Context, BlockCreateCommand) (BlockCreated, error)
 	DeleteBlock(context.Context, BlockDeleteCommand) (BlockDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
+	UpdateActor(context.Context, string, ActorUpdateCommand) (ActorUpdated, error)
 	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
 }
 
@@ -74,6 +76,7 @@ type CommandResultPublisher interface {
 	PublishCommandSucceeded(context.Context, string, string, string, string, any) error
 	PublishCommandFailed(context.Context, string, string, string, string, string) error
 	PublishActorCreated(context.Context, string, string, ActorCreated) error
+	PublishActorUpdated(context.Context, string, string, ActorUpdated) error
 }
 
 type CommandHandler struct {
@@ -260,6 +263,44 @@ type ActorCreateData struct {
 	Type     string `json:"type,omitempty"`
 }
 
+// ActorUpdateData is a patch. Present records fields that were supplied by the
+// caller so that a JSON null can clear a value while an omitted field is left
+// unchanged. The wire representation remains the plain Salvia-facing object.
+type ActorUpdateData struct {
+	Name           string                  `json:"name,omitempty"`
+	Summary        string                  `json:"summary,omitempty"`
+	URL            string                  `json:"url,omitempty"`
+	ProfileFields  []ActorProfileFieldData `json:"profile_fields,omitempty"`
+	Birthday       string                  `json:"birthday,omitempty"`
+	Location       string                  `json:"location,omitempty"`
+	AvatarURL      string                  `json:"avatar_url,omitempty"`
+	BannerURL      string                  `json:"banner_url,omitempty"`
+	Tags           []string                `json:"tags,omitempty"`
+	EmojiNames     []string                `json:"emoji_names,omitempty"`
+	IsBot          bool                    `json:"is_bot,omitempty"`
+	IsCat          bool                    `json:"is_cat,omitempty"`
+	IsLocked       bool                    `json:"is_locked,omitempty"`
+	IsDiscoverable bool                    `json:"is_discoverable,omitempty"`
+	Present        map[string]bool         `json:"-"`
+	Null           map[string]bool         `json:"-"`
+}
+
+type ActorProfileFieldData struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ActorUpdateCommand struct {
+	ActorID string
+	Patch   ActorUpdateData
+}
+
+type ActorUpdated struct {
+	ActorID string   `json:"actor_id" bson:"actor_id"`
+	URI     string   `json:"uri" bson:"uri"`
+	Fields  []string `json:"fields,omitempty" bson:"fields,omitempty"`
+}
+
 type NotificationMarkReadData struct {
 	NotificationID string `json:"notification_id"`
 }
@@ -279,6 +320,192 @@ type ActorCreated struct {
 	ActorID  string `json:"actor_id" bson:"actor_id"`
 	URI      string `json:"uri" bson:"uri"`
 	Username string `json:"username" bson:"username"`
+}
+
+var actorUpdateFields = []string{
+	"name", "summary", "url", "profile_fields", "birthday", "location",
+	"avatar_url", "banner_url", "tags", "emoji_names", "is_bot", "is_cat",
+	"is_locked", "is_discoverable",
+}
+
+var actorUpdateImmutableFields = map[string]struct{}{
+	"id": {}, "actor_id": {}, "username": {}, "username_lower": {}, "type": {},
+	"owner_account_id": {}, "uri": {}, "inbox": {}, "shared_inbox": {},
+	"followers_uri": {}, "following_uri": {}, "featured_uri": {},
+	"public_key_id": {}, "public_key_pem": {}, "private_key_pem": {},
+}
+
+var actorUpdateMutableFields = func() map[string]struct{} {
+	fields := make(map[string]struct{}, len(actorUpdateFields))
+	for _, field := range actorUpdateFields {
+		fields[field] = struct{}{}
+	}
+	return fields
+}()
+
+func (d ActorUpdateData) HasChanges() bool {
+	for _, field := range actorUpdateFields {
+		if d.fieldPresent(field) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d ActorUpdateData) fieldPresent(field string) bool {
+	if d.Present != nil {
+		return d.Present[field]
+	}
+	switch field {
+	case "name":
+		return d.Name != ""
+	case "summary":
+		return d.Summary != ""
+	case "url":
+		return d.URL != ""
+	case "profile_fields":
+		return len(d.ProfileFields) > 0
+	case "birthday":
+		return d.Birthday != ""
+	case "location":
+		return d.Location != ""
+	case "avatar_url":
+		return d.AvatarURL != ""
+	case "banner_url":
+		return d.BannerURL != ""
+	case "tags":
+		return len(d.Tags) > 0
+	case "emoji_names":
+		return len(d.EmojiNames) > 0
+	case "is_bot":
+		return d.IsBot
+	case "is_cat":
+		return d.IsCat
+	case "is_locked":
+		return d.IsLocked
+	case "is_discoverable":
+		return d.IsDiscoverable
+	default:
+		return false
+	}
+}
+
+func (d ActorUpdateData) IsPresent(field string) bool {
+	return d.fieldPresent(field)
+}
+
+func (d ActorUpdateData) IsNull(field string) bool {
+	return d.Present != nil && d.Present[field] && d.Null != nil && d.Null[field]
+}
+
+func (d ActorUpdateData) MarshalJSON() ([]byte, error) {
+	values := make(map[string]any)
+	value := func(field string, value any) any {
+		if d.IsNull(field) {
+			return nil
+		}
+		return value
+	}
+	if d.fieldPresent("name") {
+		values["name"] = value("name", d.Name)
+	}
+	if d.fieldPresent("summary") {
+		values["summary"] = value("summary", d.Summary)
+	}
+	if d.fieldPresent("url") {
+		values["url"] = value("url", d.URL)
+	}
+	if d.fieldPresent("profile_fields") {
+		values["profile_fields"] = value("profile_fields", d.ProfileFields)
+	}
+	if d.fieldPresent("birthday") {
+		values["birthday"] = value("birthday", d.Birthday)
+	}
+	if d.fieldPresent("location") {
+		values["location"] = value("location", d.Location)
+	}
+	if d.fieldPresent("avatar_url") {
+		values["avatar_url"] = value("avatar_url", d.AvatarURL)
+	}
+	if d.fieldPresent("banner_url") {
+		values["banner_url"] = value("banner_url", d.BannerURL)
+	}
+	if d.fieldPresent("tags") {
+		values["tags"] = value("tags", d.Tags)
+	}
+	if d.fieldPresent("emoji_names") {
+		values["emoji_names"] = value("emoji_names", d.EmojiNames)
+	}
+	if d.fieldPresent("is_bot") {
+		values["is_bot"] = value("is_bot", d.IsBot)
+	}
+	if d.fieldPresent("is_cat") {
+		values["is_cat"] = value("is_cat", d.IsCat)
+	}
+	if d.fieldPresent("is_locked") {
+		values["is_locked"] = value("is_locked", d.IsLocked)
+	}
+	if d.fieldPresent("is_discoverable") {
+		values["is_discoverable"] = value("is_discoverable", d.IsDiscoverable)
+	}
+	return json.Marshal(values)
+}
+
+func (d *ActorUpdateData) UnmarshalJSON(raw []byte) error {
+	var decoded struct {
+		Name           string                  `json:"name"`
+		Summary        string                  `json:"summary"`
+		URL            string                  `json:"url"`
+		ProfileFields  []ActorProfileFieldData `json:"profile_fields"`
+		Birthday       string                  `json:"birthday"`
+		Location       string                  `json:"location"`
+		AvatarURL      string                  `json:"avatar_url"`
+		BannerURL      string                  `json:"banner_url"`
+		Tags           []string                `json:"tags"`
+		EmojiNames     []string                `json:"emoji_names"`
+		IsBot          bool                    `json:"is_bot"`
+		IsCat          bool                    `json:"is_cat"`
+		IsLocked       bool                    `json:"is_locked"`
+		IsDiscoverable bool                    `json:"is_discoverable"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return fmt.Errorf("decode actor update patch: %w", err)
+	}
+	var supplied map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &supplied); err != nil {
+		return fmt.Errorf("decode actor update fields: %w", err)
+	}
+	for field := range supplied {
+		if _, immutable := actorUpdateImmutableFields[field]; immutable {
+			return fmt.Errorf("actor update field %q is immutable", field)
+		}
+		if _, mutable := actorUpdateMutableFields[field]; !mutable {
+			return fmt.Errorf("unsupported actor update field %q", field)
+		}
+	}
+	*d = ActorUpdateData{
+		Name:           decoded.Name,
+		Summary:        decoded.Summary,
+		URL:            decoded.URL,
+		ProfileFields:  decoded.ProfileFields,
+		Birthday:       decoded.Birthday,
+		Location:       decoded.Location,
+		AvatarURL:      decoded.AvatarURL,
+		BannerURL:      decoded.BannerURL,
+		Tags:           decoded.Tags,
+		EmojiNames:     decoded.EmojiNames,
+		IsBot:          decoded.IsBot,
+		IsCat:          decoded.IsCat,
+		IsLocked:       decoded.IsLocked,
+		IsDiscoverable: decoded.IsDiscoverable,
+		Present:        make(map[string]bool, len(supplied)),
+		Null:           make(map[string]bool),
+	}
+	for field := range supplied {
+		d.Present[field] = true
+		d.Null[field] = string(supplied[field]) == "null"
+	}
+	return nil
 }
 
 func NewCommandHandler(source CommandSource, accounts AccountLookup, actorLookup ActorOwnershipLookup, executor CommandExecutor, publisher CommandResultPublisher, receipts CommandReceiptStore, logger *log.Logger, receiptTTL time.Duration) *CommandHandler {
@@ -302,7 +529,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandNotificationMarkRead}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -403,6 +630,15 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 			}
 			if err := h.publisher.PublishActorCreated(ctx, accountRecord.ID, envelope.RequestID, created); err != nil {
 				return fmt.Errorf("publish actor.created event: %w", err)
+			}
+		}
+		if name == CommandActorUpdate {
+			updated, ok := result.(ActorUpdated)
+			if !ok {
+				return fmt.Errorf("actor.update returned unexpected result type %T", result)
+			}
+			if err := h.publisher.PublishActorUpdated(ctx, accountRecord.ID, envelope.RequestID, updated); err != nil {
+				return fmt.Errorf("publish actor.updated event: %w", err)
 			}
 		}
 		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, resultActorID, name, result); err != nil {
@@ -617,6 +853,19 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 			Type:     command.Type,
 		})
 		return result, result.ActorID, err
+	case CommandActorUpdate:
+		var command ActorUpdateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if !command.HasChanges() {
+			return nil, actorID, fmt.Errorf("at least one actor update field is required")
+		}
+		if command.IsPresent("is_locked") && (command.IsNull("is_locked") || !command.IsLocked) {
+			return nil, actorID, fmt.Errorf("is_locked cannot disable mandatory follow approval")
+		}
+		result, err := h.executor.UpdateActor(ctx, accountID, ActorUpdateCommand{ActorID: actorID, Patch: command})
+		return result, actorID, err
 	default:
 		return nil, actorID, fmt.Errorf("unknown connector command: %s", name)
 	}
@@ -650,7 +899,7 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandNotificationMarkRead:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandNotificationMarkRead:
 		return true
 	default:
 		return false

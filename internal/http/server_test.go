@@ -71,6 +71,18 @@ func (f fakeEmojiLookup) FindLocalByName(_ context.Context, name string) (*domai
 	return nil, nil
 }
 
+func (f fakeEmojiLookup) FindLocalByNames(_ context.Context, names []string) ([]domainemojis.Emoji, error) {
+	if f.emoji == nil {
+		return nil, nil
+	}
+	for _, name := range names {
+		if f.emoji.Name == name {
+			return []domainemojis.Emoji{*f.emoji}, nil
+		}
+	}
+	return nil, nil
+}
+
 func TestEmojiByNameRendersLocalActivityPubEmoji(t *testing.T) {
 	updatedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
 	lookup := fakeEmojiLookup{emoji: &domainemojis.Emoji{
@@ -324,8 +336,14 @@ func TestActorByID(t *testing.T) {
 		SharedInbox:  "https://example.test/inbox",
 		PublicKeyID:  "https://example.test/users/actor-id#main-key",
 		PublicKeyPEM: "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n",
+		EmojiNames:   []string{"party"},
 	}}
-	NewHandler(testConfig(), nil, lookup, nil).ServeHTTP(rec, req)
+	emojiLookup := fakeEmojiLookup{emoji: &domainemojis.Emoji{
+		Name: "party", URI: "https://example.test/emojis/party",
+		PublicURL: "https://example.test/media/party.webp", MediaType: "image/webp",
+		UpdatedAt: time.Date(2026, 8, 28, 1, 2, 3, 0, time.UTC),
+	}}
+	NewHandlerWithAllStores(testConfig(), nil, lookup, nil, nil, nil, nil, nil, nil, emojiLookup).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -340,6 +358,9 @@ func TestActorByID(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"publicKeyPem":"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"`) {
 		t.Fatalf("unexpected public key body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"name":":party:"`) || !strings.Contains(rec.Body.String(), `"url":"https://example.test/media/party.webp"`) {
+		t.Fatalf("unexpected Actor emoji body: %s", rec.Body.String())
 	}
 }
 
