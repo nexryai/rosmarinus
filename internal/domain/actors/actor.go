@@ -44,6 +44,7 @@ type Actor struct {
 	PublicKeyPEM    string
 	PrivateKeyPEM   string
 	IsSuspended     bool
+	DeletedAt       *time.Time
 }
 
 type ProfileField struct {
@@ -263,8 +264,11 @@ type Lookup interface {
 type Repository interface {
 	Lookup
 	FindOwnedLocalByID(context.Context, string, string) (*Actor, error)
+	FindOwnedLocalByIDIncludingDeleted(context.Context, string, string) (*Actor, error)
+	FindLocalForDeliveryByID(context.Context, string) (*Actor, error)
 	CreateOwnedLocalActor(context.Context, Actor) (*Actor, error)
 	UpdateOwnedLocalActor(context.Context, string, string, ActorPatch) (*Actor, error)
+	MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*Actor, error)
 	SuspendOwnedLocalActors(context.Context, string) (int64, error)
 	ListOwnedAccountIDs(context.Context) ([]string, error)
 	FindByURI(context.Context, string) (*Actor, error)

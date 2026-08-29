@@ -72,6 +72,14 @@ func TestNewAccountDeleteTask(t *testing.T) {
 	}
 }
 
+func TestNewLocalAccountDeleteTask(t *testing.T) {
+	task := NewLocalAccountDeleteTask("actor-id", "https://local.example/users/alice")
+	payload, ok := task.Payload.(AccountDeletePayload)
+	if !ok || !payload.Local || payload.Version != 1 || payload.ActorID != "actor-id" {
+		t.Fatalf("unexpected local account delete payload: %#v", task.Payload)
+	}
+}
+
 func TestNewPollEndedTask(t *testing.T) {
 	task := NewPollEndedTask("poll-note", 10*time.Minute)
 	if task.Type != TaskPollEnded || task.Queue != QueuePollEnded || task.ProcessIn != 10*time.Minute {

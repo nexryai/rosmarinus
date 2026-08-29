@@ -110,6 +110,12 @@ read-only federation state. A non-null `movedAt` is the signal that Rosmarinus
 accepted the reciprocal alias proof; Salvia must not validate or write account
 migrations itself.
 
+Both local and remote Actor projections may contain Rosmarinus-owned
+`isSuspended` and `deletedAt`. Exclude either state from normal Actor selection
+and federation actions. A deleted local Actor remains as a tombstone so
+Rosmarinus can sign queued deletion retries; Salvia must not expose its retained
+key or treat the document as recoverable.
+
 Treat a suspended remote Actor as unavailable immediately. Its Notes,
 reactions, Follow/Block relationships, polls, and related notifications may be
 soft-deleted or removed asynchronously by Rosmarinus account cleanup; do not
@@ -256,6 +262,10 @@ Use these Ably message names and payloads:
   For owned Person/Service Actors, `is_bot` controls the federated `Person`
   versus `Service` type; other Actor types reject it. Because follow approval
   is mandatory, `is_locked` can only be `true` and cannot be cleared.
+- `actor.delete`: top-level `actor_id` must be an owned local Actor and `data`
+  must be empty. Rosmarinus immediately sets `isSuspended` and `deletedAt`,
+  federates `Delete(Actor)`, and asynchronously cleans Actor-owned federation
+  state. Never update those fields directly from Salvia.
 - `post.create`: `data` contains `note_id` and exactly one of normal content
   (`text` or `poll`) or `renote_id`, and may contain
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
@@ -315,7 +325,7 @@ Subscribe only to `rosmarinus:accounts:{accountId}:events`. Events use:
 ```
 
 Handle at least `command.succeeded`, `command.failed`, `actor.created`,
-`actor.updated`,
+`actor.updated`, `actor.deleted`,
 `post.created`, `notification.created`, `follow.approval.requested`,
 `follow.approval.completed`, and `follow.approval.rejected`.
 `command.succeeded.data` contains `command` and optional `result`;

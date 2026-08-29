@@ -269,6 +269,24 @@ func RenderUpdateWithID(cfg config.Config, actor *domainactors.Actor, activityID
 	return RenderUpdateAt(cfg, actor, activityID, published)
 }
 
+func RenderDelete(actor *domainactors.Actor, deletedAt time.Time) map[string]any {
+	if actor == nil || actor.URI == "" {
+		return nil
+	}
+	if deletedAt.IsZero() {
+		deletedAt = time.Now().UTC()
+	}
+	return withActivityContext(map[string]any{
+		// Current Misskey adds a random ID to its ID-less Delete renderer. A
+		// stable local ID makes retries and peer-side deduplication deterministic.
+		"id":        actor.URI + "#delete",
+		"type":      "Delete",
+		"actor":     actor.URI,
+		"object":    actor.URI,
+		"published": deletedAt.UTC().Format(time.RFC3339Nano),
+	})
+}
+
 func RenderPublicKey(actor *domainactors.Actor) map[string]any {
 	if actor == nil {
 		return nil

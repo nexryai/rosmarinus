@@ -121,7 +121,30 @@ func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, act
 		"host":           nil,
 		"isSystemActor":  bson.M{"$ne": true},
 		"isSuspended":    false,
+		"deletedAt":      nil,
 	})
+}
+
+func (r *ActorRepository) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	actorID = strings.TrimSpace(actorID)
+	if accountID == "" || actorID == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{
+		"_id":            actorID,
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  bson.M{"$ne": true},
+	})
+}
+
+func (r *ActorRepository) FindLocalForDeliveryByID(ctx context.Context, actorID string) (*actors.Actor, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{"_id": actorID, "host": nil})
 }
 
 func (r *ActorRepository) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
@@ -187,6 +210,35 @@ func (r *ActorRepository) UpdateOwnedLocalActor(ctx context.Context, accountID, 
 		return nil, nil
 	}
 	return r.FindOwnedLocalByID(ctx, accountID, actorID)
+}
+
+func (r *ActorRepository) MarkOwnedLocalActorDeleted(ctx context.Context, accountID, actorID string, deletedAt time.Time) (*actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	actorID = strings.TrimSpace(actorID)
+	if accountID == "" || actorID == "" {
+		return nil, fmt.Errorf("owner account id and actor id are required")
+	}
+	if deletedAt.IsZero() {
+		deletedAt = time.Now().UTC()
+	}
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id":            actorID,
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  bson.M{"$ne": true},
+		"deletedAt":      nil,
+	}, bson.M{"$set": bson.M{
+		"isSuspended": true,
+		"suspendedAt": deletedAt.UTC(),
+		"deletedAt":   deletedAt.UTC(),
+	}})
+	if err != nil {
+		return nil, err
+	}
+	if result.MatchedCount == 0 {
+		return r.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
+	}
+	return r.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
 }
 
 func actorPatchUpdate(patch actors.ActorPatch) (bson.M, bson.M) {
@@ -287,6 +339,7 @@ func (r *ActorRepository) FindLocalByID(ctx context.Context, id string) (*actors
 		"_id":         id,
 		"host":        nil,
 		"isSuspended": false,
+		"deletedAt":   nil,
 	})
 }
 
@@ -306,6 +359,7 @@ func (r *ActorRepository) FindLocalByUsername(ctx context.Context, username stri
 		"usernameLower": strings.ToLower(username),
 		"host":          nil,
 		"isSuspended":   false,
+		"deletedAt":     nil,
 	})
 }
 
@@ -529,6 +583,7 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		PublicKeyPEM:    doc.PublicKeyPEM,
 		PrivateKeyPEM:   doc.PrivateKeyPEM,
 		IsSuspended:     doc.IsSuspended,
+		DeletedAt:       doc.DeletedAt,
 	}, nil
 }
 
@@ -570,6 +625,7 @@ func fromActor(actor actors.Actor) actorDocument {
 		PublicKeyPEM:    actor.PublicKeyPEM,
 		PrivateKeyPEM:   actor.PrivateKeyPEM,
 		IsSuspended:     actor.IsSuspended,
+		DeletedAt:       actor.DeletedAt,
 	}
 }
 

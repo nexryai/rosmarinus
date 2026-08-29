@@ -510,11 +510,23 @@ func (r *resolverActorRepository) FindOwnedLocalByID(context.Context, string, st
 	return nil, nil
 }
 
+func (r *resolverActorRepository) FindOwnedLocalByIDIncludingDeleted(context.Context, string, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindLocalForDeliveryByID(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
 func (r *resolverActorRepository) CreateOwnedLocalActor(context.Context, actors.Actor) (*actors.Actor, error) {
 	return nil, nil
 }
 
 func (r *resolverActorRepository) UpdateOwnedLocalActor(context.Context, string, string, actors.ActorPatch) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*actors.Actor, error) {
 	return nil, nil
 }
 

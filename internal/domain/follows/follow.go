@@ -36,6 +36,7 @@ type Repository interface {
 	FindByRemoteActivityID(context.Context, string) (*Follow, error)
 	ListFollowers(context.Context, string, int) ([]Follow, error)
 	ListFollowersPage(context.Context, string, string, int) ([]Follow, error)
+	ListFollowingPage(context.Context, string, string, int) ([]Follow, error)
 	Upsert(context.Context, Follow) (*Follow, error)
 	Approve(context.Context, string, string) (*Follow, error)
 	Delete(context.Context, string, string, string) error

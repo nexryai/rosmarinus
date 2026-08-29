@@ -342,15 +342,22 @@ func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task)
 	if actor == nil {
 		return nil
 	}
-	if actor.ID != payload.ActorID || actor.Host == nil || !actor.IsSuspended {
-		return fmt.Errorf("account delete task actor does not match a deleted remote actor")
+	if actor.ID != payload.ActorID || !actor.IsSuspended || actor.DeletedAt == nil {
+		return fmt.Errorf("account delete task actor does not match a deleted actor")
 	}
-	result, err := h.cleanup.CleanupRemoteActor(ctx, actor.ID)
+	if payload.Local {
+		if actor.Host != nil {
+			return fmt.Errorf("local account delete task actor is remote")
+		}
+	} else if actor.Host == nil {
+		return fmt.Errorf("remote account delete task actor is local")
+	}
+	result, err := h.cleanup.CleanupActor(ctx, actor.ID)
 	if err != nil {
 		return err
 	}
 	if h.logger != nil {
-		h.logger.Printf("account-delete: cleaned actor=%s notes=%d reactions=%d follows=%d blocks=%d polls=%d notifications=%d", actor.ID, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Polls, result.Notifications)
+		h.logger.Printf("account-delete: cleaned actor=%s local=%t notes=%d reactions=%d follows=%d blocks=%d polls=%d notifications=%d", actor.ID, payload.Local, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Polls, result.Notifications)
 	}
 	return nil
 }
@@ -434,12 +441,21 @@ func (h *Handler) HandleDeliverTask(ctx context.Context, task *asynq.Task) error
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return fmt.Errorf("decode deliver task: %w", err)
 	}
-	actor, err := h.repo.FindLocalByID(ctx, payload.ActorID)
+	if payload.Version != 1 {
+		return fmt.Errorf("unsupported deliver task payload version: %d", payload.Version)
+	}
+	actor, err := h.repo.FindLocalForDeliveryByID(ctx, payload.ActorID)
 	if err != nil {
 		return err
 	}
 	if actor == nil {
 		return fmt.Errorf("deliver actor not found: %s", payload.ActorID)
+	}
+	if actor.IsSuspended {
+		objectURI, objectErr := aptypes.GetAPID(payload.Object["object"])
+		if actor.DeletedAt == nil || !aptypes.IsDelete(payload.Object) || objectErr != nil || objectURI != actor.URI {
+			return fmt.Errorf("deliver actor is suspended: %s", payload.ActorID)
+		}
 	}
 	target, err := url.Parse(payload.To)
 	if err != nil || target.Hostname() == "" {
@@ -2782,7 +2798,7 @@ func (h *Handler) enqueueActorUpdateDeliveries(ctx context.Context, actor *actor
 			if inbox == "" {
 				inbox = strings.TrimSpace(follow.FollowerInbox)
 			}
-			if err := h.enqueueActorUpdate(ctx, actor.ID, inbox, activity, destinations, isSharedInbox); err != nil {
+			if err := h.enqueueActorActivity(ctx, actor.ID, inbox, activity, destinations, isSharedInbox); err != nil {
 				return err
 			}
 		}
@@ -2794,7 +2810,7 @@ func (h *Handler) enqueueActorUpdateDeliveries(ctx context.Context, actor *actor
 	return nil
 }
 
-func (h *Handler) enqueueActorUpdate(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}, isSharedInbox bool) error {
+func (h *Handler) enqueueActorActivity(ctx context.Context, actorID, inbox string, activity map[string]any, destinations map[string]struct{}, isSharedInbox bool) error {
 	if inbox == "" {
 		return nil
 	}
@@ -2807,9 +2823,121 @@ func (h *Handler) enqueueActorUpdate(ctx context.Context, actorID, inbox string,
 		task = queue.NewSharedInboxDeliverTask(actorID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
 	}
 	if err := h.queue.Enqueue(ctx, task); err != nil {
-		return fmt.Errorf("enqueue actor Update delivery to %s: %w", inbox, err)
+		return fmt.Errorf("enqueue actor activity delivery to %s: %w", inbox, err)
 	}
 	return nil
+}
+
+func (h *Handler) DeleteActor(ctx context.Context, accountID string, command connector.ActorDeleteCommand) (connector.ActorDeleted, error) {
+	if h.repo == nil || h.follows == nil || h.queue == nil {
+		return connector.ActorDeleted{}, fmt.Errorf("actor repository, follow repository, and queue are required")
+	}
+	accountID = strings.TrimSpace(accountID)
+	actorID := strings.TrimSpace(command.ActorID)
+	if accountID == "" || actorID == "" {
+		return connector.ActorDeleted{}, fmt.Errorf("owner account id and actor id are required")
+	}
+	actor, err := h.repo.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
+	if err != nil {
+		return connector.ActorDeleted{}, fmt.Errorf("find owned actor: %w", err)
+	}
+	if actor == nil || actor.Host != nil || actor.IsSystemActor {
+		return connector.ActorDeleted{}, fmt.Errorf("owned local actor not found: %s", actorID)
+	}
+
+	deletedAt := time.Now().UTC()
+	if actor.DeletedAt != nil {
+		deletedAt = actor.DeletedAt.UTC()
+	} else {
+		actor, err = h.repo.MarkOwnedLocalActorDeleted(ctx, accountID, actorID, deletedAt)
+		if err != nil {
+			return connector.ActorDeleted{}, fmt.Errorf("mark owned actor deleted: %w", err)
+		}
+		if actor == nil || actor.DeletedAt == nil {
+			return connector.ActorDeleted{}, fmt.Errorf("owned local actor disappeared during deletion: %s", actorID)
+		}
+		deletedAt = actor.DeletedAt.UTC()
+	}
+	activity := apactors.RenderDelete(actor, deletedAt)
+	if activity == nil {
+		return connector.ActorDeleted{}, fmt.Errorf("render actor delete: actor is missing")
+	}
+	if err := h.enqueueActorDeleteDeliveries(ctx, actor, activity); err != nil {
+		return connector.ActorDeleted{}, err
+	}
+	if err := h.queue.Enqueue(ctx, queue.NewLocalAccountDeleteTask(actor.ID, actor.URI)); err != nil {
+		return connector.ActorDeleted{}, fmt.Errorf("enqueue local account cleanup: %w", err)
+	}
+	return connector.ActorDeleted{ActorID: actor.ID, URI: actor.URI, DeletedAt: deletedAt}, nil
+}
+
+func (h *Handler) enqueueActorDeleteDeliveries(ctx context.Context, actor *actors.Actor, activity map[string]any) error {
+	destinations := make(map[string]struct{})
+	if err := h.enqueueActorRelationshipPages(ctx, actor, activity, destinations, true); err != nil {
+		return err
+	}
+	return h.enqueueActorRelationshipPages(ctx, actor, activity, destinations, false)
+}
+
+func (h *Handler) enqueueActorRelationshipPages(ctx context.Context, actor *actors.Actor, activity map[string]any, destinations map[string]struct{}, followers bool) error {
+	afterID := ""
+	for {
+		var relationships []follows.Follow
+		var err error
+		if followers {
+			relationships, err = h.follows.ListFollowersPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
+		} else {
+			relationships, err = h.follows.ListFollowingPage(ctx, actor.ID, afterID, postDeliveryFollowerLimit)
+		}
+		if err != nil {
+			return fmt.Errorf("list actor delete relationships: %w", err)
+		}
+		remoteIDs := make([]string, 0, len(relationships))
+		for _, relationship := range relationships {
+			if followers && relationship.FollowerHost != nil {
+				remoteIDs = append(remoteIDs, relationship.FollowerID)
+			} else if !followers && relationship.FolloweeHost != nil {
+				remoteIDs = append(remoteIDs, relationship.FolloweeID)
+			}
+		}
+		active, err := h.repo.FilterActiveRemoteIDs(ctx, remoteIDs)
+		if err != nil {
+			return fmt.Errorf("filter active actor delete recipients: %w", err)
+		}
+		for _, relationship := range relationships {
+			remoteID := relationship.FolloweeID
+			host := relationship.FolloweeHost
+			inbox := strings.TrimSpace(relationship.FolloweeSharedInbox)
+			individualInbox := strings.TrimSpace(relationship.FolloweeInbox)
+			if followers {
+				remoteID = relationship.FollowerID
+				host = relationship.FollowerHost
+				inbox = strings.TrimSpace(relationship.FollowerSharedInbox)
+				individualInbox = strings.TrimSpace(relationship.FollowerInbox)
+			}
+			if host == nil || h.cfg.IsFederationHostBlocked(*host) {
+				continue
+			}
+			if _, ok := active[remoteID]; !ok {
+				continue
+			}
+			isSharedInbox := inbox != ""
+			if inbox == "" {
+				inbox = individualInbox
+			}
+			if err := h.enqueueActorActivity(ctx, actor.ID, inbox, activity, destinations, isSharedInbox); err != nil {
+				return err
+			}
+		}
+		if len(relationships) < postDeliveryFollowerLimit {
+			return nil
+		}
+		nextAfterID := relationships[len(relationships)-1].ID
+		if nextAfterID == "" || nextAfterID == afterID {
+			return fmt.Errorf("actor delete relationship pagination did not advance")
+		}
+		afterID = nextAfterID
+	}
 }
 
 func (h *Handler) CreateActor(ctx context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {

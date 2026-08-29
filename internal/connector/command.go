@@ -26,6 +26,7 @@ const (
 	CommandBlockDelete          = "block.delete"
 	CommandActorCreate          = "actor.create"
 	CommandActorUpdate          = "actor.update"
+	CommandActorDelete          = "actor.delete"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
 
@@ -53,6 +54,7 @@ type AccountLookup interface {
 
 type ActorOwnershipLookup interface {
 	FindOwnedLocalByID(context.Context, string, string) (*actors.Actor, error)
+	FindOwnedLocalByIDIncludingDeleted(context.Context, string, string) (*actors.Actor, error)
 }
 
 type CommandExecutor interface {
@@ -69,6 +71,7 @@ type CommandExecutor interface {
 	DeleteBlock(context.Context, BlockDeleteCommand) (BlockDeleted, error)
 	CreateActor(context.Context, string, ActorCreateCommand) (ActorCreated, error)
 	UpdateActor(context.Context, string, ActorUpdateCommand) (ActorUpdated, error)
+	DeleteActor(context.Context, string, ActorDeleteCommand) (ActorDeleted, error)
 	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
 }
 
@@ -77,6 +80,7 @@ type CommandResultPublisher interface {
 	PublishCommandFailed(context.Context, string, string, string, string, string) error
 	PublishActorCreated(context.Context, string, string, ActorCreated) error
 	PublishActorUpdated(context.Context, string, string, ActorUpdated) error
+	PublishActorDeleted(context.Context, string, string, ActorDeleted) error
 }
 
 type CommandHandler struct {
@@ -299,6 +303,16 @@ type ActorUpdated struct {
 	ActorID string   `json:"actor_id" bson:"actor_id"`
 	URI     string   `json:"uri" bson:"uri"`
 	Fields  []string `json:"fields,omitempty" bson:"fields,omitempty"`
+}
+
+type ActorDeleteCommand struct {
+	ActorID string
+}
+
+type ActorDeleted struct {
+	ActorID   string    `json:"actor_id" bson:"actor_id"`
+	URI       string    `json:"uri" bson:"uri"`
+	DeletedAt time.Time `json:"deleted_at" bson:"deleted_at"`
 }
 
 type NotificationMarkReadData struct {
@@ -529,7 +543,7 @@ func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
 	if h == nil || h.source == nil {
 		return func() {}, nil
 	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandNotificationMarkRead}
+	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandActorDelete, CommandNotificationMarkRead}
 	unsubscribes := make([]func(), 0, len(names))
 	for _, name := range names {
 		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
@@ -573,7 +587,7 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 	}
 	actorID := envelope.ActorID
 	if name != CommandActorCreate {
-		actor, err := h.authorizeActor(ctx, accountRecord.ID, envelope.ActorID)
+		actor, err := h.authorizeActor(ctx, accountRecord.ID, envelope.ActorID, name == CommandActorDelete)
 		if err != nil {
 			return err
 		}
@@ -641,6 +655,15 @@ func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) err
 				return fmt.Errorf("publish actor.updated event: %w", err)
 			}
 		}
+		if name == CommandActorDelete {
+			deleted, ok := result.(ActorDeleted)
+			if !ok {
+				return fmt.Errorf("actor.delete returned unexpected result type %T", result)
+			}
+			if err := h.publisher.PublishActorDeleted(ctx, accountRecord.ID, envelope.RequestID, deleted); err != nil {
+				return fmt.Errorf("publish actor.deleted event: %w", err)
+			}
+		}
 		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, resultActorID, name, result); err != nil {
 			return fmt.Errorf("publish connector command result: %w", err)
 		}
@@ -666,7 +689,7 @@ func (h *CommandHandler) authorizeAccount(ctx context.Context, clientID string) 
 	return accountRecord, nil
 }
 
-func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID string, includeDeleted bool) (*actors.Actor, error) {
 	actorID = strings.TrimSpace(actorID)
 	if actorID == "" {
 		return nil, fmt.Errorf("connector command actor_id is required")
@@ -674,7 +697,13 @@ func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID 
 	if h.actors == nil {
 		return nil, fmt.Errorf("actor ownership lookup is not configured")
 	}
-	actor, err := h.actors.FindOwnedLocalByID(ctx, accountID, actorID)
+	var actor *actors.Actor
+	var err error
+	if includeDeleted {
+		actor, err = h.actors.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
+	} else {
+		actor, err = h.actors.FindOwnedLocalByID(ctx, accountID, actorID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("authorize connector actor: %w", err)
 	}
@@ -866,6 +895,12 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		}
 		result, err := h.executor.UpdateActor(ctx, accountID, ActorUpdateCommand{ActorID: actorID, Patch: command})
 		return result, actorID, err
+	case CommandActorDelete:
+		if err := requireEmptyCommandData(data); err != nil {
+			return nil, actorID, err
+		}
+		result, err := h.executor.DeleteActor(ctx, accountID, ActorDeleteCommand{ActorID: actorID})
+		return result, actorID, err
 	default:
 		return nil, actorID, fmt.Errorf("unknown connector command: %s", name)
 	}
@@ -899,11 +934,29 @@ func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID
 
 func supportedCommand(name string) bool {
 	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandNotificationMarkRead:
+	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandActorDelete, CommandNotificationMarkRead:
 		return true
 	default:
 		return false
 	}
+}
+
+func requireEmptyCommandData(data any) error {
+	if data == nil {
+		return nil
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("encode connector command data: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return fmt.Errorf("connector command data must be an object: %w", err)
+	}
+	if len(fields) != 0 {
+		return fmt.Errorf("actor.delete data must be empty")
+	}
+	return nil
 }
 
 func decodeEnvelope(data any) (CommandEnvelope, error) {

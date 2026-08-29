@@ -52,7 +52,7 @@ func (r *AccountCleanupRepository) CleanupNote(ctx context.Context, noteID strin
 	return result, nil
 }
 
-func (r *AccountCleanupRepository) CleanupRemoteActor(ctx context.Context, actorID string) (cleanup.Result, error) {
+func (r *AccountCleanupRepository) CleanupActor(ctx context.Context, actorID string) (cleanup.Result, error) {
 	if actorID == "" {
 		return cleanup.Result{}, fmt.Errorf("cleanup actor id is required")
 	}

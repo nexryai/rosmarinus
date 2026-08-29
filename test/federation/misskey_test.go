@@ -906,6 +906,32 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	); err != nil || claimed {
 		t.Fatalf("completed Misskey activity was claimable again: claimed=%t err=%v", claimed, err)
 	}
+
+	// Phase 22: delete the account-owned local Actor, verifying Rosmarinus hides
+	// it immediately and Misskey applies the signed Delete(Actor) delivered with
+	// the retained tombstone signing key.
+	deletedOwned, err := worker.DeleteActor(ctx, "federation-account", connector.ActorDeleteCommand{ActorID: ownedActor.ID})
+	if err != nil {
+		t.Fatalf("delete account-owned Actor: %v", err)
+	}
+	if deletedOwned.ActorID != ownedActor.ID || deletedOwned.URI != ownedActor.URI || deletedOwned.DeletedAt.IsZero() {
+		t.Fatalf("unexpected deleted Actor result: %+v", deletedOwned)
+	}
+	if active, findErr := actorRepo.FindOwnedLocalByID(ctx, "federation-account", ownedActor.ID); findErr != nil || active != nil {
+		t.Fatalf("deleted account-owned Actor remains active: actor=%+v err=%v", active, findErr)
+	}
+	if status := misskey.getStatus(ctx, ownedActor.URI); status != http.StatusNotFound {
+		t.Fatalf("deleted Actor ActivityPub endpoint status=%d, want %d", status, http.StatusNotFound)
+	}
+	waitFor(t, ctx, "Misskey applies Delete(Actor)", func() bool {
+		var shown struct {
+			IsDeleted bool `json:"isDeleted"`
+		}
+		status := misskey.callStatus(ctx, "users/show", map[string]any{
+			"i": directRecipient.Token, "userId": ownedMisskeyID,
+		}, &shown)
+		return status >= http.StatusOK && status < http.StatusMultipleChoices && shown.IsDeleted
+	})
 }
 
 type misskeyClient struct {

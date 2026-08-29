@@ -191,6 +191,9 @@ and ambiguous network outcomes recover through idempotent retry and DB refresh.
 
 - [ ] Handle `actor.created` and the associated `command.succeeded` event,
       then re-query the Actor collection before selecting the new Actor.
+- [ ] Add an explicit destructive Actor-close flow that publishes
+      `actor.delete` with empty data, handles `actor.deleted`, and removes the
+      tombstoned Actor from the switcher after re-querying MongoDB.
 - [ ] Display authorization errors if an Actor was deleted, moved, or no
       longer belongs to the account; do not attempt to repair ownership from
       Salvia.
@@ -241,6 +244,9 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       profile patch. Preserve omitted versus JSON-null fields, allow empty
       arrays as explicit replacements, never send immutable identity/key fields,
       and never send `is_locked: false` or `null`.
+- [ ] Implement `actor.delete` with the owned local `actor_id` and an empty
+      `data` object. Preserve its `request_id` across ambiguous retries and
+      require explicit destructive-action confirmation in the UI.
 - [ ] Implement `follow.approve` with top-level local followee `actor_id` and
       `data.follower_id`.
 - [ ] Implement `follow.reject` with the same addressing model.
@@ -280,7 +286,7 @@ idempotently retryable Ably command and never a direct database write.
 
 - [ ] Implement `command.succeeded` and `command.failed` correlation.
 - [ ] Implement refresh/invalidation handlers for `actor.created`,
-      `actor.updated`, `post.created`, `notification.created`,
+      `actor.updated`, `actor.deleted`, `post.created`, `notification.created`,
       `follow.approval.requested`,
       `follow.approval.completed`, and `follow.approval.rejected`.
 - [ ] Treat domain events as refresh hints and render durable state from
@@ -432,7 +438,8 @@ The current Rosmarinus contract provides:
 - lookup of `salvia_accounts` by Ably `clientId`;
 - account status and authorization revision checks;
 - one-account-to-many-Actor ownership through `ownerAccountId`;
-- `actor.create`, `post.create`, `post.delete`, `poll.vote`, `follow.create`, `follow.delete`,
+- `actor.create`, `actor.update`, `actor.delete`, `post.create`, `post.delete`,
+  `poll.vote`, `follow.create`, `follow.delete`,
   `reaction.create`, `reaction.delete`, `block.create`, `block.delete`,
   `follow.approve`, and `follow.reject`
   commands;

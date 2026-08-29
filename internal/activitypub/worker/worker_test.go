@@ -52,7 +52,14 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
-	if f.local != nil && f.local.ID == id {
+	if f.local != nil && f.local.ID == id && !f.local.IsSuspended && f.local.DeletedAt == nil {
+		return f.local, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) FindLocalForDeliveryByID(ctx context.Context, id string) (*actors.Actor, error) {
+	if f.local != nil && f.local.ID == id && f.local.Host == nil {
 		return f.local, nil
 	}
 	return nil, nil
@@ -66,10 +73,30 @@ func (f *fakeRepo) FindLocalByUsername(ctx context.Context, username string) (*a
 }
 
 func (f *fakeRepo) FindOwnedLocalByID(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
-	if f.local != nil && f.local.ID == actorID && f.local.OwnerAccountID == accountID && !f.local.IsSuspended {
+	if f.local != nil && f.local.ID == actorID && f.local.OwnerAccountID == accountID && !f.local.IsSuspended && f.local.DeletedAt == nil {
 		return f.local, nil
 	}
 	return nil, nil
+}
+
+func (f *fakeRepo) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	if f.local != nil && f.local.ID == actorID && f.local.OwnerAccountID == accountID && f.local.Host == nil && !f.local.IsSystemActor {
+		return f.local, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) MarkOwnedLocalActorDeleted(ctx context.Context, accountID, actorID string, deletedAt time.Time) (*actors.Actor, error) {
+	actor, _ := f.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
+	if actor == nil {
+		return nil, nil
+	}
+	if actor.DeletedAt == nil {
+		deletedAt = deletedAt.UTC()
+		actor.DeletedAt = &deletedAt
+		actor.IsSuspended = true
+	}
+	return actor, nil
 }
 
 func (f *fakeRepo) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
@@ -196,6 +223,8 @@ func (f *fakeRepo) MarkRemoteActorDeleted(ctx context.Context, uri string) error
 	f.deletedRemoteURI = uri
 	if f.remote != nil && f.remote.URI == uri {
 		f.remote.IsSuspended = true
+		now := time.Now().UTC()
+		f.remote.DeletedAt = &now
 	}
 	return nil
 }
@@ -417,6 +446,26 @@ func (f *fakeFollowRepo) ListFollowersPage(ctx context.Context, followeeID, afte
 	return page, nil
 }
 
+func (f *fakeFollowRepo) ListFollowingPage(ctx context.Context, followerID, afterID string, limit int) ([]follows.Follow, error) {
+	result := make([]follows.Follow, 0)
+	for _, follow := range f.follows {
+		if follow.FollowerID == followerID && follow.Status == follows.StatusAccepted {
+			result = append(result, *follow)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	page := make([]follows.Follow, 0, limit)
+	for _, follow := range result {
+		if follow.ID > afterID {
+			page = append(page, follow)
+			if len(page) == limit {
+				break
+			}
+		}
+	}
+	return page, nil
+}
+
 func (f *fakeFollowRepo) Upsert(ctx context.Context, follow follows.Follow) (*follows.Follow, error) {
 	if f.follows == nil {
 		f.follows = map[string]*follows.Follow{}
@@ -525,7 +574,7 @@ type fakeAccountCleanupRepo struct {
 	noteResult cleanup.NoteResult
 }
 
-func (r *fakeAccountCleanupRepo) CleanupRemoteActor(_ context.Context, actorID string) (cleanup.Result, error) {
+func (r *fakeAccountCleanupRepo) CleanupActor(_ context.Context, actorID string) (cleanup.Result, error) {
 	r.actorID = actorID
 	return r.result, nil
 }
@@ -3172,6 +3221,93 @@ func TestUpdateActorRejectsBotFlagForNonUserActorType(t *testing.T) {
 	}
 }
 
+func TestDeleteActorSuspendsOwnedActorAndFansOutToKnownPeers(t *testing.T) {
+	hostOne := "remote.example"
+	hostTwo := "other.example"
+	local := &actors.Actor{
+		ID: "owned-actor", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/owned-actor",
+		Username: "owned", Type: "Person", PrivateKeyPEM: "private",
+	}
+	remoteFollower := &actors.Actor{ID: "remote-follower", URI: "https://remote.example/users/follower", Host: &hostOne}
+	remoteFollowing := &actors.Actor{ID: "remote-following", URI: "https://remote.example/users/following", Host: &hostOne}
+	remoteIndividual := &actors.Actor{ID: "remote-individual", URI: "https://other.example/users/individual", Host: &hostTwo}
+	repo := &fakeRepo{local: local, remotes: map[string]*actors.Actor{
+		remoteFollower.URI: remoteFollower, remoteFollowing.URI: remoteFollowing, remoteIndividual.URI: remoteIndividual,
+	}}
+	followRepo := &fakeFollowRepo{follows: map[string]*follows.Follow{}}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID: "01", FollowerID: remoteFollower.ID, FolloweeID: local.ID, FollowerHost: &hostOne,
+		FollowerSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID: "02", FollowerID: local.ID, FolloweeID: remoteFollowing.ID, FolloweeHost: &hostOne,
+		FolloweeSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID: "03", FollowerID: local.ID, FolloweeID: remoteIndividual.ID, FolloweeHost: &hostTwo,
+		FolloweeInbox: "https://other.example/users/individual/inbox", Status: follows.StatusAccepted,
+	})
+	queued := &fakeQueue{}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 11, Timeout: time.Minute},
+	}, nil, repo, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, nil)
+
+	deleted, err := h.DeleteActor(context.Background(), "account-1", connector.ActorDeleteCommand{ActorID: local.ID})
+	if err != nil {
+		t.Fatalf("DeleteActor returned error: %v", err)
+	}
+	if deleted.ActorID != local.ID || deleted.URI != local.URI || deleted.DeletedAt.IsZero() || !local.IsSuspended || local.DeletedAt == nil {
+		t.Fatalf("deleted actor result=%+v actor=%+v", deleted, local)
+	}
+	if active, _ := repo.FindOwnedLocalByID(context.Background(), "account-1", local.ID); active != nil {
+		t.Fatalf("deleted Actor remains active: %+v", active)
+	}
+	if len(queued.tasks) != 3 {
+		t.Fatalf("queued tasks = %+v", queued.tasks)
+	}
+	destinations := map[string]queue.DeliverPayload{}
+	for _, task := range queued.tasks[:2] {
+		payload, ok := task.Payload.(queue.DeliverPayload)
+		if !ok || payload.Object["id"] != local.URI+"#delete" || payload.Object["type"] != "Delete" || payload.Object["object"] != local.URI {
+			t.Fatalf("unexpected Delete delivery: %+v", task)
+		}
+		destinations[payload.To] = payload
+	}
+	if len(destinations) != 2 || !destinations["https://remote.example/inbox"].IsSharedInbox || destinations["https://other.example/users/individual/inbox"].IsSharedInbox {
+		t.Fatalf("delete destinations = %+v", destinations)
+	}
+	cleanupPayload, ok := queued.tasks[2].Payload.(queue.AccountDeletePayload)
+	if !ok || !cleanupPayload.Local || cleanupPayload.ActorID != local.ID || cleanupPayload.ActorURI != local.URI {
+		t.Fatalf("cleanup task = %+v", queued.tasks[2])
+	}
+}
+
+func TestHandleDeliverTaskAllowsOnlyActorDeleteForDeletedSigner(t *testing.T) {
+	deletedAt := time.Now().UTC()
+	local := &actors.Actor{
+		ID: "deleted-actor", URI: "https://rosmarinus.example/users/deleted-actor", IsSuspended: true, DeletedAt: &deletedAt,
+	}
+	client := &fakeClient{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	deletePayload, _ := json.Marshal(queue.DeliverPayload{
+		Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+		Object: map[string]any{"id": local.URI + "#delete", "type": "Delete", "actor": local.URI, "object": local.URI},
+	})
+	if err := h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, deletePayload)); err != nil {
+		t.Fatalf("deleted Actor Delete delivery failed: %v", err)
+	}
+	createPayload, _ := json.Marshal(queue.DeliverPayload{
+		Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+		Object: map[string]any{"id": local.URI + "#stale", "type": "Create", "actor": local.URI, "object": "https://rosmarinus.example/notes/stale"},
+	})
+	if err := h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, createPayload)); err == nil {
+		t.Fatal("stale non-Delete activity was delivered for deleted Actor")
+	}
+	if client.deliveries != 1 {
+		t.Fatalf("delivery calls = %d", client.deliveries)
+	}
+}
+
 func TestProcessInboxUndoFollowDeletesFollow(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
@@ -3809,6 +3945,8 @@ func TestHandleAccountDeleteTaskCleansSuspendedRemoteActor(t *testing.T) {
 	remote := &actors.Actor{
 		ID: "remote_alice", URI: "https://remote.example/users/alice", Host: &host, IsSuspended: true,
 	}
+	deletedAt := time.Now().UTC()
+	remote.DeletedAt = &deletedAt
 	cleanupRepo := &fakeAccountCleanupRepo{result: cleanup.Result{Notes: 2, Follows: 1}}
 	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	h.SetAccountCleanupRepository(cleanupRepo)
@@ -3820,6 +3958,27 @@ func TestHandleAccountDeleteTaskCleansSuspendedRemoteActor(t *testing.T) {
 		t.Fatalf("HandleAccountDeleteTask returned error: %v", err)
 	}
 	if cleanupRepo.actorID != remote.ID {
+		t.Fatalf("cleanup actor id = %q", cleanupRepo.actorID)
+	}
+}
+
+func TestHandleAccountDeleteTaskCleansDeletedLocalActor(t *testing.T) {
+	deletedAt := time.Now().UTC()
+	local := &actors.Actor{
+		ID: "owned-alice", URI: "https://rosmarinus.example/users/owned-alice",
+		OwnerAccountID: "account-1", IsSuspended: true, DeletedAt: &deletedAt,
+	}
+	cleanupRepo := &fakeAccountCleanupRepo{result: cleanup.Result{Notes: 2, Follows: 1}}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	h.SetAccountCleanupRepository(cleanupRepo)
+	payload, err := json.Marshal(queue.AccountDeletePayload{Version: 1, ActorID: local.ID, ActorURI: local.URI, Local: true})
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	if err := h.HandleAccountDeleteTask(context.Background(), asynq.NewTask(queue.TaskAccountDelete, payload)); err != nil {
+		t.Fatalf("HandleAccountDeleteTask returned error: %v", err)
+	}
+	if cleanupRepo.actorID != local.ID {
 		t.Fatalf("cleanup actor id = %q", cleanupRepo.actorID)
 	}
 }

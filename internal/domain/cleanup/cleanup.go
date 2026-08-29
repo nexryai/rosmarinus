@@ -19,6 +19,6 @@ type NoteResult struct {
 }
 
 type Repository interface {
-	CleanupRemoteActor(context.Context, string) (Result, error)
+	CleanupActor(context.Context, string) (Result, error)
 	CleanupNote(context.Context, string) (NoteResult, error)
 }

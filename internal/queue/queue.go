@@ -54,6 +54,7 @@ type AccountDeletePayload struct {
 	Version  int    `json:"version"`
 	ActorID  string `json:"actor_id"`
 	ActorURI string `json:"actor_uri"`
+	Local    bool   `json:"local,omitempty"`
 }
 
 type PollEndedPayload struct {
@@ -112,6 +113,14 @@ func newDeliverTask(actorID, to string, object map[string]any, isSharedInbox boo
 }
 
 func NewAccountDeleteTask(actorID, actorURI string) Task {
+	return newAccountDeleteTask(actorID, actorURI, false)
+}
+
+func NewLocalAccountDeleteTask(actorID, actorURI string) Task {
+	return newAccountDeleteTask(actorID, actorURI, true)
+}
+
+func newAccountDeleteTask(actorID, actorURI string, local bool) Task {
 	return Task{
 		Type:     TaskAccountDelete,
 		Queue:    QueueAccountDelete,
@@ -121,6 +130,7 @@ func NewAccountDeleteTask(actorID, actorURI string) Task {
 			Version:  1,
 			ActorID:  actorID,
 			ActorURI: actorURI,
+			Local:    local,
 		},
 	}
 }

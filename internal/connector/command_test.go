@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +44,11 @@ func (f *fakeActorOwnershipLookup) FindOwnedLocalByID(ctx context.Context, accou
 	return f.actors[accountID+"\x00"+actorID], nil
 }
 
+func (f *fakeActorOwnershipLookup) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
+	_ = ctx
+	return f.actors[accountID+"\x00"+actorID], nil
+}
+
 type fakeCommandExecutor struct {
 	createdFollowerID   string
 	createdTarget       string
@@ -68,6 +74,8 @@ type fakeCommandExecutor struct {
 	blockDeleteCalls    int
 	actorUpdate         ActorUpdateCommand
 	actorUpdateCalls    int
+	actorDelete         ActorDeleteCommand
+	actorDeleteCalls    int
 	notificationID      string
 	err                 error
 }
@@ -174,6 +182,13 @@ func (f *fakeCommandExecutor) UpdateActor(ctx context.Context, accountID string,
 	return ActorUpdated{ActorID: command.ActorID, URI: "https://example.test/users/" + command.ActorID}, f.err
 }
 
+func (f *fakeCommandExecutor) DeleteActor(ctx context.Context, accountID string, command ActorDeleteCommand) (ActorDeleted, error) {
+	_ = ctx
+	f.actorDeleteCalls++
+	f.actorDelete = command
+	return ActorDeleted{ActorID: command.ActorID, URI: "https://example.test/users/" + command.ActorID, DeletedAt: time.Unix(1, 0).UTC()}, f.err
+}
+
 func (f *fakeCommandExecutor) MarkNotificationRead(_ context.Context, accountID, actorID, notificationID string) (NotificationRead, error) {
 	f.notificationID = notificationID
 	return NotificationRead{NotificationID: notificationID, IsRead: true}, f.err
@@ -193,6 +208,7 @@ type fakeCommandResultPublisher struct {
 	failed    []publishedCommandResult
 	actors    []ActorCreated
 	updated   []ActorUpdated
+	deleted   []ActorDeleted
 }
 
 func (f *fakeCommandResultPublisher) PublishActorCreated(ctx context.Context, accountID, requestID string, created ActorCreated) error {
@@ -204,6 +220,12 @@ func (f *fakeCommandResultPublisher) PublishActorCreated(ctx context.Context, ac
 func (f *fakeCommandResultPublisher) PublishActorUpdated(ctx context.Context, accountID, requestID string, updated ActorUpdated) error {
 	_ = ctx
 	f.updated = append(f.updated, updated)
+	return nil
+}
+
+func (f *fakeCommandResultPublisher) PublishActorDeleted(ctx context.Context, accountID, requestID string, deleted ActorDeleted) error {
+	_ = ctx
+	f.deleted = append(f.deleted, deleted)
 	return nil
 }
 
@@ -292,12 +314,38 @@ func TestCommandHandlerSubscribesCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe returned error: %v", err)
 	}
-	if len(source.names) != 14 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandBlockCreate || source.names[10] != CommandBlockDelete || source.names[11] != CommandActorCreate || source.names[12] != CommandActorUpdate || source.names[13] != CommandNotificationMarkRead {
+	if len(source.names) != 15 || source.names[0] != CommandFollowCreate || source.names[1] != CommandFollowDelete || source.names[2] != CommandFollowApprove || source.names[3] != CommandFollowReject || source.names[4] != CommandPostCreate || source.names[5] != CommandPostDelete || source.names[6] != CommandPollVote || source.names[7] != CommandReactionCreate || source.names[8] != CommandReactionDelete || source.names[9] != CommandBlockCreate || source.names[10] != CommandBlockDelete || source.names[11] != CommandActorCreate || source.names[12] != CommandActorUpdate || source.names[13] != CommandActorDelete || source.names[14] != CommandNotificationMarkRead {
 		t.Fatalf("subscription names = %+v", source.names)
 	}
 	unsubscribe()
 	if len(source.handles) != 0 {
 		t.Fatalf("unsubscribe did not clear handlers: %+v", source.handles)
+	}
+}
+
+func TestCommandHandlerDeletesOwnedActorAndPublishesResult(t *testing.T) {
+	executor := &fakeCommandExecutor{}
+	publisher := &fakeCommandResultPublisher{}
+	handler := newAuthorizedCommandHandler(executor, publisher, nil)
+	if err := handler.Handle(context.Background(), commandMessage(CommandActorDelete, "request-delete", "actor-1", map[string]any{})); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if executor.actorDeleteCalls != 1 || executor.actorDelete.ActorID != "actor-1" {
+		t.Fatalf("actor delete command = %+v calls=%d", executor.actorDelete, executor.actorDeleteCalls)
+	}
+	if len(publisher.deleted) != 1 || publisher.deleted[0].ActorID != "actor-1" {
+		t.Fatalf("actor.deleted events = %+v", publisher.deleted)
+	}
+	if len(publisher.succeeded) != 1 || publisher.succeeded[0].command != CommandActorDelete {
+		t.Fatalf("command results = %+v", publisher.succeeded)
+	}
+}
+
+func TestCommandHandlerRejectsActorDeleteData(t *testing.T) {
+	handler := newAuthorizedCommandHandler(&fakeCommandExecutor{}, &fakeCommandResultPublisher{}, nil)
+	err := handler.Handle(context.Background(), commandMessage(CommandActorDelete, "request-delete", "actor-1", map[string]any{"force": true}))
+	if err == nil || !strings.Contains(err.Error(), "data must be empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

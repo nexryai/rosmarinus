@@ -73,6 +73,14 @@ func (r *cachedActorBacking) FindOwnedLocalByID(context.Context, string, string)
 	return nil, nil
 }
 
+func (r *cachedActorBacking) FindOwnedLocalByIDIncludingDeleted(context.Context, string, string) (*actors.Actor, error) {
+	return r.actor, nil
+}
+
+func (r *cachedActorBacking) FindLocalForDeliveryByID(context.Context, string) (*actors.Actor, error) {
+	return r.actor, nil
+}
+
 func (r *cachedActorBacking) CreateOwnedLocalActor(_ context.Context, actor actors.Actor) (*actors.Actor, error) {
 	r.actor = &actor
 	return r.actor, nil
@@ -84,6 +92,16 @@ func (r *cachedActorBacking) UpdateOwnedLocalActor(_ context.Context, accountID,
 	}
 	updated := patch.Apply(*r.actor)
 	r.actor = &updated
+	return r.actor, nil
+}
+
+func (r *cachedActorBacking) MarkOwnedLocalActorDeleted(_ context.Context, accountID, actorID string, deletedAt time.Time) (*actors.Actor, error) {
+	if r.actor == nil || r.actor.ID != actorID || r.actor.OwnerAccountID != accountID {
+		return nil, nil
+	}
+	deletedAt = deletedAt.UTC()
+	r.actor.IsSuspended = true
+	r.actor.DeletedAt = &deletedAt
 	return r.actor, nil
 }
 

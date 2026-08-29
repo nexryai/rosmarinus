@@ -231,7 +231,7 @@ the same style as current Misskey.
 
 - [x] `Create`: merge activity/object audiences, fill missing `attributedTo`,
       resolve object, and create basic notes.
-- [ ] `Create`: create questions/polls and full note side effects.
+- [x] `Create`: create questions/polls and durable note side effects.
 - [x] `Announce`: resolve target note and create a basic renote record.
 - [x] `Announce`: reject specified Notes, other Actors' followers-only Notes,
       pure Announce targets, blocks, and blocked hosts using current Misskey's
@@ -264,13 +264,17 @@ the same style as current Misskey.
 - [x] `Delete`: delete remote notes when the deleting actor is the stored note
       author.
 - [x] `Delete`: tombstone remote actors and enqueue account cleanup tasks.
-- [ ] `Delete`: implement full cascaded account cleanup side effects.
+- [x] `Delete`: implement full cascaded account cleanup side effects.
+- [x] `Delete`: close an account-owned local Actor through `actor.delete`, hide
+      it from normal lookup immediately, deliver a signed Actor deletion to
+      known remote peers, and retain the tombstone/key needed for retries.
 - [x] `Update`: authenticate remote Actor updates, require the updated Actor ID
       to match the signer, and refresh the stored remote Actor.
 - [x] `Update`: patch account-owned local Actor profiles through an authorized
       `actor.update` command and fan out a full current Person/Service object to
       accepted, active, unblocked remote followers with shared-inbox dedupe.
-- [ ] `Update`: update notes and questions/polls.
+- [x] `Update`: refresh Question vote counts; generic `Update(Note)` remains
+      intentionally unsupported like current Misskey.
 - [x] `Block`: create local block state for remote actor against local actor.
 - [x] `Flag`: store abuse reports for local users mentioned in the object list.
 - [x] `Add` and `Remove`: authenticate remote featured-collection changes,
@@ -584,8 +588,8 @@ when an Ably notification is missed.
       `message.ClientID`. This includes `post.create`, `post.delete`, `poll.vote`,
       `follow.create`, `follow.delete`, `reaction.create`, `reaction.delete`,
       `block.create`, `block.delete`, `follow.approve`, and `follow.reject`.
-- [x] Apply the same owned-Actor authorization to `actor.update`; retain this
-      requirement for a future Actor delete command.
+- [x] Apply the same owned-Actor authorization to `actor.update` and
+      `actor.delete`, including ownership checks for tombstone receipt replay.
 - [x] Add `actor.create`. Rosmarinus generates the Actor ID, URI, and key pair,
       and derives `ownerAccountId` from the authenticated account; the browser
       cannot supply or override the owner.
@@ -676,6 +680,9 @@ when an Ably notification is missed.
 - [x] Handle Next.js-driven `block.create` and `block.delete` commands by
       updating normalized block state, removing Follow relationships in both
       directions, and delivering `Block` or `Undo(Block)` to the remote Actor.
+- [x] Handle Next.js-driven `actor.delete` by atomically tombstoning the owned
+      local Actor, delivering `Delete(Actor)` to known remote relationships,
+      and publishing `actor.deleted` before asynchronous federation cleanup.
 - [x] Deliver basic local public/home/followers `Create(Note)` activities from
       `post.create` to accepted remote followers, preferring and deduplicating
       shared inboxes.

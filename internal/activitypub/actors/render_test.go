@@ -87,3 +87,15 @@ func TestRenderUpdateContainsFullPersonObject(t *testing.T) {
 		t.Fatalf("person object = %#v", body["object"])
 	}
 }
+
+func TestRenderDeleteUsesStableActorActivityID(t *testing.T) {
+	actor := &domainactors.Actor{URI: "https://example.test/users/actor-id"}
+	deletedAt := time.Date(2026, 8, 29, 1, 2, 3, 4, time.UTC)
+	body := RenderDelete(actor, deletedAt)
+	if body["id"] != actor.URI+"#delete" || body["type"] != "Delete" || body["actor"] != actor.URI || body["object"] != actor.URI {
+		t.Fatalf("delete = %#v", body)
+	}
+	if body["published"] != deletedAt.Format(time.RFC3339Nano) || body["@context"] == nil {
+		t.Fatalf("delete metadata = %#v", body)
+	}
+}

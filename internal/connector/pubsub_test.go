@@ -123,6 +123,25 @@ func TestPublisherPublishesActorUpdatedEvent(t *testing.T) {
 	}
 }
 
+func TestPublisherPublishesActorDeletedEvent(t *testing.T) {
+	channel := &dummyChannel{}
+	publisher := NewPublisher(channel)
+	deletedAt := time.Date(2026, 8, 29, 1, 2, 3, 0, time.UTC)
+	if err := publisher.PublishActorDeleted(context.Background(), "account-1", "request-1", ActorDeleted{
+		ActorID: "actor-1", URI: "https://example.test/users/actor-1", DeletedAt: deletedAt,
+	}); err != nil {
+		t.Fatalf("PublishActorDeleted returned error: %v", err)
+	}
+	if channel.name != EventActorDeleted {
+		t.Fatalf("event name = %q", channel.name)
+	}
+	envelope, ok := channel.data.(Envelope)
+	payload, payloadOK := envelope.Data.(ActorDeleted)
+	if !ok || !payloadOK || envelope.ActorID != "actor-1" || !payload.DeletedAt.Equal(deletedAt) {
+		t.Fatalf("unexpected envelope: %#v", channel.data)
+	}
+}
+
 func TestPublisherRejectsUnsafeAccountChannelSegment(t *testing.T) {
 	publisher := NewAccountPublisher(&dummyChannelProvider{}, "test:accounts")
 	if err := publisher.PublishCommandFailed(context.Background(), "account:*", "request-1", "actor-1", CommandPostCreate, "failed"); err == nil {

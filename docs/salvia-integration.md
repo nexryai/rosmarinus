@@ -59,6 +59,15 @@ relationships involving it; it removes the Actor's polls and notifications it
 originated or whose related Note was removed. Salvia must tolerate those
 records disappearing asynchronously after the Actor becomes suspended.
 
+For an account-owned local Actor, Salvia initiates the same lifecycle through
+`actor.delete`; it never writes `isSuspended` or `deletedAt` itself. Rosmarinus
+atomically records both fields, removes the Actor from normal lookup and
+authorization immediately, delivers a signed `Delete` to known remote
+followers and followees with shared-inbox deduplication, and queues the same
+idempotent content/relationship cleanup. The tombstoned Actor and private key
+remain Rosmarinus-owned so queued `Delete` retries can still be signed; no
+other queued activity may be sent after deletion.
+
 Remote Note documents retain ActivityPub relationship URIs and resolved local
 references together:
 
@@ -242,8 +251,10 @@ owner. The environment-provisioned Actor has `isSystemActor: true` and no
 account owner.
 
 Actor-bound commands are authorized with one MongoDB query over `_id`,
-`ownerAccountId`, `host: null`, and `isSuspended: false`. The command payload
-cannot override account ownership.
+`ownerAccountId`, `host: null`, `isSuspended: false`, and `deletedAt: null`.
+The command payload cannot override account ownership. The sole exception is
+`actor.delete` receipt replay, which verifies the same owner against the
+retained tombstone but cannot reactivate or otherwise mutate it.
 
 System Actor events are not published to an account event channel because no
 account owns them. A future operator workflow must use a separately authorized
@@ -406,6 +417,14 @@ successful command. `actor.updated.data` contains `actor_id`, the Actor `uri`,
 and `fields`, the stable contract-order list of patched JSON field names. Treat
 the event as an invalidation hint and re-read the Actor document rather than
 merging its payload into cached state.
+
+To close an account-owned Actor, publish `actor.delete` with its top-level
+`actor_id` and an empty `data` object. Success publishes `actor.deleted`
+followed by `command.succeeded`. `actor.deleted.data` contains `actor_id`,
+`uri`, and RFC 3339 `deleted_at`. Treat this event as an immediate invalidation,
+stop offering that Actor for commands, and re-query MongoDB. Reuse the original
+`request_id` after an ambiguous outcome; Rosmarinus keeps the tombstone so a
+completed receipt can be replayed without restoring the Actor.
 
 `post.create.data` always contains the client-generated local `note_id` and
 exactly one of normal post content (`text` or `poll`) or `renote_id`. A pure

@@ -195,6 +195,17 @@ func (r *FollowRepository) ListFollowing(ctx context.Context, followerID string,
 	}), limit)
 }
 
+func (r *FollowRepository) ListFollowingPage(ctx context.Context, followerID, afterID string, limit int) ([]follows.Follow, error) {
+	filter := bson.M{
+		"followerId": followerID,
+		"deletedAt":  nil,
+	}
+	if afterID != "" {
+		filter["_id"] = bson.M{"$gt": afterID}
+	}
+	return r.findManyByID(ctx, acceptedFollowFilter(filter), limit)
+}
+
 func (r *FollowRepository) findOne(ctx context.Context, filter bson.M) (*follows.Follow, error) {
 	var doc followDocument
 	if err := r.collection.FindOne(ctx, filter).Decode(&doc); err != nil {
