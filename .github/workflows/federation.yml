@@ -109,11 +109,16 @@ jobs:
 
       - name: Start latest Misskey and Rosmarinus
         run: |
-          docker compose \
+          compose=(docker compose \
             -f misskey/packages/backend/test-federation/compose.yml \
             -f misskey/packages/backend/test-federation/compose.override.yaml \
-            -f docker/federation/misskey-rosmarinus.compose.yml \
-            up -d --wait --wait-timeout 600 --scale tester=0
+            -f docker/federation/misskey-rosmarinus.compose.yml)
+          # Both upstream Misskey services overlay a different config file on
+          # the same host-built path. Serialize container creation to avoid a
+          # runc mountpoint race before starting the dependency graph.
+          "${compose[@]}" create --no-deps misskey.a.test
+          "${compose[@]}" create --no-deps misskey.b.test
+          "${compose[@]}" up -d --wait --wait-timeout 600 --scale tester=0
 
       - name: Test federation
         run: |
