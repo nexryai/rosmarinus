@@ -909,7 +909,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 22: delete the account-owned local Actor, verifying Rosmarinus hides
 	// it immediately and Misskey applies the signed Delete(Actor) delivered with
-	// the retained tombstone signing key.
+	// the retained tombstone signing key, hiding the formerly resolvable remote
+	// Actor from users/show.
 	deletedOwned, err := worker.DeleteActor(ctx, "federation-account", connector.ActorDeleteCommand{ActorID: ownedActor.ID})
 	if err != nil {
 		t.Fatalf("delete account-owned Actor: %v", err)
@@ -924,13 +925,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("deleted Actor ActivityPub endpoint status=%d, want %d", status, http.StatusNotFound)
 	}
 	waitFor(t, ctx, "Misskey applies Delete(Actor)", func() bool {
-		var shown struct {
-			IsDeleted bool `json:"isDeleted"`
-		}
 		status := misskey.callStatus(ctx, "users/show", map[string]any{
 			"i": directRecipient.Token, "userId": ownedMisskeyID,
-		}, &shown)
-		return status >= http.StatusOK && status < http.StatusMultipleChoices && shown.IsDeleted
+		}, nil)
+		return status == http.StatusNotFound
 	})
 }
 
