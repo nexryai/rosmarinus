@@ -60,8 +60,9 @@ originated or whose related Note was removed. Salvia must tolerate those
 records disappearing asynchronously after the Actor becomes suspended.
 
 For an account-owned local Actor, Salvia initiates the same lifecycle through
-`actor.delete`; it never writes `isSuspended` or `deletedAt` itself. Rosmarinus
-atomically records both fields, removes the Actor from normal lookup and
+`actor.delete`; it never writes `isSuspended`, `suspendedAt`, or `deletedAt`
+itself. Rosmarinus atomically records the suspension and deletion fields,
+removes the Actor from normal lookup and
 authorization immediately, delivers a signed `Delete` to known remote
 followers and followees with shared-inbox deduplication, and queues the same
 idempotent content/relationship cleanup. The tombstoned Actor and private key
@@ -255,6 +256,11 @@ Actor-bound commands are authorized with one MongoDB query over `_id`,
 The command payload cannot override account ownership. The sole exception is
 `actor.delete` receipt replay, which verifies the same owner against the
 retained tombstone but cannot reactivate or otherwise mutate it.
+
+Owned local Actor documents may also contain `suspendedAt`. It is
+Rosmarinus-owned federation state used to give a temporary account-suspension
+`Delete` and its later `Undo(Delete)` the same stable object ID. Salvia may read
+it for diagnostics but must not write or infer account status from it.
 
 System Actor events are not published to an account event channel because no
 account owns them. A future operator workflow must use a separately authorized
@@ -523,10 +529,22 @@ channel. The event is only an invalidation. Rosmarinus reads the current Salvia
 document and never trusts status supplied in the event payload.
 
 Inactive or missing accounts are rejected on every browser mutation. A control
-event immediately suspends user-managed Actors belonging to an inactive
-account. Rosmarinus also periodically lists account owners in its Actor
-collection and re-reads `salvia_accounts`, so a missed Ably control event is
-eventually repaired from MongoDB.
+event immediately applies the authoritative account lifecycle to every owned
+Actor:
+
+- `suspended`, an unknown status, or a missing account temporarily suspends
+  each Actor and sends a uniquely identified signed `Delete` to known remote
+  followers and followees. Relationships are retained for recovery.
+- `active` resumes temporarily suspended Actors and sends the matching signed
+  `Undo(Delete)` to the same known peers.
+- `deleted` or a non-null `deletedAt` permanently tombstones each Actor through
+  the same delivery and cleanup path as `actor.delete`.
+
+Rosmarinus also periodically lists account owners and re-reads
+`salvia_accounts`, so a missed Ably control event is eventually repaired from
+MongoDB. Peer recovery after `Undo(Delete)` is implementation-dependent;
+Rosmarinus restores its Actor endpoint immediately, but peers that retain a
+remote tombstone may need to resolve the Actor again.
 
 ## Rosmarinus environment
 

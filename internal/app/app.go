@@ -211,10 +211,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 			}
 			return nil, fmt.Errorf("create ably connector account control source: %w", err)
 		}
-		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, cachedActorRepo, logger)
+		connectorControl = connector.NewAccountControlHandler(connectorControlSource, salviaAccountRepo, apWorker, logger)
 	}
 	if connectorCommandSource != nil || connectorControlSource != nil {
-		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, cachedActorRepo, cachedActorRepo, logger)
+		connectorAccountReconciler = connector.NewAccountReconciler(salviaAccountRepo, cachedActorRepo, apWorker, logger)
 	}
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)

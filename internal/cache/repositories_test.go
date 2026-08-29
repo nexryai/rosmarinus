@@ -77,6 +77,10 @@ func (r *cachedActorBacking) FindOwnedLocalByIDIncludingDeleted(context.Context,
 	return r.actor, nil
 }
 
+func (r *cachedActorBacking) ListOwnedLocalActorsPage(context.Context, string, string, int, bool) ([]actors.Actor, error) {
+	return nil, nil
+}
+
 func (r *cachedActorBacking) FindLocalForDeliveryByID(context.Context, string) (*actors.Actor, error) {
 	return r.actor, nil
 }
@@ -95,6 +99,10 @@ func (r *cachedActorBacking) UpdateOwnedLocalActor(_ context.Context, accountID,
 	return r.actor, nil
 }
 
+func (r *cachedActorBacking) SetOwnedLocalActorSuspended(context.Context, string, string, bool, time.Time) (*actors.Actor, error) {
+	return nil, nil
+}
+
 func (r *cachedActorBacking) MarkOwnedLocalActorDeleted(_ context.Context, accountID, actorID string, deletedAt time.Time) (*actors.Actor, error) {
 	if r.actor == nil || r.actor.ID != actorID || r.actor.OwnerAccountID != accountID {
 		return nil, nil
@@ -103,10 +111,6 @@ func (r *cachedActorBacking) MarkOwnedLocalActorDeleted(_ context.Context, accou
 	r.actor.IsSuspended = true
 	r.actor.DeletedAt = &deletedAt
 	return r.actor, nil
-}
-
-func (r *cachedActorBacking) SuspendOwnedLocalActors(context.Context, string) (int64, error) {
-	return 0, nil
 }
 
 func (r *cachedActorBacking) ListOwnedAccountIDs(context.Context) ([]string, error) {

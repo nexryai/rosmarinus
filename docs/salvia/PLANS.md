@@ -197,6 +197,9 @@ and ambiguous network outcomes recover through idempotent retry and DB refresh.
 - [ ] Display authorization errors if an Actor was deleted, moved, or no
       longer belongs to the account; do not attempt to repair ownership from
       Salvia.
+- [ ] Treat `actors.suspendedAt` as read-only Rosmarinus lifecycle metadata;
+      exclude `isSuspended` Actors from selection and never use this timestamp
+      as the canonical Salvia account state.
 - [ ] Test one account owning multiple Actors and two accounts being unable to
       act through each other's Actors.
 
@@ -329,6 +332,11 @@ duplicate scenarios converge on the MongoDB source of truth.
       Rosmarinus also reconciles periodically.
 - [ ] Do not write, suspend, or delete Rosmarinus Actor documents from this
       lifecycle path.
+- [ ] Present `suspended` as reversible: Rosmarinus temporarily hides owned
+      Actors and federates `Delete`, then restores them and federates the
+      matching `Undo(Delete)` after `active`. Present `deleted`/`deletedAt` as
+      permanent Actor tombstoning and cleanup. A missing account is
+      conservatively treated as suspended.
 - [ ] Test ordering, repeated revisions, publish failure, token denial after
       suspension, and eventual Rosmarinus rejection of existing clients.
 

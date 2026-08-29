@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/nexryai/rosmarinus/internal/account"
 )
 
 type OwnedAccountLister interface {
@@ -14,11 +16,11 @@ type OwnedAccountLister interface {
 type AccountReconciler struct {
 	accounts AccountReader
 	owners   OwnedAccountLister
-	actors   OwnedActorSuspender
+	actors   OwnedActorLifecycle
 	logger   *log.Logger
 }
 
-func NewAccountReconciler(accounts AccountReader, owners OwnedAccountLister, actors OwnedActorSuspender, logger *log.Logger) *AccountReconciler {
+func NewAccountReconciler(accounts AccountReader, owners OwnedAccountLister, actors OwnedActorLifecycle, logger *log.Logger) *AccountReconciler {
 	return &AccountReconciler{accounts: accounts, owners: owners, actors: actors, logger: logger}
 }
 
@@ -35,15 +37,18 @@ func (r *AccountReconciler) Reconcile(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read Salvia account %s: %w", accountID, err)
 		}
-		if accountRecord != nil && accountRecord.IsActive() {
-			continue
+		status := account.StatusSuspended
+		deleted := false
+		if accountRecord != nil {
+			status = accountRecord.Status
+			deleted = accountRecord.DeletedAt != nil || accountRecord.Status == account.StatusDeleted
 		}
-		modified, err := r.actors.SuspendOwnedLocalActors(ctx, accountID)
+		modified, err := r.actors.ApplyAccountLifecycle(ctx, accountID, status, deleted)
 		if err != nil {
-			return fmt.Errorf("suspend actors for account %s: %w", accountID, err)
+			return fmt.Errorf("apply actor lifecycle for account %s: %w", accountID, err)
 		}
 		if r.logger != nil && modified > 0 {
-			r.logger.Printf("connector: reconciled inactive account account_id=%s modified=%d", accountID, modified)
+			r.logger.Printf("connector: reconciled account lifecycle account_id=%s status=%s deleted=%t modified=%d", accountID, status, deleted, modified)
 		}
 	}
 	return nil

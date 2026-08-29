@@ -514,6 +514,10 @@ func (r *resolverActorRepository) FindOwnedLocalByIDIncludingDeleted(context.Con
 	return nil, nil
 }
 
+func (r *resolverActorRepository) ListOwnedLocalActorsPage(context.Context, string, string, int, bool) ([]actors.Actor, error) {
+	return nil, nil
+}
+
 func (r *resolverActorRepository) FindLocalForDeliveryByID(context.Context, string) (*actors.Actor, error) {
 	return nil, nil
 }
@@ -526,12 +530,12 @@ func (r *resolverActorRepository) UpdateOwnedLocalActor(context.Context, string,
 	return nil, nil
 }
 
-func (r *resolverActorRepository) MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*actors.Actor, error) {
+func (r *resolverActorRepository) SetOwnedLocalActorSuspended(context.Context, string, string, bool, time.Time) (*actors.Actor, error) {
 	return nil, nil
 }
 
-func (r *resolverActorRepository) SuspendOwnedLocalActors(context.Context, string) (int64, error) {
-	return 0, nil
+func (r *resolverActorRepository) MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*actors.Actor, error) {
+	return nil, nil
 }
 
 func (r *resolverActorRepository) ListOwnedAccountIDs(context.Context) ([]string, error) {

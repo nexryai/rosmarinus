@@ -44,6 +44,7 @@ type Actor struct {
 	PublicKeyPEM    string
 	PrivateKeyPEM   string
 	IsSuspended     bool
+	SuspendedAt     *time.Time
 	DeletedAt       *time.Time
 }
 
@@ -265,11 +266,12 @@ type Repository interface {
 	Lookup
 	FindOwnedLocalByID(context.Context, string, string) (*Actor, error)
 	FindOwnedLocalByIDIncludingDeleted(context.Context, string, string) (*Actor, error)
+	ListOwnedLocalActorsPage(context.Context, string, string, int, bool) ([]Actor, error)
 	FindLocalForDeliveryByID(context.Context, string) (*Actor, error)
 	CreateOwnedLocalActor(context.Context, Actor) (*Actor, error)
 	UpdateOwnedLocalActor(context.Context, string, string, ActorPatch) (*Actor, error)
+	SetOwnedLocalActorSuspended(context.Context, string, string, bool, time.Time) (*Actor, error)
 	MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*Actor, error)
-	SuspendOwnedLocalActors(context.Context, string) (int64, error)
 	ListOwnedAccountIDs(context.Context) ([]string, error)
 	FindByURI(context.Context, string) (*Actor, error)
 	FindAnyByURI(context.Context, string) (*Actor, error)

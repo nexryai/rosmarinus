@@ -19,6 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/nexryai/rosmarinus/internal/account"
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
 	"github.com/nexryai/rosmarinus/internal/config"
@@ -907,10 +908,38 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("completed Misskey activity was claimable again: claimed=%t err=%v", claimed, err)
 	}
 
-	// Phase 22: delete the account-owned local Actor, verifying Rosmarinus hides
-	// it immediately and Misskey applies the signed Delete(Actor) delivered with
-	// the retained tombstone signing key, hiding the formerly resolvable remote
-	// Actor from users/show.
+	// Phase 22: suspend the owning Salvia account, verifying Rosmarinus hides its
+	// Actor and current Misskey applies the uniquely identified signed
+	// Delete(Actor). Reactivate the account and verify Rosmarinus restores the
+	// Actor endpoint while emitting the matching Undo(Delete); current Misskey
+	// retains its remote tombstone and may require a later explicit re-resolution.
+	modified, err := worker.ApplyAccountLifecycle(ctx, "federation-account", account.StatusSuspended, false)
+	if err != nil || modified != 1 {
+		t.Fatalf("suspend account-owned Actor: modified=%d err=%v", modified, err)
+	}
+	if status := misskey.getStatus(ctx, ownedActor.URI); status != http.StatusNotFound {
+		t.Fatalf("suspended Actor ActivityPub endpoint status=%d, want %d", status, http.StatusNotFound)
+	}
+	waitFor(t, ctx, "Misskey applies account-suspension Delete(Actor)", func() bool {
+		status := misskey.callStatus(ctx, "users/show", map[string]any{
+			"i": directRecipient.Token, "userId": ownedMisskeyID,
+		}, nil)
+		return status == http.StatusNotFound
+	})
+	modified, err = worker.ApplyAccountLifecycle(ctx, "federation-account", account.StatusActive, false)
+	if err != nil || modified != 1 {
+		t.Fatalf("resume account-owned Actor: modified=%d err=%v", modified, err)
+	}
+	if active, findErr := actorRepo.FindOwnedLocalByID(ctx, "federation-account", ownedActor.ID); findErr != nil || active == nil || active.IsSuspended {
+		t.Fatalf("resumed account-owned Actor is not active: actor=%+v err=%v", active, findErr)
+	}
+	if status := misskey.getStatus(ctx, ownedActor.URI); status != http.StatusOK {
+		t.Fatalf("resumed Actor ActivityPub endpoint status=%d, want %d", status, http.StatusOK)
+	}
+
+	// Phase 23: permanently delete the resumed account-owned local Actor,
+	// verifying Rosmarinus tombstones it and current Misskey continues hiding the
+	// remote Actor after receiving the distinct signed permanent Delete(Actor).
 	deletedOwned, err := worker.DeleteActor(ctx, "federation-account", connector.ActorDeleteCommand{ActorID: ownedActor.ID})
 	if err != nil {
 		t.Fatalf("delete account-owned Actor: %v", err)

@@ -25,31 +25,47 @@ func (m *mapAccountReader) FindByID(ctx context.Context, id string) (*account.Ac
 	return m.accounts[id], nil
 }
 
-type collectingActorSuspender struct {
-	accountIDs []string
+type lifecycleCall struct {
+	accountID string
+	status    account.Status
+	deleted   bool
 }
 
-func (c *collectingActorSuspender) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
+type collectingActorLifecycle struct {
+	calls []lifecycleCall
+}
+
+func (c *collectingActorLifecycle) ApplyAccountLifecycle(ctx context.Context, accountID string, status account.Status, deleted bool) (int64, error) {
 	_ = ctx
-	c.accountIDs = append(c.accountIDs, accountID)
+	c.calls = append(c.calls, lifecycleCall{accountID: accountID, status: status, deleted: deleted})
 	return 1, nil
 }
 
-func TestAccountReconcilerSuspendsMissingAndInactiveAccounts(t *testing.T) {
-	suspender := &collectingActorSuspender{}
+func TestAccountReconcilerAppliesCurrentAndMissingAccountStates(t *testing.T) {
+	lifecycle := &collectingActorLifecycle{}
 	reconciler := NewAccountReconciler(
 		&mapAccountReader{accounts: map[string]*account.Account{
 			"active":    {ID: "active", Status: account.StatusActive},
 			"suspended": {ID: "suspended", Status: account.StatusSuspended},
 		}},
 		&fakeOwnedAccountLister{accountIDs: []string{"active", "suspended", "missing"}},
-		suspender,
+		lifecycle,
 		nil,
 	)
 	if err := reconciler.Reconcile(context.Background()); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
-	if len(suspender.accountIDs) != 2 || suspender.accountIDs[0] != "suspended" || suspender.accountIDs[1] != "missing" {
-		t.Fatalf("suspended accounts = %+v", suspender.accountIDs)
+	want := []lifecycleCall{
+		{accountID: "active", status: account.StatusActive},
+		{accountID: "suspended", status: account.StatusSuspended},
+		{accountID: "missing", status: account.StatusSuspended},
+	}
+	if len(lifecycle.calls) != len(want) {
+		t.Fatalf("lifecycle calls = %+v", lifecycle.calls)
+	}
+	for i := range want {
+		if lifecycle.calls[i] != want[i] {
+			t.Fatalf("lifecycle call %d = %+v, want %+v", i, lifecycle.calls[i], want[i])
+		}
 	}
 }

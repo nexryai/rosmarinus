@@ -17,6 +17,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/nexryai/rosmarinus/internal/account"
 	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
 	apblocks "github.com/nexryai/rosmarinus/internal/activitypub/blocks"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
@@ -452,10 +453,24 @@ func (h *Handler) HandleDeliverTask(ctx context.Context, task *asynq.Task) error
 		return fmt.Errorf("deliver actor not found: %s", payload.ActorID)
 	}
 	if actor.IsSuspended {
+		activityID, idErr := aptypes.GetAPID(payload.Object)
 		objectURI, objectErr := aptypes.GetAPID(payload.Object["object"])
-		if actor.DeletedAt == nil || !aptypes.IsDelete(payload.Object) || objectErr != nil || objectURI != actor.URI {
-			return fmt.Errorf("deliver actor is suspended: %s", payload.ActorID)
+		expectedDeleteID := actor.URI + "#delete"
+		if actor.DeletedAt == nil && actor.SuspendedAt != nil {
+			expectedDeleteID = apactors.SuspensionDeleteID(actor.URI, actor.SuspendedAt.UTC())
 		}
+		if aptypes.IsDelete(payload.Object) && idErr == nil && activityID == expectedDeleteID && objectErr == nil && objectURI == actor.URI {
+			// Lifecycle Delete is the sole activity that may use a suspended
+			// Actor's retained signing key.
+		} else if actor.DeletedAt == nil && actor.SuspendedAt != nil && isMatchingUnsuspension(payload.Object, actor.URI, expectedDeleteID) {
+			return fmt.Errorf("deliver actor has not resumed yet: %s", payload.ActorID)
+		} else {
+			return fmt.Errorf("deliver actor is suspended: %s: %w", payload.ActorID, asynq.SkipRetry)
+		}
+	} else if activityID, idErr := aptypes.GetAPID(payload.Object); aptypes.IsDelete(payload.Object) && idErr == nil && strings.HasPrefix(activityID, actor.URI+"#suspensions/") {
+		// A suspension Delete queued just before the atomic state transition
+		// retries until the repository exposes the matching suspended state.
+		return fmt.Errorf("deliver actor suspension is not active: %s", payload.ActorID)
 	}
 	target, err := url.Parse(payload.To)
 	if err != nil || target.Hostname() == "" {
@@ -508,6 +523,26 @@ func (h *Handler) HandleDeliverTask(ctx context.Context, task *asynq.Task) error
 		h.logger.Printf("deliver: sent actor=%s to=%s type=%v", actor.ID, payload.To, payload.Object["type"])
 	}
 	return nil
+}
+
+func isMatchingUnsuspension(activity map[string]any, actorURI, deleteID string) bool {
+	if !aptypes.IsUndo(activity) {
+		return false
+	}
+	activityActor, err := aptypes.GetAPID(activity["actor"])
+	if err != nil || activityActor != actorURI {
+		return false
+	}
+	object, ok := activity["object"].(map[string]any)
+	if !ok || !aptypes.IsDelete(object) {
+		return false
+	}
+	objectID, err := aptypes.GetAPID(object)
+	if err != nil || objectID != deleteID {
+		return false
+	}
+	deletedActor, err := aptypes.GetAPID(object["object"])
+	return err == nil && deletedActor == actorURI
 }
 
 func retryableDeliveryStatus(status int) bool {
@@ -2869,6 +2904,80 @@ func (h *Handler) DeleteActor(ctx context.Context, accountID string, command con
 		return connector.ActorDeleted{}, fmt.Errorf("enqueue local account cleanup: %w", err)
 	}
 	return connector.ActorDeleted{ActorID: actor.ID, URI: actor.URI, DeletedAt: deletedAt}, nil
+}
+
+func (h *Handler) ApplyAccountLifecycle(ctx context.Context, accountID string, status account.Status, deleted bool) (int64, error) {
+	if h.repo == nil || h.follows == nil || h.queue == nil {
+		return 0, fmt.Errorf("actor repository, follow repository, and queue are required")
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, fmt.Errorf("owner account id is required")
+	}
+
+	var modified int64
+	afterID := ""
+	for {
+		owned, err := h.repo.ListOwnedLocalActorsPage(ctx, accountID, afterID, postDeliveryFollowerLimit, false)
+		if err != nil {
+			return modified, fmt.Errorf("list owned actors: %w", err)
+		}
+		for i := range owned {
+			actor := &owned[i]
+			if deleted || status == account.StatusDeleted {
+				if _, err := h.DeleteActor(ctx, accountID, connector.ActorDeleteCommand{ActorID: actor.ID}); err != nil {
+					return modified, fmt.Errorf("delete actor %s: %w", actor.ID, err)
+				}
+				modified++
+				continue
+			}
+			if status == account.StatusActive {
+				if !actor.IsSuspended {
+					continue
+				}
+				var suspendedAt *time.Time
+				if actor.SuspendedAt != nil {
+					value := actor.SuspendedAt.UTC()
+					suspendedAt = &value
+				}
+				resumedAt := time.Now().UTC()
+				if suspendedAt != nil {
+					if err := h.enqueueActorDeleteDeliveries(ctx, actor, apactors.RenderUnsuspension(actor, *suspendedAt, resumedAt)); err != nil {
+						return modified, fmt.Errorf("enqueue actor %s unsuspension: %w", actor.ID, err)
+					}
+				}
+				updated, err := h.repo.SetOwnedLocalActorSuspended(ctx, accountID, actor.ID, false, resumedAt)
+				if err != nil {
+					return modified, fmt.Errorf("resume actor %s: %w", actor.ID, err)
+				}
+				if updated == nil {
+					continue
+				}
+				modified++
+				continue
+			}
+			if actor.IsSuspended {
+				continue
+			}
+			suspendedAt := time.Now().UTC()
+			if err := h.enqueueActorDeleteDeliveries(ctx, actor, apactors.RenderSuspension(actor, suspendedAt)); err != nil {
+				return modified, fmt.Errorf("enqueue actor %s suspension: %w", actor.ID, err)
+			}
+			updated, err := h.repo.SetOwnedLocalActorSuspended(ctx, accountID, actor.ID, true, suspendedAt)
+			if err != nil {
+				return modified, fmt.Errorf("suspend actor %s: %w", actor.ID, err)
+			}
+			if updated == nil || updated.SuspendedAt == nil {
+				continue
+			}
+			modified++
+		}
+		if len(owned) < postDeliveryFollowerLimit {
+			break
+		}
+		afterID = owned[len(owned)-1].ID
+	}
+	return modified, nil
 }
 
 func (h *Handler) enqueueActorDeleteDeliveries(ctx context.Context, actor *actors.Actor, activity map[string]any) error {

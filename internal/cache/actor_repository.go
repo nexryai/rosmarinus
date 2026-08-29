@@ -46,6 +46,10 @@ func (r *CachedActorRepository) FindOwnedLocalByIDIncludingDeleted(ctx context.C
 	return r.repository.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
 }
 
+func (r *CachedActorRepository) ListOwnedLocalActorsPage(ctx context.Context, accountID, afterID string, limit int, includeDeleted bool) ([]actors.Actor, error) {
+	return r.repository.ListOwnedLocalActorsPage(ctx, accountID, afterID, limit, includeDeleted)
+}
+
 func (r *CachedActorRepository) FindLocalForDeliveryByID(ctx context.Context, actorID string) (*actors.Actor, error) {
 	return r.repository.FindLocalForDeliveryByID(ctx, actorID)
 }
@@ -62,8 +66,8 @@ func (r *CachedActorRepository) MarkOwnedLocalActorDeleted(ctx context.Context, 
 	return r.repository.MarkOwnedLocalActorDeleted(ctx, accountID, actorID, deletedAt)
 }
 
-func (r *CachedActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
-	return r.repository.SuspendOwnedLocalActors(ctx, accountID)
+func (r *CachedActorRepository) SetOwnedLocalActorSuspended(ctx context.Context, accountID, actorID string, suspended bool, changedAt time.Time) (*actors.Actor, error) {
+	return r.repository.SetOwnedLocalActorSuspended(ctx, accountID, actorID, suspended, changedAt)
 }
 
 func (r *CachedActorRepository) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {

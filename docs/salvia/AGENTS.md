@@ -111,10 +111,12 @@ accepted the reciprocal alias proof; Salvia must not validate or write account
 migrations itself.
 
 Both local and remote Actor projections may contain Rosmarinus-owned
-`isSuspended` and `deletedAt`. Exclude either state from normal Actor selection
-and federation actions. A deleted local Actor remains as a tombstone so
-Rosmarinus can sign queued deletion retries; Salvia must not expose its retained
-key or treat the document as recoverable.
+`isSuspended`, `suspendedAt`, and `deletedAt`. Exclude suspended or deleted
+Actors from normal Actor selection and federation actions. For an owned local
+Actor, `suspendedAt` identifies the reversible account-suspension `Delete` that
+Rosmarinus must match in a later `Undo(Delete)`. A deleted local Actor remains
+as a tombstone so Rosmarinus can sign queued deletion retries; Salvia must not
+expose its retained key or treat the document as recoverable.
 
 Treat a suspended remote Actor as unavailable immediately. Its Notes,
 reactions, Follow/Block relationships, polls, and related notifications may be
@@ -368,7 +370,12 @@ When suspending, deleting, or otherwise changing account authorization:
 The database write must happen first. The control message is only an
 invalidation hint; Rosmarinus re-reads the Salvia-owned row and periodically
 reconciles it. Retrying the same revision is safe. Salvia must not modify or
-delete the account's Actors as part of this flow.
+delete the account's Actors as part of this flow. Rosmarinus maps `suspended`
+to temporary Actor suspension plus federation `Delete`, maps a later `active`
+state to resume plus the matching `Undo(Delete)`, and maps `deleted` or a
+non-null `deletedAt` to permanent Actor tombstoning and cleanup. A missing
+Salvia account is treated as temporarily suspended rather than irreversibly
+deleted.
 
 ## Engineering Rules
 

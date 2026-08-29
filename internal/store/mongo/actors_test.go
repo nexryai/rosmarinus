@@ -3,6 +3,7 @@ package mongostore
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
@@ -35,6 +36,22 @@ func TestSystemActorDocumentHasNoOwner(t *testing.T) {
 	doc := fromActor(actors.Actor{ID: "relay", IsSystemActor: true})
 	if !doc.IsSystemActor || doc.OwnerAccountID != "" {
 		t.Fatalf("unexpected system actor document: %+v", doc)
+	}
+}
+
+func TestActorDocumentPreservesSuspensionTimestamp(t *testing.T) {
+	suspendedAt := time.Date(2026, 8, 29, 1, 2, 3, 4_000_000, time.UTC)
+	doc := fromActor(actors.Actor{ID: "actor-1", IsSuspended: true, SuspendedAt: &suspendedAt})
+	actor := actorFromDocument(doc)
+	if !actor.IsSuspended || actor.SuspendedAt == nil || !actor.SuspendedAt.Equal(suspendedAt) {
+		t.Fatalf("suspension state did not round trip: %+v", actor)
+	}
+	encoded, err := bson.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value := bson.Raw(encoded).Lookup("suspendedAt"); value.Type != bson.TypeDateTime {
+		t.Fatalf("suspendedAt BSON type = %v", value.Type)
 	}
 }
 

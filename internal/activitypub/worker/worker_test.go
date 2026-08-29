@@ -23,6 +23,7 @@ import (
 
 	"github.com/hibiken/asynq"
 
+	"github.com/nexryai/rosmarinus/internal/account"
 	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
 	apnotes "github.com/nexryai/rosmarinus/internal/activitypub/notes"
 	"github.com/nexryai/rosmarinus/internal/config"
@@ -86,6 +87,28 @@ func (f *fakeRepo) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accou
 	return nil, nil
 }
 
+func (f *fakeRepo) ListOwnedLocalActorsPage(_ context.Context, accountID, afterID string, limit int, includeDeleted bool) ([]actors.Actor, error) {
+	if f.local == nil || f.local.OwnerAccountID != accountID || f.local.Host != nil || f.local.IsSystemActor || f.local.ID <= afterID || (!includeDeleted && f.local.DeletedAt != nil) || limit <= 0 {
+		return nil, nil
+	}
+	return []actors.Actor{*f.local}, nil
+}
+
+func (f *fakeRepo) SetOwnedLocalActorSuspended(ctx context.Context, accountID, actorID string, suspended bool, changedAt time.Time) (*actors.Actor, error) {
+	actor, _ := f.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
+	if actor == nil || actor.DeletedAt != nil || actor.IsSuspended == suspended {
+		return nil, nil
+	}
+	actor.IsSuspended = suspended
+	if suspended {
+		changedAt = changedAt.UTC()
+		actor.SuspendedAt = &changedAt
+	} else {
+		actor.SuspendedAt = nil
+	}
+	return actor, nil
+}
+
 func (f *fakeRepo) MarkOwnedLocalActorDeleted(ctx context.Context, accountID, actorID string, deletedAt time.Time) (*actors.Actor, error) {
 	actor, _ := f.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
 	if actor == nil {
@@ -95,6 +118,7 @@ func (f *fakeRepo) MarkOwnedLocalActorDeleted(ctx context.Context, accountID, ac
 		deletedAt = deletedAt.UTC()
 		actor.DeletedAt = &deletedAt
 		actor.IsSuspended = true
+		actor.SuspendedAt = &deletedAt
 	}
 	return actor, nil
 }
@@ -111,14 +135,6 @@ func (f *fakeRepo) UpdateOwnedLocalActor(ctx context.Context, accountID, actorID
 	updated := patch.Apply(*f.local)
 	f.local = &updated
 	return f.local, nil
-}
-
-func (f *fakeRepo) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
-	if f.local != nil && f.local.OwnerAccountID == accountID && !f.local.IsSystemActor && !f.local.IsSuspended {
-		f.local.IsSuspended = true
-		return 1, nil
-	}
-	return 0, nil
 }
 
 func (f *fakeRepo) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {
@@ -232,6 +248,7 @@ func (f *fakeRepo) MarkRemoteActorDeleted(ctx context.Context, uri string) error
 type fakeQueue struct {
 	task  queue.Task
 	tasks []queue.Task
+	err   error
 }
 
 type fakeMediaRepo struct {
@@ -302,6 +319,9 @@ func (f fakeMediaFetcher) ValidateURL(target *url.URL) error {
 }
 
 func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
+	if f.err != nil {
+		return f.err
+	}
 	f.task = task
 	f.tasks = append(f.tasks, task)
 	return nil
@@ -3282,6 +3302,110 @@ func TestDeleteActorSuspendsOwnedActorAndFansOutToKnownPeers(t *testing.T) {
 	}
 }
 
+func TestApplyAccountLifecycleFederatesSuspensionAndMatchingUndo(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID: "owned-actor", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/owned-actor",
+		Username: "owned", Type: "Person", PrivateKeyPEM: "private",
+	}
+	remote := &actors.Actor{ID: "remote-follower", URI: "https://remote.example/users/follower", Host: &host}
+	repo := &fakeRepo{local: local, remotes: map[string]*actors.Actor{remote.URI: remote}}
+	followRepo := &fakeFollowRepo{follows: map[string]*follows.Follow{}}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID: "01", FollowerID: remote.ID, FolloweeID: local.ID, FollowerHost: &host,
+		FollowerSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	queued := &fakeQueue{}
+	h := New(config.Config{DeliverQueue: config.QueueConfig{MaxRetry: 11, Timeout: time.Minute}}, nil, repo, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, nil)
+
+	modified, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusSuspended, false)
+	if err != nil || modified != 1 || !local.IsSuspended || local.SuspendedAt == nil {
+		t.Fatalf("suspend result modified=%d err=%v actor=%+v", modified, err, local)
+	}
+	if len(queued.tasks) != 1 {
+		t.Fatalf("suspension deliveries = %+v", queued.tasks)
+	}
+	deletePayload := queued.tasks[0].Payload.(queue.DeliverPayload)
+	deleteID, _ := deletePayload.Object["id"].(string)
+	if deletePayload.Object["type"] != "Delete" || deletePayload.Object["object"] != local.URI || deleteID == local.URI+"#delete" {
+		t.Fatalf("suspension delivery = %+v", deletePayload)
+	}
+	if repeated, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusSuspended, false); err != nil || repeated != 0 || len(queued.tasks) != 1 {
+		t.Fatalf("repeated suspension modified=%d err=%v tasks=%+v", repeated, err, queued.tasks)
+	}
+
+	modified, err = h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusActive, false)
+	if err != nil || modified != 1 || local.IsSuspended || local.SuspendedAt != nil {
+		t.Fatalf("resume result modified=%d err=%v actor=%+v", modified, err, local)
+	}
+	if len(queued.tasks) != 2 {
+		t.Fatalf("lifecycle deliveries = %+v", queued.tasks)
+	}
+	undoPayload := queued.tasks[1].Payload.(queue.DeliverPayload)
+	embedded, ok := undoPayload.Object["object"].(map[string]any)
+	if undoPayload.Object["type"] != "Undo" || !ok || embedded["id"] != deleteID || embedded["type"] != "Delete" {
+		t.Fatalf("unsuspension delivery = %+v", undoPayload)
+	}
+}
+
+func TestApplyAccountLifecycleDeletesActorsForDeletedAccount(t *testing.T) {
+	local := &actors.Actor{ID: "owned-actor", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/owned-actor"}
+	queued := &fakeQueue{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, nil)
+	modified, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusDeleted, true)
+	if err != nil || modified != 1 || local.DeletedAt == nil {
+		t.Fatalf("delete lifecycle modified=%d err=%v actor=%+v", modified, err, local)
+	}
+	if len(queued.tasks) != 1 || queued.tasks[0].Type != queue.TaskAccountDelete {
+		t.Fatalf("cleanup tasks = %+v", queued.tasks)
+	}
+}
+
+func TestApplyAccountLifecycleResumesLegacySuspensionWithoutUndo(t *testing.T) {
+	local := &actors.Actor{
+		ID: "legacy-suspended", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/legacy-suspended", IsSuspended: true,
+	}
+	queued := &fakeQueue{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, nil)
+	modified, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusActive, false)
+	if err != nil || modified != 1 || local.IsSuspended {
+		t.Fatalf("legacy resume modified=%d err=%v actor=%+v", modified, err, local)
+	}
+	if len(queued.tasks) != 0 {
+		t.Fatalf("legacy suspension produced unmatched Undo: %+v", queued.tasks)
+	}
+}
+
+func TestApplyAccountLifecycleKeepsStateWhenDeliveryCannotBeQueued(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "owned", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/owned"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/remote", Host: &host}
+	repo := &fakeRepo{local: local, remotes: map[string]*actors.Actor{remote.URI: remote}}
+	followRepo := &fakeFollowRepo{follows: map[string]*follows.Follow{}}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		ID: "01", FollowerID: remote.ID, FolloweeID: local.ID, FollowerHost: &host,
+		FollowerSharedInbox: "https://remote.example/inbox", Status: follows.StatusAccepted,
+	})
+	queued := &fakeQueue{err: errors.New("queue unavailable")}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, nil)
+	if _, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusSuspended, false); err == nil {
+		t.Fatal("expected suspension queue failure")
+	}
+	if local.IsSuspended || local.SuspendedAt != nil {
+		t.Fatalf("queue failure suspended Actor without durable delivery: %+v", local)
+	}
+
+	suspendedAt := time.Now().UTC()
+	local.IsSuspended = true
+	local.SuspendedAt = &suspendedAt
+	if _, err := h.ApplyAccountLifecycle(context.Background(), "account-1", account.StatusActive, false); err == nil {
+		t.Fatal("expected unsuspension queue failure")
+	}
+	if !local.IsSuspended || local.SuspendedAt == nil {
+		t.Fatalf("queue failure resumed Actor without durable Undo: %+v", local)
+	}
+}
+
 func TestHandleDeliverTaskAllowsOnlyActorDeleteForDeletedSigner(t *testing.T) {
 	deletedAt := time.Now().UTC()
 	local := &actors.Actor{
@@ -3302,6 +3426,53 @@ func TestHandleDeliverTaskAllowsOnlyActorDeleteForDeletedSigner(t *testing.T) {
 	})
 	if err := h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, createPayload)); err == nil {
 		t.Fatal("stale non-Delete activity was delivered for deleted Actor")
+	}
+	if client.deliveries != 1 {
+		t.Fatalf("delivery calls = %d", client.deliveries)
+	}
+}
+
+func TestHandleDeliverTaskAllowsSuspensionDeleteButRejectsStaleActivity(t *testing.T) {
+	suspendedAt := time.Now().UTC()
+	local := &actors.Actor{ID: "suspended-actor", URI: "https://rosmarinus.example/users/suspended-actor", IsSuspended: true, SuspendedAt: &suspendedAt}
+	client := &fakeClient{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	deletePayload, _ := json.Marshal(queue.DeliverPayload{
+		Version: 1, ActorID: local.ID, To: "https://remote.example/inbox", Object: apactors.RenderSuspension(local, suspendedAt),
+	})
+	if err := h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, deletePayload)); err != nil {
+		t.Fatalf("suspended Actor Delete delivery failed: %v", err)
+	}
+	createPayload, _ := json.Marshal(queue.DeliverPayload{
+		Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+		Object: map[string]any{"id": local.URI + "#stale", "type": "Create", "actor": local.URI, "object": local.URI + "/notes/stale"},
+	})
+	if err := h.HandleDeliverTask(context.Background(), asynq.NewTask(queue.TaskDeliver, createPayload)); err == nil {
+		t.Fatal("stale non-Delete activity was delivered for suspended Actor")
+	}
+	if client.deliveries != 1 {
+		t.Fatalf("delivery calls = %d", client.deliveries)
+	}
+}
+
+func TestHandleDeliverTaskRetriesMatchingUndoUntilActorResumes(t *testing.T) {
+	suspendedAt := time.Now().UTC()
+	local := &actors.Actor{ID: "suspended-actor", URI: "https://rosmarinus.example/users/suspended-actor", IsSuspended: true, SuspendedAt: &suspendedAt}
+	client := &fakeClient{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	payload, _ := json.Marshal(queue.DeliverPayload{
+		Version: 1, ActorID: local.ID, To: "https://remote.example/inbox",
+		Object: apactors.RenderUnsuspension(local, suspendedAt, suspendedAt.Add(time.Minute)),
+	})
+	task := asynq.NewTask(queue.TaskDeliver, payload)
+	err := h.HandleDeliverTask(context.Background(), task)
+	if err == nil || errors.Is(err, asynq.SkipRetry) {
+		t.Fatalf("matching Undo before resume error = %v", err)
+	}
+	local.IsSuspended = false
+	local.SuspendedAt = nil
+	if err := h.HandleDeliverTask(context.Background(), task); err != nil {
+		t.Fatalf("matching Undo after resume failed: %v", err)
 	}
 	if client.deliveries != 1 {
 		t.Fatalf("delivery calls = %d", client.deliveries)

@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/nexryai/rosmarinus/internal/account"
 )
@@ -19,54 +20,79 @@ func (f *fakeAccountReader) FindByID(ctx context.Context, id string) (*account.A
 	return nil, nil
 }
 
-type fakeActorSuspender struct {
+type fakeActorLifecycle struct {
 	accountID string
+	status    account.Status
+	deleted   bool
 }
 
-func (f *fakeActorSuspender) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
+func (f *fakeActorLifecycle) ApplyAccountLifecycle(ctx context.Context, accountID string, status account.Status, deleted bool) (int64, error) {
 	_ = ctx
 	f.accountID = accountID
+	f.status = status
+	f.deleted = deleted
 	return 2, nil
 }
 
 func TestAccountControlSuspendsActorsFromDatabaseState(t *testing.T) {
-	suspender := &fakeActorSuspender{}
+	lifecycle := &fakeActorLifecycle{}
 	handler := NewAccountControlHandler(nil, &fakeAccountReader{account: &account.Account{
 		ID:            "account-1",
 		Status:        account.StatusSuspended,
 		AuthzRevision: 4,
-	}}, suspender, nil)
+	}}, lifecycle, nil)
 	if err := handler.Handle(context.Background(), CommandMessage{
 		Name: ControlAccountAuthorizationChanged,
 		Data: AccountAuthorizationChanged{AccountID: "account-1", AuthzRevision: 3},
 	}); err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	if suspender.accountID != "account-1" {
-		t.Fatalf("suspended account = %q", suspender.accountID)
+	if lifecycle.accountID != "account-1" || lifecycle.status != account.StatusSuspended || lifecycle.deleted {
+		t.Fatalf("lifecycle call = %+v", lifecycle)
 	}
 }
 
-func TestAccountControlDoesNotSuspendActiveAccount(t *testing.T) {
-	suspender := &fakeActorSuspender{}
-	handler := NewAccountControlHandler(nil, &fakeAccountReader{account: &account.Account{ID: "account-1", Status: account.StatusActive}}, suspender, nil)
+func TestAccountControlResumesActiveAccountActors(t *testing.T) {
+	lifecycle := &fakeActorLifecycle{}
+	handler := NewAccountControlHandler(nil, &fakeAccountReader{account: &account.Account{ID: "account-1", Status: account.StatusActive}}, lifecycle, nil)
 	if err := handler.Handle(context.Background(), CommandMessage{
 		Name: ControlAccountAuthorizationChanged,
 		Data: AccountAuthorizationChanged{AccountID: "account-1"},
 	}); err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	if suspender.accountID != "" {
-		t.Fatalf("active account was suspended: %q", suspender.accountID)
+	if lifecycle.accountID != "account-1" || lifecycle.status != account.StatusActive || lifecycle.deleted {
+		t.Fatalf("lifecycle call = %+v", lifecycle)
 	}
 }
 
-func TestAccountControlRejectsPayloadStatusWithoutDatabaseAccount(t *testing.T) {
-	handler := NewAccountControlHandler(nil, &fakeAccountReader{}, &fakeActorSuspender{}, nil)
+func TestAccountControlSuspendsActorsForMissingDatabaseAccount(t *testing.T) {
+	lifecycle := &fakeActorLifecycle{}
+	handler := NewAccountControlHandler(nil, &fakeAccountReader{}, lifecycle, nil)
 	if err := handler.Handle(context.Background(), CommandMessage{
 		Name: ControlAccountAuthorizationChanged,
 		Data: map[string]any{"account_id": "missing", "status": "active"},
-	}); err == nil {
-		t.Fatal("expected missing database account to fail")
+	}); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if lifecycle.accountID != "missing" || lifecycle.status != account.StatusSuspended || lifecycle.deleted {
+		t.Fatalf("lifecycle call = %+v", lifecycle)
+	}
+}
+
+func TestAccountControlPermanentlyDeletesActorsForDeletedAccount(t *testing.T) {
+	deletedAt := time.Now().UTC()
+	lifecycle := &fakeActorLifecycle{}
+	handler := NewAccountControlHandler(nil, &fakeAccountReader{account: &account.Account{
+		ID: "account-1", Status: account.StatusActive, DeletedAt: &deletedAt,
+	}}, lifecycle, nil)
+	if err := handler.Handle(context.Background(), CommandMessage{
+		Name: ControlAccountAuthorizationChanged,
+		Data: AccountAuthorizationChanged{AccountID: "account-1"},
+	}); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if lifecycle.accountID != "account-1" || lifecycle.status != account.StatusActive || !lifecycle.deleted {
+		t.Fatalf("lifecycle call = %+v", lifecycle)
 	}
 }

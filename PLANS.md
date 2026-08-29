@@ -634,10 +634,13 @@ when an Ably notification is missed.
 - [x] Add a periodic full reconciler so missed Ably control events are
       eventually observed. It lists distinct Actor owner accounts and therefore
       does not require persisted resume/checkpoint state.
-- [ ] Define account suspension/deletion policy: immediately reject new
-      commands, stop publishing sensitive account events, and have Rosmarinus
-      mark or retain its owned Actors according to federation retention rules.
-      Salvia must never update Actor documents directly.
+- [x] Define account suspension/deletion policy. Inactive or missing accounts
+      immediately reject commands and temporarily suspend every owned Actor;
+      Rosmarinus sends a uniquely identified `Delete` and preserves federation
+      relationships so an active account can send the matching `Undo(Delete)`.
+      A deleted status or `deletedAt` permanently tombstones each Actor through
+      the normal `actor.delete` cleanup path. Salvia never updates Actor
+      documents directly.
 - [x] Treat Ably account events as notifications, not the only copy of state.
       After reconnecting, Salvia reads Rosmarinus-owned collections to rebuild
       UI state.

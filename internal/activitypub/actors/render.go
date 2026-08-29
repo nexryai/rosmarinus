@@ -287,6 +287,49 @@ func RenderDelete(actor *domainactors.Actor, deletedAt time.Time) map[string]any
 	})
 }
 
+func RenderSuspension(actor *domainactors.Actor, suspendedAt time.Time) map[string]any {
+	if actor == nil || actor.URI == "" {
+		return nil
+	}
+	if suspendedAt.IsZero() {
+		suspendedAt = time.Now().UTC()
+	}
+	return renderActorDelete(actor, SuspensionDeleteID(actor.URI, suspendedAt), suspendedAt)
+}
+
+func SuspensionDeleteID(actorURI string, suspendedAt time.Time) string {
+	return strings.TrimSpace(actorURI) + "#suspensions/" + strconv.FormatInt(suspendedAt.UnixMilli(), 10) + "/delete"
+}
+
+func RenderUnsuspension(actor *domainactors.Actor, suspendedAt, resumedAt time.Time) map[string]any {
+	if actor == nil || actor.URI == "" || suspendedAt.IsZero() {
+		return nil
+	}
+	if resumedAt.IsZero() {
+		resumedAt = time.Now().UTC()
+	}
+	deleteActivity := RenderSuspension(actor, suspendedAt)
+	delete(deleteActivity, "@context")
+	deleteID, _ := deleteActivity["id"].(string)
+	return withActivityContext(map[string]any{
+		"id":        deleteID + "/undo",
+		"type":      "Undo",
+		"actor":     actor.URI,
+		"object":    deleteActivity,
+		"published": resumedAt.UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func renderActorDelete(actor *domainactors.Actor, activityID string, published time.Time) map[string]any {
+	return withActivityContext(map[string]any{
+		"id":        activityID,
+		"type":      "Delete",
+		"actor":     actor.URI,
+		"object":    actor.URI,
+		"published": published.UTC().Format(time.RFC3339Nano),
+	})
+}
+
 func RenderPublicKey(actor *domainactors.Actor) map[string]any {
 	if actor == nil {
 		return nil

@@ -15,14 +15,14 @@ type AccountReader interface {
 	FindByID(context.Context, string) (*account.Account, error)
 }
 
-type OwnedActorSuspender interface {
-	SuspendOwnedLocalActors(context.Context, string) (int64, error)
+type OwnedActorLifecycle interface {
+	ApplyAccountLifecycle(context.Context, string, account.Status, bool) (int64, error)
 }
 
 type AccountControlHandler struct {
 	source   CommandSource
 	accounts AccountReader
-	actors   OwnedActorSuspender
+	actors   OwnedActorLifecycle
 	logger   *log.Logger
 }
 
@@ -31,7 +31,7 @@ type AccountAuthorizationChanged struct {
 	AuthzRevision int64  `json:"authz_revision"`
 }
 
-func NewAccountControlHandler(source CommandSource, accounts AccountReader, actors OwnedActorSuspender, logger *log.Logger) *AccountControlHandler {
+func NewAccountControlHandler(source CommandSource, accounts AccountReader, actors OwnedActorLifecycle, logger *log.Logger) *AccountControlHandler {
 	return &AccountControlHandler{source: source, accounts: accounts, actors: actors, logger: logger}
 }
 
@@ -65,24 +65,26 @@ func (h *AccountControlHandler) Handle(ctx context.Context, message CommandMessa
 	if err != nil {
 		return fmt.Errorf("read Salvia account after control event: %w", err)
 	}
-	if accountRecord == nil {
-		return fmt.Errorf("Salvia account not found after control event")
+	if h.actors == nil {
+		return fmt.Errorf("owned actor lifecycle handler is not configured")
 	}
-	if accountRecord.IsActive() {
+	if accountRecord == nil {
+		modified, err := h.actors.ApplyAccountLifecycle(ctx, event.AccountID, account.StatusSuspended, false)
+		if err != nil {
+			return fmt.Errorf("suspend actors for missing Salvia account: %w", err)
+		}
 		if h.logger != nil {
-			h.logger.Printf("connector: account authorization refreshed account_id=%s revision=%d", accountRecord.ID, accountRecord.AuthzRevision)
+			h.logger.Printf("connector: suspended actors for missing Salvia account account_id=%s modified=%d", event.AccountID, modified)
 		}
 		return nil
 	}
-	if h.actors == nil {
-		return fmt.Errorf("owned actor suspender is not configured")
-	}
-	modified, err := h.actors.SuspendOwnedLocalActors(ctx, accountRecord.ID)
+	deleted := accountRecord.DeletedAt != nil || accountRecord.Status == account.StatusDeleted
+	modified, err := h.actors.ApplyAccountLifecycle(ctx, accountRecord.ID, accountRecord.Status, deleted)
 	if err != nil {
-		return fmt.Errorf("suspend account actors: %w", err)
+		return fmt.Errorf("apply account actor lifecycle: %w", err)
 	}
 	if h.logger != nil {
-		h.logger.Printf("connector: suspended account actors account_id=%s status=%s revision=%d modified=%d", accountRecord.ID, accountRecord.Status, accountRecord.AuthzRevision, modified)
+		h.logger.Printf("connector: applied account actor lifecycle account_id=%s status=%s deleted=%t revision=%d modified=%d", accountRecord.ID, accountRecord.Status, deleted, accountRecord.AuthzRevision, modified)
 	}
 	return nil
 }

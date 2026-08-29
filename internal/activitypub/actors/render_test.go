@@ -99,3 +99,22 @@ func TestRenderDeleteUsesStableActorActivityID(t *testing.T) {
 		t.Fatalf("delete metadata = %#v", body)
 	}
 }
+
+func TestRenderSuspensionAndUnsuspensionUseMatchingDelete(t *testing.T) {
+	actor := &domainactors.Actor{URI: "https://example.test/users/actor-id"}
+	suspendedAt := time.Date(2026, 8, 29, 1, 2, 3, 4_000_000, time.UTC)
+	resumedAt := suspendedAt.Add(time.Hour)
+	deleteActivity := RenderSuspension(actor, suspendedAt)
+	wantDeleteID := actor.URI + "#suspensions/1787965323004/delete"
+	if deleteActivity["id"] != wantDeleteID || deleteActivity["type"] != "Delete" || deleteActivity["object"] != actor.URI {
+		t.Fatalf("suspension = %#v", deleteActivity)
+	}
+	undo := RenderUnsuspension(actor, suspendedAt, resumedAt)
+	if undo["id"] != wantDeleteID+"/undo" || undo["type"] != "Undo" || undo["actor"] != actor.URI || undo["published"] != resumedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("unsuspension = %#v", undo)
+	}
+	embedded, ok := undo["object"].(map[string]any)
+	if !ok || embedded["id"] != wantDeleteID || embedded["type"] != "Delete" || embedded["object"] != actor.URI || embedded["@context"] != nil {
+		t.Fatalf("embedded suspension Delete = %#v", undo["object"])
+	}
+}

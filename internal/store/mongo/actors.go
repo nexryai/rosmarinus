@@ -59,6 +59,7 @@ type actorDocument struct {
 	PublicKeyPEM    string                      `bson:"publicKeyPem"`
 	PrivateKeyPEM   string                      `bson:"privateKeyPem,omitempty"`
 	IsSuspended     bool                        `bson:"isSuspended"`
+	SuspendedAt     *time.Time                  `bson:"suspendedAt,omitempty"`
 	DeletedAt       *time.Time                  `bson:"deletedAt,omitempty"`
 }
 
@@ -137,6 +138,41 @@ func (r *ActorRepository) FindOwnedLocalByIDIncludingDeleted(ctx context.Context
 		"host":           nil,
 		"isSystemActor":  bson.M{"$ne": true},
 	})
+}
+
+func (r *ActorRepository) ListOwnedLocalActorsPage(ctx context.Context, accountID, afterID string, limit int, includeDeleted bool) ([]actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, fmt.Errorf("owner account id is required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	filter := bson.M{
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  bson.M{"$ne": true},
+	}
+	if afterID != "" {
+		filter["_id"] = bson.M{"$gt": afterID}
+	}
+	if !includeDeleted {
+		filter["deletedAt"] = nil
+	}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	documents := make([]actorDocument, 0, limit)
+	if err := cursor.All(ctx, &documents); err != nil {
+		return nil, err
+	}
+	result := make([]actors.Actor, 0, len(documents))
+	for _, document := range documents {
+		result = append(result, actorFromDocument(document))
+	}
+	return result, nil
 }
 
 func (r *ActorRepository) FindLocalForDeliveryByID(ctx context.Context, actorID string) (*actors.Actor, error) {
@@ -241,6 +277,41 @@ func (r *ActorRepository) MarkOwnedLocalActorDeleted(ctx context.Context, accoun
 	return r.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
 }
 
+func (r *ActorRepository) SetOwnedLocalActorSuspended(ctx context.Context, accountID, actorID string, suspended bool, changedAt time.Time) (*actors.Actor, error) {
+	accountID = strings.TrimSpace(accountID)
+	actorID = strings.TrimSpace(actorID)
+	if accountID == "" || actorID == "" {
+		return nil, fmt.Errorf("owner account id and actor id are required")
+	}
+	if changedAt.IsZero() {
+		changedAt = time.Now().UTC()
+	}
+	filter := bson.M{
+		"_id":            actorID,
+		"ownerAccountId": accountID,
+		"host":           nil,
+		"isSystemActor":  bson.M{"$ne": true},
+		"isSuspended":    bson.M{"$ne": suspended},
+		"deletedAt":      nil,
+	}
+	update := bson.M{"$set": bson.M{"isSuspended": suspended}}
+	if suspended {
+		update["$set"].(bson.M)["suspendedAt"] = changedAt.UTC()
+	} else {
+		update["$unset"] = bson.M{"suspendedAt": ""}
+	}
+	var document actorDocument
+	err := r.collection.FindOneAndUpdate(ctx, filter, update, options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&document)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	actor := actorFromDocument(document)
+	return &actor, nil
+}
+
 func actorPatchUpdate(patch actors.ActorPatch) (bson.M, bson.M) {
 	set := bson.M{}
 	unset := bson.M{}
@@ -298,27 +369,6 @@ func actorPatchUpdate(patch actors.ActorPatch) (bson.M, bson.M) {
 	setBool(patch.IsLocked, "isLocked")
 	setBool(patch.IsDiscoverable, "isDiscoverable")
 	return set, unset
-}
-
-func (r *ActorRepository) SuspendOwnedLocalActors(ctx context.Context, accountID string) (int64, error) {
-	accountID = strings.TrimSpace(accountID)
-	if accountID == "" {
-		return 0, fmt.Errorf("owner account id is required")
-	}
-	now := time.Now().UTC()
-	result, err := r.collection.UpdateMany(ctx, bson.M{
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-		"isSuspended":    false,
-	}, bson.M{"$set": bson.M{
-		"isSuspended": true,
-		"suspendedAt": now,
-	}})
-	if err != nil {
-		return 0, err
-	}
-	return result.ModifiedCount, nil
 }
 
 func (r *ActorRepository) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {
@@ -546,7 +596,12 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		}
 		return nil, err
 	}
-	return &actors.Actor{
+	actor := actorFromDocument(doc)
+	return &actor, nil
+}
+
+func actorFromDocument(doc actorDocument) actors.Actor {
+	return actors.Actor{
 		ID:              doc.ID,
 		OwnerAccountID:  doc.OwnerAccountID,
 		IsSystemActor:   doc.IsSystemActor,
@@ -583,8 +638,9 @@ func (r *ActorRepository) findOne(ctx context.Context, filter bson.M) (*actors.A
 		PublicKeyPEM:    doc.PublicKeyPEM,
 		PrivateKeyPEM:   doc.PrivateKeyPEM,
 		IsSuspended:     doc.IsSuspended,
+		SuspendedAt:     doc.SuspendedAt,
 		DeletedAt:       doc.DeletedAt,
-	}, nil
+	}
 }
 
 func fromActor(actor actors.Actor) actorDocument {
@@ -625,6 +681,7 @@ func fromActor(actor actors.Actor) actorDocument {
 		PublicKeyPEM:    actor.PublicKeyPEM,
 		PrivateKeyPEM:   actor.PrivateKeyPEM,
 		IsSuspended:     actor.IsSuspended,
+		SuspendedAt:     actor.SuspendedAt,
 		DeletedAt:       actor.DeletedAt,
 	}
 }
