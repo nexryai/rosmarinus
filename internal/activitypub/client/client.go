@@ -14,6 +14,7 @@ import (
 	apsig "github.com/nexryai/rosmarinus/internal/activitypub/signature"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 )
 
 const maxActivityResponseSize = 64 * 1024
@@ -21,8 +22,9 @@ const maxActivityResponseSize = 64 * 1024
 const activityStreamsContext = "https://www.w3.org/ns/activitystreams"
 
 type Client struct {
-	httpClient *http.Client
-	cfg        config.Config
+	httpClient         *http.Client
+	validateNetworkURL func(*url.URL) error
+	cfg                config.Config
 }
 
 type StatusError struct {
@@ -39,10 +41,13 @@ func (e *StatusError) HTTPStatusCode() int {
 }
 
 func New(cfg config.Config, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
-	}
-	client := &Client{cfg: cfg}
+	httpClient, validateNetworkURL := mediafetch.NewSafeFederationHTTPClient(
+		30*time.Second,
+		cfg.UserAgent,
+		cfg.MediaAllowedPrivateNetworks,
+		httpClient,
+	)
+	client := &Client{cfg: cfg, validateNetworkURL: validateNetworkURL}
 	clone := *httpClient
 	previousRedirectPolicy := clone.CheckRedirect
 	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -208,6 +213,11 @@ func (c *Client) validateFederationURL(target *url.URL) error {
 	}
 	if target.Fragment != "" {
 		return fmt.Errorf("activitypub url must not contain a fragment")
+	}
+	if c.validateNetworkURL != nil {
+		if err := c.validateNetworkURL(target); err != nil {
+			return err
+		}
 	}
 	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
 	if c.cfg.IsFederationHostBlocked(host) {

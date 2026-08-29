@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,7 @@ func TestFetchObjectValidatesActivityResponse(t *testing.T) {
 	defer server.Close()
 
 	target := server.URL + "/actor"
-	object, err := New(config.Config{}, server.Client()).FetchObject(context.Background(), target, nil)
+	object, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), target, nil)
 	if err != nil {
 		t.Fatalf("FetchObject returned error: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestFetchObjectRejectsInvalidContext(t *testing.T) {
 	})
 	defer server.Close()
 
-	_, err := New(config.Config{}, server.Client()).FetchObject(context.Background(), server.URL, nil)
+	_, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), server.URL, nil)
 	if err == nil || !strings.Contains(err.Error(), "@context") {
 		t.Fatalf("expected @context error, got %v", err)
 	}
@@ -47,7 +48,7 @@ func TestFetchObjectRejectsMismatchedID(t *testing.T) {
 	})
 	defer server.Close()
 
-	_, err := New(config.Config{}, server.Client()).FetchObject(context.Background(), server.URL, nil)
+	_, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), server.URL, nil)
 	if err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("expected id mismatch, got %v", err)
 	}
@@ -64,7 +65,7 @@ func TestFetchObjectRejectsNonCanonicalRedirect(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := New(config.Config{}, server.Client()).FetchObject(context.Background(), server.URL+"/actor", nil)
+	_, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), server.URL+"/actor", nil)
 	if err == nil || !strings.Contains(err.Error(), "request url") {
 		t.Fatalf("expected request URL mismatch, got %v", err)
 	}
@@ -88,10 +89,27 @@ func TestFetchObjectRejectsRedirectToBlockedHost(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(config.Config{FederationBlockedHosts: []string{"BLOCKED.EXAMPLE."}}, server.Client())
+	cfg := activityTestConfig()
+	cfg.FederationBlockedHosts = []string{"BLOCKED.EXAMPLE."}
+	client := New(cfg, server.Client())
 	_, err := client.FetchObject(context.Background(), server.URL+"/actor", nil)
 	if err == nil || !strings.Contains(err.Error(), "blocked") {
 		t.Fatalf("expected blocked redirect error, got %v", err)
+	}
+}
+
+func TestFetchObjectRejectsRedirectToPrivateAddress(t *testing.T) {
+	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusFound,
+			Header:     http.Header{"Location": []string{"http://127.0.0.1/internal"}},
+			Body:       io.NopCloser(strings.NewReader("")),
+			Request:    req,
+		}, nil
+	})}
+	_, err := New(config.Config{}, httpClient).FetchObject(context.Background(), "https://public.example/actor", nil)
+	if err == nil || !strings.Contains(err.Error(), "not public") {
+		t.Fatalf("expected private redirect error, got %v", err)
 	}
 }
 
@@ -99,6 +117,26 @@ func TestFetchObjectRejectsFragment(t *testing.T) {
 	client := New(config.Config{}, nil)
 	if _, err := client.FetchObject(context.Background(), "https://remote.example/actor#key", nil); err == nil || !strings.Contains(err.Error(), "fragment") {
 		t.Fatalf("expected fragment error, got %v", err)
+	}
+}
+
+func TestClientRejectsPrivateFederationTargetsUnlessExplicitlyAllowed(t *testing.T) {
+	server := activityServer(t, func(r *http.Request) string {
+		return fmt.Sprintf(`{"@context":%q,"id":%q,"type":"Person"}`, activityStreamsContext, serverURL(r))
+	})
+	defer server.Close()
+	target := server.URL + "/actor"
+
+	client := New(config.Config{}, server.Client())
+	if _, err := client.FetchObject(context.Background(), target, nil); err == nil || !strings.Contains(err.Error(), "not public") {
+		t.Fatalf("private ActivityPub target was accepted: %v", err)
+	}
+	if _, err := client.Deliver(context.Background(), server.URL+"/inbox", actors.Actor{}, map[string]any{}); err == nil || !strings.Contains(err.Error(), "not public") {
+		t.Fatalf("private delivery target was accepted: %v", err)
+	}
+
+	if _, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), target, nil); err != nil {
+		t.Fatalf("explicitly allowed ActivityPub target was rejected: %v", err)
 	}
 }
 
@@ -112,4 +150,14 @@ func activityServer(t *testing.T, body func(*http.Request) string) *httptest.Ser
 
 func serverURL(r *http.Request) string {
 	return "http://" + r.Host + r.URL.Path
+}
+
+func activityTestConfig() config.Config {
+	return config.Config{MediaAllowedPrivateNetworks: []string{"127.0.0.0/8"}}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

@@ -2,7 +2,9 @@ package mediafetch
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,6 +52,21 @@ func TestFetcherAllowsExplicitPrivateNetwork(t *testing.T) {
 	target, _ := url.Parse("https://10.0.0.5/file.png")
 	if err := NewWithAllowedNetworks(1024, time.Second, "", []string{"10.0.0.0/8"}, &http.Client{}).ValidateURL(target); err != nil {
 		t.Fatalf("explicitly allowed target was rejected: %v", err)
+	}
+}
+
+func TestSafeDialerRejectsHostnameResolvingToPrivateAddress(t *testing.T) {
+	dialed := false
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		dialed = true
+		return nil, errors.New("unexpected dial")
+	}
+	_, err := safeDialer(dial, nil, "test")(context.Background(), "tcp", "localhost:443")
+	if err == nil || !strings.Contains(err.Error(), "non-public") {
+		t.Fatalf("private DNS result was not rejected: %v", err)
+	}
+	if dialed {
+		t.Fatal("network dial occurred before DNS safety validation")
 	}
 }
 

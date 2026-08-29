@@ -35,6 +35,20 @@ worker releases only its token-matched lease so an Asynq retry can safely
 resume. This receipt collection is internal to Rosmarinus and does not change
 the Salvia shared-data or Ably contracts.
 
+## Outbound network safety
+
+ActivityPub object fetches and deliveries resolve hosts locally, reject every
+non-public DNS answer, and connect to the validated address without using an
+environment proxy. The same private-address boundary applies to media and
+instance metadata fetches. Redirect targets are revalidated before they are
+followed.
+
+`MEDIA_ALLOWED_PRIVATE_NETWORKS` is the historical name of the shared CIDR
+allowlist for these remote HTTP clients. Leave it empty in production. Set it
+only for controlled private federation topologies such as the Docker
+compatibility fixture; allowing a network makes any service on that network a
+possible federation target.
+
 ## Failed task inspection
 
 Asynq archives a task after its configured retries are exhausted. Inspect the

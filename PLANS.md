@@ -110,6 +110,9 @@ dependencies when a checkpoint needs more detail:
   UI, and unrelated side effects are out of scope.
 - Rosmarinus uses `github.com/go-fed/httpsig`. Match current Misskey's wire
   behavior without copying its Node signature implementation.
+- Rosmarinus authenticates federation with HTTP Signatures only. It does not
+  implement JSON-LD `RsaSignature2017` fallback or relay flows that require
+  Linked Data signatures.
 - Rosmarinus keeps completed inbound Activity IDs in MongoDB for seven days by
   default. Current Misskey retains completed and failed BullMQ inbox jobs for
   up to seven days, but does not use the Activity URI as a durable domain
@@ -138,7 +141,8 @@ as final:
 - [x] Port current Misskey's remote-fetch protections: blocked-host
       enforcement (including subdomains and redirects), strict request/final/
       object-ID consistency, ActivityStreams context checks, HTTPS downgrade
-      refusal, and federation-loop fragment restrictions.
+      refusal, federation-loop fragment restrictions, and post-DNS private,
+      loopback, link-local, documentation, and reserved-address rejection.
 - [x] Add per-Collection URL history and nesting-depth limits, and resolve
       local Actors from MongoDB without issuing HTTP requests back to
       Rosmarinus.

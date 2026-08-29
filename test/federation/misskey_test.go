@@ -40,15 +40,20 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	// Phase 1: connect to the real MongoDB/Redis fixture, load Rosmarinus's
-	// local Actor, and create two Misskey accounts for public and direct flows.
+	// Phase 1: connect to the explicitly allowlisted private Docker federation
+	// network, load Rosmarinus's local Actor, and create two Misskey accounts for
+	// public and direct flows, verifying safe network policy still permits the
+	// controlled real-Misskey topology.
 	cfg := config.Config{
-		Host:                    "rosmarinus.test",
-		PublicURL:               "https://rosmarinus.test",
-		MongoURI:                envRequired(t, "MONGO_URI"),
-		MongoDatabase:           envRequired(t, "MONGO_DATABASE"),
-		RedisAddr:               envRequired(t, "REDIS_ADDR"),
-		UserAgent:               "rosmarinus-federation-test/1.0",
+		Host:          "rosmarinus.test",
+		PublicURL:     "https://rosmarinus.test",
+		MongoURI:      envRequired(t, "MONGO_URI"),
+		MongoDatabase: envRequired(t, "MONGO_DATABASE"),
+		RedisAddr:     envRequired(t, "REDIS_ADDR"),
+		UserAgent:     "rosmarinus-federation-test/1.0",
+		MediaAllowedPrivateNetworks: []string{
+			"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+		},
 		InboxActivityReceiptTTL: 7 * 24 * time.Hour,
 		InboxQueue:              config.QueueConfig{Name: queue.QueueInbox, MaxRetry: 7, Timeout: 5 * time.Minute},
 		DeliverQueue:            config.QueueConfig{Name: queue.QueueDeliver, MaxRetry: 11, Timeout: time.Minute},

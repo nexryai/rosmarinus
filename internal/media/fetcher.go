@@ -30,25 +30,36 @@ func New(maxBytes int64, timeout time.Duration, userAgent string, client *http.C
 
 func NewWithAllowedNetworks(maxBytes int64, timeout time.Duration, userAgent string, allowedNetworks []string, client *http.Client) *Fetcher {
 	fetcher := &Fetcher{maxBytes: maxBytes}
-	for _, network := range allowedNetworks {
-		if prefix, err := netip.ParsePrefix(network); err == nil {
-			fetcher.allowedNetworks = append(fetcher.allowedNetworks, prefix)
-		}
-	}
+	fetcher.allowedNetworks = parseAllowedNetworks(allowedNetworks)
 	client = configureHTTPClient(timeout, userAgent, client, fetcher.allowedNetworks, fetcher.ValidateURL, "media")
 	fetcher.client = client
 	return fetcher
 }
 
 func NewSafeHTTPClient(timeout time.Duration, userAgent string, allowedNetworks []string) (*http.Client, func(*url.URL) error) {
-	validator := &Fetcher{}
-	for _, network := range allowedNetworks {
-		if prefix, err := netip.ParsePrefix(network); err == nil {
-			validator.allowedNetworks = append(validator.allowedNetworks, prefix)
-		}
-	}
+	validator := &Fetcher{allowedNetworks: parseAllowedNetworks(allowedNetworks)}
 	client := configureHTTPClient(timeout, userAgent, nil, validator.allowedNetworks, validator.ValidateURL, "HTTP")
 	return client, validator.ValidateURL
+}
+
+// NewSafeFederationHTTPClient protects ActivityPub GET and delivery requests
+// while retaining draft-era peers that still expose public HTTP endpoints.
+func NewSafeFederationHTTPClient(timeout time.Duration, userAgent string, allowedNetworks []string, client *http.Client) (*http.Client, func(*url.URL) error) {
+	prefixes := parseAllowedNetworks(allowedNetworks)
+	validate := func(target *url.URL) error {
+		return validateRemoteURL(target, prefixes, false, "activitypub")
+	}
+	return configureHTTPClient(timeout, userAgent, client, prefixes, validate, "ActivityPub"), validate
+}
+
+func parseAllowedNetworks(networks []string) []netip.Prefix {
+	prefixes := make([]netip.Prefix, 0, len(networks))
+	for _, network := range networks {
+		if prefix, err := netip.ParsePrefix(network); err == nil {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	return prefixes
 }
 
 func configureHTTPClient(timeout time.Duration, userAgent string, client *http.Client, allowedNetworks []netip.Prefix, validate func(*url.URL) error, operation string) *http.Client {
@@ -57,7 +68,7 @@ func configureHTTPClient(timeout time.Duration, userAgent string, client *http.C
 		// Resolve and validate the origin locally; an environment proxy could
 		// otherwise resolve the target after the SSRF boundary.
 		transport.Proxy = nil
-		transport.DialContext = safeDialer((&net.Dialer{Timeout: 10 * time.Second}).DialContext, allowedNetworks)
+		transport.DialContext = safeDialer((&net.Dialer{Timeout: 10 * time.Second}).DialContext, allowedNetworks, operation)
 		client = &http.Client{Transport: transport, Timeout: timeout}
 	} else {
 		clone := *client
@@ -137,20 +148,31 @@ func (f *Fetcher) ValidateURL(target *url.URL) error {
 }
 
 func validateURL(target *url.URL, allowedNetworks []netip.Prefix) error {
-	if target == nil || target.Scheme != "https" || target.Host == "" || target.User != nil || target.Fragment != "" {
-		return fmt.Errorf("media url must be an absolute https url without credentials or fragment")
+	return validateRemoteURL(target, allowedNetworks, true, "media")
+}
+
+func validateRemoteURL(target *url.URL, allowedNetworks []netip.Prefix, requireHTTPS bool, operation string) error {
+	validScheme := target != nil && (target.Scheme == "http" || target.Scheme == "https")
+	if requireHTTPS {
+		validScheme = target != nil && target.Scheme == "https"
+	}
+	if !validScheme || target.Host == "" || target.User != nil || target.Fragment != "" {
+		if requireHTTPS {
+			return fmt.Errorf("%s url must be an absolute https url without credentials or fragment", operation)
+		}
+		return fmt.Errorf("%s url must be an absolute http or https url without credentials or fragment", operation)
 	}
 	host := strings.TrimSuffix(strings.ToLower(target.Hostname()), ".")
 	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
-		return fmt.Errorf("media host is not public")
+		return fmt.Errorf("%s host is not public", operation)
 	}
 	if ip := net.ParseIP(host); ip != nil && !isAllowedIP(ip, allowedNetworks) {
-		return fmt.Errorf("media host is not public")
+		return fmt.Errorf("%s host is not public", operation)
 	}
 	return nil
 }
 
-func safeDialer(dial func(context.Context, string, string) (net.Conn, error), allowedNetworks []netip.Prefix) func(context.Context, string, string) (net.Conn, error) {
+func safeDialer(dial func(context.Context, string, string) (net.Conn, error), allowedNetworks []netip.Prefix, operation string) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)
 		if err != nil {
@@ -158,14 +180,14 @@ func safeDialer(dial func(context.Context, string, string) (net.Conn, error), al
 		}
 		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 		if err != nil {
-			return nil, fmt.Errorf("resolve media host %s: %w", host, err)
+			return nil, fmt.Errorf("resolve %s host %s: %w", operation, host, err)
 		}
 		if len(addresses) == 0 {
-			return nil, fmt.Errorf("resolve media host %s: no addresses", host)
+			return nil, fmt.Errorf("resolve %s host %s: no addresses", operation, host)
 		}
 		for _, address := range addresses {
 			if !isAllowedIP(address.IP, allowedNetworks) {
-				return nil, fmt.Errorf("media host %s resolves to a non-public address", host)
+				return nil, fmt.Errorf("%s host %s resolves to a non-public address", operation, host)
 			}
 		}
 		return dial(ctx, network, net.JoinHostPort(addresses[0].IP.String(), port))

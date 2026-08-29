@@ -63,10 +63,10 @@ The Go integration test performs this real federation sequence:
 Rosmarinus stores validated remote media source URLs directly; it does not
 download, transform, or proxy images. Instance NodeInfo, root HTML, and manifest
 discovery defaults to a 30-second operation timeout. The federation fixture's
-`MEDIA_ALLOWED_PRIVATE_NETWORKS` value is retained only as the private-network
-allowlist used by that metadata fetcher. Production deployments should leave it
-empty. Override the metadata timeout with `INSTANCE_METADATA_TIMEOUT` when
-necessary.
+`MEDIA_ALLOWED_PRIVATE_NETWORKS` value explicitly allows its Docker-only
+ActivityPub, media, and metadata endpoints through Rosmarinus's shared
+private-network SSRF boundary. Production deployments should leave it empty.
+Override the metadata timeout with `INSTANCE_METADATA_TIMEOUT` when necessary.
 
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.
