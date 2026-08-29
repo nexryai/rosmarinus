@@ -340,9 +340,11 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 - [x] Resolve replies and quotes recursively with URL history/depth protection.
 - [x] Preserve basic Misskey compatibility fields: `_misskey_content` and
       `source.mediaType = text/x.misskeymarkdown`.
-- [ ] Preserve full Misskey compatibility fields:
-      `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`,
-      `quoteUrl`, and `_misskey_talk`.
+- [x] Preserve current Misskey compatibility fields:
+      `source.mediaType = text/x.misskeymarkdown`, `_misskey_quote`, and
+      `quoteUrl`, including fallback across distinct quote candidates. The
+      historical Concorde-only `_misskey_talk` extension is intentionally not
+      emitted because it is absent from current Misskey.
 - [x] Convert remote HTML to MFM-compatible text matching the observed behavior of
       current Misskey's `MfmService.fromHtml` (MFM.js 0.26 compatibility),
       including links, mentions, hashtags, formatting, code, quotes, and ruby.

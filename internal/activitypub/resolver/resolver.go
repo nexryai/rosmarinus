@@ -250,13 +250,13 @@ func (r *Resolver) ResolveNote(ctx context.Context, uri string) (*domainnotes.No
 	return r.resolveNote(ctx, uri, &noteResolution{history: map[string]struct{}{}})
 }
 
-func (r *Resolver) ResolveNoteLinks(ctx context.Context, rootURI, replyURI, quoteURI string) (*domainnotes.Note, *domainnotes.Note, error) {
+func (r *Resolver) ResolveNoteLinks(ctx context.Context, rootURI, replyURI string, quoteURIs ...string) (*domainnotes.Note, *domainnotes.Note, error) {
 	resolution := &noteResolution{history: map[string]struct{}{rootURI: {}}}
 	reply, err := r.resolveNote(ctx, replyURI, resolution)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve reply: %w", err)
 	}
-	quote, err := r.resolveQuote(ctx, quoteURI, resolution)
+	quote, err := r.resolveQuoteCandidates(ctx, quoteURIs, resolution)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve quote: %w", err)
 	}
@@ -348,7 +348,7 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 	note := domainnotes.Note{
 		URI: parsed.URI, AttributedTo: parsed.AttributedTo, AuthorID: author.ID,
 		Text: parsed.Text, ContentWarning: parsed.ContentWarning, Sensitive: parsed.Sensitive,
-		InReplyToURI: parsed.InReplyToURI, QuoteURI: parsed.QuoteURI,
+		InReplyToURI: parsed.InReplyToURI, QuoteURI: resolvedQuoteURI(parsed.QuoteURI, quote),
 		Visibility: domainnotes.Visibility(parsed.Visibility), MentionURIs: parsed.MentionURIs,
 		VisibleUserURIs: parsed.VisibleUserURIs,
 		Hashtags:        parsed.Hashtags, Emojis: parsed.Emojis, Attachments: parsed.Attachments,
@@ -431,19 +431,40 @@ func (r *Resolver) resolveNoteLinks(ctx context.Context, parsed *apnotes.Note, r
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve reply: %w", err)
 	}
-	quote, err := r.resolveQuote(ctx, parsed.QuoteURI, resolution)
+	quote, err := r.resolveQuoteCandidates(ctx, parsed.QuoteURIs, resolution)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve quote: %w", err)
 	}
 	return reply, quote, nil
 }
 
-func (r *Resolver) resolveQuote(ctx context.Context, uri string, resolution *noteResolution) (*domainnotes.Note, error) {
-	quote, err := r.resolveNote(ctx, uri, resolution)
-	if err != nil && isPermanentNoteResolutionError(err) {
-		return nil, nil
+func (r *Resolver) resolveQuoteCandidates(ctx context.Context, uris []string, resolution *noteResolution) (*domainnotes.Note, error) {
+	seen := make(map[string]struct{}, len(uris))
+	var temporaryError error
+	for _, uri := range uris {
+		if uri == "" {
+			continue
+		}
+		if _, exists := seen[uri]; exists {
+			continue
+		}
+		seen[uri] = struct{}{}
+		quote, err := r.resolveNote(ctx, uri, resolution)
+		if err == nil && quote != nil {
+			return quote, nil
+		}
+		if err != nil && !isPermanentNoteResolutionError(err) && temporaryError == nil {
+			temporaryError = err
+		}
 	}
-	return quote, err
+	return nil, temporaryError
+}
+
+func resolvedQuoteURI(sourceURI string, quote *domainnotes.Note) string {
+	if quote != nil {
+		return quote.URI
+	}
+	return sourceURI
 }
 
 func isPermanentNoteResolutionError(err error) bool {

@@ -36,6 +36,7 @@ type Note struct {
 	Sensitive       bool
 	InReplyToURI    string
 	QuoteURI        string
+	QuoteURIs       []string
 	Visibility      Visibility
 	MentionURIs     []string
 	VisibleUserURIs []string
@@ -68,6 +69,11 @@ func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
 	if visibility == VisibilitySpecified {
 		visibleUserURIs = audienceURIs
 	}
+	quoteURIs := extractQuoteURIs(object)
+	quoteURI := ""
+	if len(quoteURIs) > 0 {
+		quoteURI = quoteURIs[0]
+	}
 	return &Note{
 		URI:             id,
 		AttributedTo:    actorID,
@@ -75,7 +81,8 @@ func ParseRemoteNote(object map[string]any, entryURI string) (*Note, error) {
 		ContentWarning:  contentWarning(object),
 		Sensitive:       boolField(object, "sensitive"),
 		InReplyToURI:    optionalAPID(object["inReplyTo"]),
-		QuoteURI:        quoteURI(object),
+		QuoteURI:        quoteURI,
+		QuoteURIs:       quoteURIs,
 		Visibility:      visibility,
 		MentionURIs:     mergeUnique(ExtractMentionURIs(object["tag"]), audienceURIs),
 		VisibleUserURIs: visibleUserURIs,
@@ -265,13 +272,19 @@ func optionalAPID(value any) string {
 	return id
 }
 
-func quoteURI(object map[string]any) string {
+func extractQuoteURIs(object map[string]any) []string {
+	seen := make(map[string]struct{}, 2)
+	result := make([]string, 0, 2)
 	for _, key := range []string{"_misskey_quote", "quoteUrl"} {
 		if uri, ok := object[key].(string); ok && uri != "" {
-			return uri
+			if _, exists := seen[uri]; exists {
+				continue
+			}
+			seen[uri] = struct{}{}
+			result = append(result, uri)
 		}
 	}
-	return ""
+	return result
 }
 
 func ExtractMentionURIs(tags any) []string {

@@ -238,8 +238,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 7: renote the public Misskey note and verify Rosmarinus accepts the
-	// delivered Announce and stores its reference to the resolved target Note.
+	// Phase 7: renote and quote the public Misskey note, verifying Rosmarinus
+	// accepts the delivered Announce and the Note containing Misskey's duplicate
+	// `_misskey_quote`/`quoteUrl` fields, then stores resolved target references.
 	var createdRenote struct {
 		CreatedNote struct {
 			ID string `json:"id"`
@@ -256,6 +257,24 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	waitFor(t, ctx, "Announce stored by Rosmarinus", func() bool {
 		announce, findErr := noteRepo.FindByURI(ctx, announceURI)
 		return findErr == nil && announce != nil && announce.RenoteID == remoteNote.ID && announce.RenoteURI == remoteNote.URI
+	})
+	var createdQuote struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i": admin.Token, "text": "Quoted from latest Misskey federation test",
+		"renoteId": created.CreatedNote.ID,
+	}, &createdQuote)
+	if createdQuote.CreatedNote.ID == "" {
+		t.Fatal("Misskey quote returned an empty note id")
+	}
+	quoteNoteURI := "https://a.test/notes/" + createdQuote.CreatedNote.ID
+	waitFor(t, ctx, "Misskey quote Note stored with resolved target", func() bool {
+		quote, findErr := noteRepo.FindByURI(ctx, quoteNoteURI)
+		return findErr == nil && quote != nil && quote.Text == "Quoted from latest Misskey federation test" &&
+			quote.QuoteID == remoteNote.ID && quote.QuoteURI == remoteNote.URI
 	})
 
 	// Phase 8: publish a Misskey Question and verify Rosmarinus stores its

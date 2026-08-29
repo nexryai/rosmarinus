@@ -75,14 +75,17 @@ references together:
 ```text
 inReplyToUri   ActivityPub URI claimed by the remote Note
 replyId        Rosmarinus Note `_id` after successful recursive resolution
-quoteUri       ActivityPub quote URI
+quoteUri       successfully resolved `_misskey_quote` or `quoteUrl` URI;
+               otherwise the first claimed quote URI for diagnostics
 quoteId        Rosmarinus Note `_id` after successful recursive resolution
 visibleUserUris ActivityPub Actor URIs allowed to read a `specified` Note
 ```
 
-Salvia should join thread/quote views by `replyId` and `quoteId`. The URI fields
-are federation source data and remain useful for diagnostics and outbound
-rendering; they are not MongoDB foreign keys.
+Salvia should join thread/quote views by `replyId` and `quoteId`. Current
+Misskey can send both `_misskey_quote` and `quoteUrl`; Rosmarinus tries each
+unique candidate and stores the URI corresponding to `quoteId` when one
+resolves. The URI fields are federation source data and remain useful for
+diagnostics and outbound rendering; they are not MongoDB foreign keys.
 
 For `specified` Notes, Salvia must apply `visibleUserUris` in addition to
 Actor/account ownership before returning content to a browser. `mentionUris`

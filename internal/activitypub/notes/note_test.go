@@ -115,6 +115,24 @@ func TestConcordeNoteExtractsCWSensitiveReplyAndQuote(t *testing.T) {
 	if note.QuoteURI != "https://host1.test/notes/quote" {
 		t.Fatalf("QuoteURI = %q", note.QuoteURI)
 	}
+	if len(note.QuoteURIs) != 2 || note.QuoteURIs[0] != "https://host1.test/notes/quote" || note.QuoteURIs[1] != "https://host1.test/notes/other" {
+		t.Fatalf("QuoteURIs = %#v", note.QuoteURIs)
+	}
+}
+
+func TestCurrentMisskeyQuoteCandidatesAreUnique(t *testing.T) {
+	quote := "https://host1.test/notes/quote"
+	note, err := ParseRemoteNote(map[string]any{
+		"id": "https://host1.test/notes/1", "type": "Note",
+		"attributedTo": "https://host1.test/users/alice", "to": PublicAudience,
+		"_misskey_quote": quote, "quoteUrl": quote,
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if len(note.QuoteURIs) != 1 || note.QuoteURIs[0] != quote || note.QuoteURI != quote {
+		t.Fatalf("quote candidates = %#v primary=%q", note.QuoteURIs, note.QuoteURI)
+	}
 }
 
 func TestConcordeNoteEmptySummaryIsNotCW(t *testing.T) {

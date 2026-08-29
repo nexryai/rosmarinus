@@ -1557,7 +1557,7 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err := h.upsertRemoteEmojis(ctx, actor, parsed.Emojis); err != nil && h.logger != nil {
 		h.logger.Printf("activitypub: store Create emoji tags: %v", err)
 	}
-	reply, quote, err := h.resolver.ResolveNoteLinks(ctx, parsed.URI, parsed.InReplyToURI, parsed.QuoteURI)
+	reply, quote, err := h.resolver.ResolveNoteLinks(ctx, parsed.URI, parsed.InReplyToURI, parsed.QuoteURIs...)
 	if err != nil {
 		return "", err
 	}
@@ -1588,6 +1588,7 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	}
 	if quote != nil {
 		note.QuoteID = quote.ID
+		note.QuoteURI = quote.URI
 	}
 	stored, err := h.notes.UpsertRemoteNote(ctx, note)
 	if err != nil {

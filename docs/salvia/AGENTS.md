@@ -135,7 +135,10 @@ resources, not Rosmarinus cache URLs.
 Remote Note relationships expose both federation URIs (`inReplyToUri`,
 `quoteUri`) and resolved Rosmarinus IDs (`replyId`, `quoteId`). Use the ID fields
 for MongoDB joins and thread rendering. Treat URI fields as read-only
-ActivityPub source data, not database foreign keys.
+ActivityPub source data, not database foreign keys. When a peer supplies
+distinct `_misskey_quote` and `quoteUrl` candidates, `quoteUri` is the
+successfully resolved candidate associated with `quoteId`; if neither resolves,
+it retains the first claim only for diagnostics.
 
 For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
 `visibleUserUris` audience before returning content. Do not substitute

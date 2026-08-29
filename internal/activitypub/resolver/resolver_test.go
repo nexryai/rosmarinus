@@ -238,6 +238,57 @@ func TestResolveNoteIgnoresPermanentlyInvalidQuote(t *testing.T) {
 	}
 }
 
+func TestResolveNoteFallsBackAcrossCurrentMisskeyQuoteFields(t *testing.T) {
+	host := "remote.example"
+	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	rootURI := "https://remote.example/notes/root"
+	primaryURI := "https://remote.example/notes/primary"
+	fallbackURI := "https://remote.example/notes/fallback"
+	fetcher := &mappedResolverFetcher{
+		objects: map[string]map[string]any{
+			rootURI: remoteNoteObject(author.URI, "root", map[string]any{
+				"_misskey_quote": primaryURI,
+				"quoteUrl":       fallbackURI,
+			}),
+			fallbackURI: remoteNoteObject(author.URI, "fallback", nil),
+		},
+		errors: map[string]error{primaryURI: fmt.Errorf("temporary fetch failure")},
+	}
+	resolver := New(&resolverActorRepository{existing: author}, fetcher, nil)
+	resolver.SetNoteRepository(&resolverNoteRepository{})
+
+	note, err := resolver.ResolveNote(context.Background(), rootURI)
+	if err != nil {
+		t.Fatalf("ResolveNote returned error: %v", err)
+	}
+	if note.QuoteURI != fallbackURI || note.QuoteID == "" {
+		t.Fatalf("fallback quote was not stored: %+v", note)
+	}
+}
+
+func TestResolveNoteReturnsTemporaryErrorWhenNoQuoteCandidateResolves(t *testing.T) {
+	host := "remote.example"
+	author := &actors.Actor{ID: "remote-author", URI: "https://remote.example/users/alice", Host: &host, LastFetchedAt: time.Now()}
+	rootURI := "https://remote.example/notes/root"
+	primaryURI := "https://remote.example/notes/primary"
+	fetcher := &mappedResolverFetcher{
+		objects: map[string]map[string]any{
+			rootURI: remoteNoteObject(author.URI, "root", map[string]any{
+				"_misskey_quote": primaryURI,
+				"quoteUrl":       "acct:permanent",
+			}),
+		},
+		errors: map[string]error{primaryURI: fmt.Errorf("temporary fetch failure")},
+	}
+	resolver := New(&resolverActorRepository{existing: author}, fetcher, nil)
+	resolver.SetNoteRepository(&resolverNoteRepository{})
+
+	_, err := resolver.ResolveNote(context.Background(), rootURI)
+	if err == nil || !strings.Contains(err.Error(), "temporary fetch failure") {
+		t.Fatalf("temporary quote error = %v", err)
+	}
+}
+
 func TestResolveNoteDoesNotFetchMissingLocalNote(t *testing.T) {
 	fetcher := &mappedResolverFetcher{}
 	resolver := New(&resolverActorRepository{}, fetcher, nil)
@@ -626,11 +677,15 @@ type countingResolverFetcher struct {
 
 type mappedResolverFetcher struct {
 	objects map[string]map[string]any
+	errors  map[string]error
 	calls   int
 }
 
 func (f *mappedResolverFetcher) FetchObject(_ context.Context, uri string, _ *actors.Actor) (map[string]any, error) {
 	f.calls++
+	if err := f.errors[uri]; err != nil {
+		return nil, err
+	}
 	return f.objects[uri], nil
 }
 

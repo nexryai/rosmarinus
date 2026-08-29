@@ -3923,7 +3923,8 @@ func TestProcessInboxCreateStoresNote(t *testing.T) {
 				"summary":        "cw",
 				"sensitive":      true,
 				"inReplyTo":      "https://remote.example/notes/root",
-				"_misskey_quote": "https://remote.example/notes/quote",
+				"_misskey_quote": "acct:permanently-invalid",
+				"quoteUrl":       "https://remote.example/notes/quote",
 				"tag": []any{
 					map[string]any{"type": "Hashtag", "name": "#hello"},
 				},
