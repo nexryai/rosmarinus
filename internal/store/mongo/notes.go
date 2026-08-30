@@ -59,6 +59,8 @@ type attachmentDocument struct {
 	MediaType string `bson:"mediaType,omitempty"`
 	URL       string `bson:"url"`
 	Name      string `bson:"name,omitempty"`
+	Width     int    `bson:"width,omitempty"`
+	Height    int    `bson:"height,omitempty"`
 	Sensitive bool   `bson:"sensitive"`
 }
 
@@ -262,6 +264,8 @@ func toDomainAttachments(src []attachmentDocument) []domainnotes.Attachment {
 			MediaType: attachment.MediaType,
 			URL:       attachment.URL,
 			Name:      attachment.Name,
+			Width:     attachment.Width,
+			Height:    attachment.Height,
 			Sensitive: attachment.Sensitive,
 		})
 	}
@@ -280,6 +284,8 @@ func fromDomainAttachments(src []domainnotes.Attachment) []attachmentDocument {
 			MediaType: attachment.MediaType,
 			URL:       attachment.URL,
 			Name:      attachment.Name,
+			Width:     attachment.Width,
+			Height:    attachment.Height,
 			Sensitive: attachment.Sensitive,
 		})
 	}

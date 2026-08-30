@@ -282,12 +282,20 @@ func renderAttachments(attachments []domainnotes.Attachment) []any {
 		if typ == "" {
 			typ = "Document"
 		}
-		out = append(out, map[string]any{
+		document := map[string]any{
 			"type":      typ,
 			"mediaType": attachment.MediaType,
 			"url":       attachment.URL,
 			"name":      attachment.Name,
-		})
+			"sensitive": attachment.Sensitive,
+		}
+		if attachment.Width > 0 {
+			document["width"] = attachment.Width
+		}
+		if attachment.Height > 0 {
+			document["height"] = attachment.Height
+		}
+		out = append(out, document)
 	}
 	return out
 }

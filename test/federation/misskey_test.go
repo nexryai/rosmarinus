@@ -178,16 +178,17 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("unexpected local Emoji resource: %#v", localEmoji)
 	}
 
-	// Phase 5: publish a public Misskey note and verify Rosmarinus accepts,
-	// verifies, and persists the delivered Create(Note).
+	// Phase 5: publish a public Misskey note with an image and verify Rosmarinus
+	// accepts, verifies, and persists the delivered Create(Note), including the
+	// validated attachment URL and current-Misskey width/height metadata.
 	var created struct {
 		CreatedNote struct {
 			ID string `json:"id"`
 		} `json:"createdNote"`
 	}
 	misskey.call(ctx, "notes/create", map[string]any{
-		"i":    admin.Token,
-		"text": "Hello from latest Misskey federation test",
+		"i": admin.Token, "text": "Hello from latest Misskey federation test",
+		"fileIds": []string{avatar.ID},
 	}, &created)
 	if created.CreatedNote.ID == "" {
 		t.Fatal("Misskey notes/create returned an empty note id")
@@ -200,7 +201,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		var findErr error
 		remoteNote, findErr = noteRepo.FindByURI(ctx, noteURI)
 		t.Logf("[DEBUG] noteRepo.FindByURI: %s: note=%+v err=%v", noteURI, remoteNote, findErr)
-		return findErr == nil && remoteNote != nil && remoteNote.Text == "Hello from latest Misskey federation test"
+		return findErr == nil && remoteNote != nil && remoteNote.Text == "Hello from latest Misskey federation test" &&
+			len(remoteNote.Attachments) == 1 && remoteNote.Attachments[0].URL != "" &&
+			remoteNote.Attachments[0].Width == 1 && remoteNote.Attachments[0].Height == 1
 	})
 
 	// Phase 6: pin and unpin the Misskey Note, verifying Rosmarinus applies the

@@ -96,8 +96,11 @@ Remote custom emoji metadata is keyed uniquely by `{ host, name }` in the
 Rosmarinus-owned `emojis` collection. `uri`, `originalUrl`, `publicUrl`,
 `mediaType`, `remoteUpdatedAt`, and `updatedAt` are read-only federation state.
 The emoji document's `originalUrl` and `publicUrl` are direct remote URLs.
-Remote Note attachments likewise retain their ActivityPub `url` values.
-Rosmarinus does not download, transform, proxy, or cache these resources.
+Remote Note attachments retain only HTTPS ActivityPub media objects of type
+`Audio`, `Document`, `Image`, `Page`, or `Video`. Their read-only projection is
+`uri`, `type`, `mediaType`, `url`, `name`, `width`, `height`, and `sensitive`;
+invalid or non-integral dimensions are stored as zero/absent. Rosmarinus does
+not download, transform, proxy, or cache these resources.
 Salvia owns the browser presentation policy: it may render direct URLs or use a
 separately secured frontend image service. Any server-side frontend fetcher
 must independently enforce DNS rebinding/SSRF protection, byte and time limits,

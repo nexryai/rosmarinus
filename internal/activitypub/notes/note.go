@@ -2,6 +2,7 @@ package notes
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ const PublicAudience = "https://www.w3.org/ns/activitystreams#Public"
 
 const maxRemoteNoteMentions = 20
 const maxRemoteNoteEmojis = 100
+const maxRemoteMediaDimension = 1<<31 - 1
 
 var earliestSafePublishedAt = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 
@@ -384,13 +386,13 @@ func ExtractAttachments(value any, noteSensitive bool) []domainnotes.Attachment 
 		if !ok {
 			continue
 		}
-		url := attachmentURL(attachment["url"])
-		if url == "" {
+		typ, _ := aptypes.GetAPType(attachment)
+		if !isAttachmentType(typ) {
 			continue
 		}
-		typ, _ := aptypes.GetAPType(attachment)
-		if typ == "" {
-			typ = "Document"
+		url := attachmentURL(attachment["url"])
+		if !isHTTPSURL(url) {
+			continue
 		}
 		mediaType, _ := attachment["mediaType"].(string)
 		name, _ := attachment["name"].(string)
@@ -401,10 +403,44 @@ func ExtractAttachments(value any, noteSensitive bool) []domainnotes.Attachment 
 			MediaType: mediaType,
 			URL:       url,
 			Name:      name,
+			Width:     positiveInteger(attachment["width"]),
+			Height:    positiveInteger(attachment["height"]),
 			Sensitive: noteSensitive || boolField(attachment, "sensitive"),
 		})
 	}
 	return out
+}
+
+func isAttachmentType(value string) bool {
+	switch value {
+	case "Audio", "Document", "Image", "Page", "Video":
+		return true
+	default:
+		return false
+	}
+}
+
+func positiveInteger(value any) int {
+	var number float64
+	switch value := value.(type) {
+	case int:
+		if value > 0 {
+			return value
+		}
+		return 0
+	case int32:
+		number = float64(value)
+	case int64:
+		number = float64(value)
+	case float64:
+		number = value
+	default:
+		return 0
+	}
+	if number <= 0 || number != math.Trunc(number) || number > maxRemoteMediaDimension {
+		return 0
+	}
+	return int(number)
 }
 
 func attachmentURL(value any) string {

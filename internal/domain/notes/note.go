@@ -54,6 +54,8 @@ type Attachment struct {
 	MediaType string
 	URL       string
 	Name      string
+	Width     int
+	Height    int
 	Sensitive bool
 }
 

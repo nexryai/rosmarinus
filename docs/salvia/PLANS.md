@@ -362,6 +362,10 @@ stops, and Rosmarinus receives low-latency invalidation without an HTTP call.
       the related `noteId` to load the Poll Note.
 - [ ] Build reply and quote projections from Note `replyId` and `quoteId`;
       retain `inReplyToUri` and `quoteUri` only as federation source metadata.
+- [ ] Render remote Note attachments from the read-only validated HTTPS
+      projection (`type`, `mediaType`, `url`, `name`, `width`, `height`, and
+      `sensitive`) without treating claimed dimensions or MIME as verified
+      file content.
 - [ ] Enforce `visibleUserUris` when projecting `specified` Notes; do not use
       `mentionUris` as a content-authorization substitute.
 - [ ] Resolve remote custom emoji through an explicit `{ host, name }`

@@ -1055,6 +1055,9 @@ Rosmarinus must write to MongoDB.
   - [x] same-origin embedded featured Notes without redundant fetches, while
         cross-origin featured items are fetched canonically to reject embedded
         content substitution.
+  - [x] `Images / Render image document with dimensions` and `Link is not an
+        attachment files`, adapted to Rosmarinus's validated direct-HTTPS media
+        model and verified through the real-Misskey Note fixture.
 - [x] `fetch-resource.ts`
   - [x] AP `GET /@:username` and `GET /users/:id` return
         `application/activity+json` when AP is requested.

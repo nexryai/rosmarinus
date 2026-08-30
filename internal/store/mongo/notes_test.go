@@ -20,3 +20,15 @@ func TestNoteDocumentPreservesSpecifiedAudience(t *testing.T) {
 		t.Fatalf("visible user URIs = %#v", doc.VisibleUserURIs)
 	}
 }
+
+func TestNoteDocumentPreservesAttachmentMetadata(t *testing.T) {
+	note := domainnotes.Note{Attachments: []domainnotes.Attachment{{
+		URI: "https://remote.example/files/1", Type: "Document", MediaType: "image/png",
+		URL: "https://remote.example/files/1.png", Name: "image", Width: 3600, Height: 1890, Sensitive: true,
+	}}}
+	doc := fromNote(note)
+	attachments := toDomainAttachments(doc.Attachments)
+	if len(attachments) != 1 || attachments[0] != note.Attachments[0] {
+		t.Fatalf("attachments = %#v", attachments)
+	}
+}

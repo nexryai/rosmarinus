@@ -150,6 +150,26 @@ func TestRenderAdvancedMFMAndQuoteWithCompatibilitySource(t *testing.T) {
 	}
 }
 
+func TestRenderAttachmentPreservesCurrentMisskeyMetadata(t *testing.T) {
+	note := &domainnotes.Note{
+		URI: "https://rosmarinus.example/notes/media", AttributedTo: "https://rosmarinus.example/users/alice",
+		Visibility: domainnotes.VisibilityPublic, CreatedAt: time.Date(2026, 8, 30, 1, 2, 3, 0, time.UTC),
+		Attachments: []domainnotes.Attachment{{
+			Type: "Document", MediaType: "image/png", URL: "https://rosmarinus.example/media/image.png",
+			Name: "image", Width: 3600, Height: 1890, Sensitive: true,
+		}},
+	}
+	rendered := Render(note)
+	attachments := rendered["attachment"].([]any)
+	document := attachments[0].(map[string]any)
+	if document["type"] != "Document" || document["url"] != note.Attachments[0].URL || document["width"] != 3600 || document["height"] != 1890 || document["sensitive"] != true {
+		t.Fatalf("attachment = %#v", document)
+	}
+	if rendered["sensitive"] != true {
+		t.Fatalf("note sensitive = %#v", rendered["sensitive"])
+	}
+}
+
 func TestRenderDeleteUsesMisskeyCompatibleTombstone(t *testing.T) {
 	deletedAt := time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC)
 	note := &domainnotes.Note{

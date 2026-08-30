@@ -140,6 +140,12 @@ distinct `_misskey_quote` and `quoteUrl` candidates, `quoteUri` is the
 successfully resolved candidate associated with `quoteId`; if neither resolves,
 it retains the first claim only for diagnostics.
 
+Remote Note `attachments` contain Rosmarinus-validated HTTPS media objects of
+type `Audio`, `Document`, `Image`, `Page`, or `Video`. Treat `uri`, `type`,
+`mediaType`, `url`, `name`, positive integer `width`/`height`, and `sensitive`
+as read-only federation metadata. Dimensions and MIME types are remote claims,
+not proof of fetched content.
+
 For a Note with `visibility: "specified"`, enforce the Rosmarinus-owned
 `visibleUserUris` audience before returning content. Do not substitute
 `mentionUris` as the authorization list.

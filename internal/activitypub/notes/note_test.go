@@ -228,6 +228,8 @@ func TestConcordeNoteExtractsAttachments(t *testing.T) {
 				"mediaType": "image/png",
 				"url":       "https://host1.test/files/1.png",
 				"name":      "image",
+				"width":     float64(3600),
+				"height":    float64(1890),
 			},
 			map[string]any{
 				"type":      "Image",
@@ -245,11 +247,33 @@ func TestConcordeNoteExtractsAttachments(t *testing.T) {
 	if len(note.Attachments) != 2 {
 		t.Fatalf("Attachments = %#v", note.Attachments)
 	}
-	if note.Attachments[0].URL != "https://host1.test/files/1.png" || note.Attachments[0].MediaType != "image/png" || !note.Attachments[0].Sensitive {
+	if note.Attachments[0].URL != "https://host1.test/files/1.png" || note.Attachments[0].MediaType != "image/png" || note.Attachments[0].Width != 3600 || note.Attachments[0].Height != 1890 || !note.Attachments[0].Sensitive {
 		t.Fatalf("Attachment[0] = %+v", note.Attachments[0])
 	}
 	if note.Attachments[1].URL != "https://host1.test/files/2.webp" || note.Attachments[1].Type != "Image" || !note.Attachments[1].Sensitive {
 		t.Fatalf("Attachment[1] = %+v", note.Attachments[1])
+	}
+}
+
+func TestCurrentMisskeyAttachmentValidationRejectsLinksAndUnsafeURLs(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id": "https://host1.test/notes/1", "type": "Note",
+		"attributedTo": "https://host1.test/users/alice", "to": PublicAudience,
+		"attachment": []any{
+			map[string]any{"type": "Link", "url": "https://example.com/"},
+			map[string]any{"type": "Document", "url": "http://host1.test/unsafe.png"},
+			map[string]any{"type": "Mention", "url": "https://host1.test/not-media"},
+			map[string]any{"type": "Document", "url": "https://host1.test/safe.png", "width": 1.5, "height": -1},
+		},
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if len(note.Attachments) != 1 || note.Attachments[0].URL != "https://host1.test/safe.png" {
+		t.Fatalf("Attachments = %#v", note.Attachments)
+	}
+	if note.Attachments[0].Width != 0 || note.Attachments[0].Height != 0 {
+		t.Fatalf("invalid dimensions were retained: %+v", note.Attachments[0])
 	}
 }
 
