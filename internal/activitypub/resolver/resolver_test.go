@@ -813,6 +813,10 @@ func (r *resolverNoteRepository) FindAnyByURI(ctx context.Context, uri string) (
 	return r.FindByURI(ctx, uri)
 }
 
+func (r *resolverNoteRepository) ListActiveReferenceAuthorURIsPage(context.Context, string, string, int) ([]string, error) {
+	return nil, nil
+}
+
 func (r *resolverNoteRepository) CreateLocalNote(_ context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	return r.store(note), nil
 }

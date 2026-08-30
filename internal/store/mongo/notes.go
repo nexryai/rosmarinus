@@ -84,6 +84,55 @@ func (r *NoteRepository) FindAnyByURI(ctx context.Context, uri string) (*domainn
 	return r.findOne(ctx, bson.M{"uri": uri})
 }
 
+func (r *NoteRepository) ListActiveReferenceAuthorURIsPage(ctx context.Context, noteID, afterURI string, limit int) ([]string, error) {
+	if noteID == "" || limit <= 0 {
+		return nil, nil
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "deletedAt", Value: nil},
+			{Key: "attributedTo", Value: bson.D{{Key: "$type", Value: "string"}, {Key: "$ne", Value: ""}}},
+			{Key: "$or", Value: bson.A{
+				bson.D{{Key: "replyId", Value: noteID}},
+				bson.D{{Key: "renoteId", Value: noteID}},
+				bson.D{{Key: "quoteId", Value: noteID}},
+			}},
+		}}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$attributedTo"}}}},
+	}
+	if afterURI != "" {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{{Key: "_id", Value: bson.D{{Key: "$gt", Value: afterURI}}}}}})
+	}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+		bson.D{{Key: "$limit", Value: int64(limit)}},
+	)
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	result := make([]string, 0, limit)
+	for cursor.Next(ctx) {
+		var row struct {
+			URI string `bson:"_id"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, err
+		}
+		if row.URI != "" {
+			result = append(result, row.URI)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *NoteRepository) CreateLocalNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	if note.ID == "" {
 		return nil, fmt.Errorf("note id is required")

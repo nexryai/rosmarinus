@@ -64,6 +64,7 @@ type Repository interface {
 	FindAnyByID(context.Context, string) (*Note, error)
 	FindByURI(context.Context, string) (*Note, error)
 	FindAnyByURI(context.Context, string) (*Note, error)
+	ListActiveReferenceAuthorURIsPage(context.Context, string, string, int) ([]string, error)
 	CreateLocalNote(context.Context, Note) (*Note, error)
 	UpsertRemoteNote(context.Context, Note) (*Note, error)
 	DeleteLocalNote(context.Context, string, string) error

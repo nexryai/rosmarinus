@@ -789,6 +789,27 @@ func (f *fakeNoteRepo) FindAnyByURI(_ context.Context, uri string) (*domainnotes
 	return note, nil
 }
 
+func (f *fakeNoteRepo) ListActiveReferenceAuthorURIsPage(_ context.Context, noteID, afterURI string, limit int) ([]string, error) {
+	seen := make(map[string]struct{})
+	for _, note := range f.notes {
+		if note == nil || note.DeletedAt != nil || note.AttributedTo == "" || (note.ReplyID != noteID && note.RenoteID != noteID && note.QuoteID != noteID) {
+			continue
+		}
+		if note.AttributedTo > afterURI {
+			seen[note.AttributedTo] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for uri := range seen {
+		result = append(result, uri)
+	}
+	sort.Strings(result)
+	if limit >= 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
 func (f *fakeNoteRepo) UpsertRemoteNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
 	if f.notes == nil {
 		f.notes = map[string]*domainnotes.Note{}
@@ -2841,6 +2862,78 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	tombstone, ok := payload.Object["object"].(map[string]any)
 	if !ok || tombstone["type"] != "Tombstone" || tombstone["id"] != note.URI {
 		t.Fatalf("unexpected tombstone: %#v", payload.Object["object"])
+	}
+}
+
+func TestDeletePostDeliversToRemoteReferenceAuthors(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	note := &domainnotes.Note{
+		ID: "referenced-note", URI: "https://rosmarinus.example/notes/referenced-note",
+		AuthorID: local.ID, AttributedTo: local.URI, Text: "obsolete", Visibility: domainnotes.VisibilityPublic,
+	}
+	remoteActors := make(map[string]*actors.Actor)
+	notesByURI := map[string]*domainnotes.Note{note.URI: note}
+	for i, kind := range []string{"reply", "renote", "quote"} {
+		host := fmt.Sprintf("remote-%d.example", i)
+		uri := "https://" + host + "/users/alice"
+		remoteActors[uri] = &actors.Actor{
+			ID: "remote-" + kind, URI: uri, Host: &host, Inbox: "https://" + host + "/inbox",
+		}
+		reference := &domainnotes.Note{
+			ID: "remote-" + kind + "-note", URI: "https://" + host + "/notes/1",
+			AuthorID: "remote-" + kind, AttributedTo: uri, Visibility: domainnotes.VisibilityPublic,
+		}
+		switch kind {
+		case "reply":
+			reference.ReplyID = note.ID
+		case "renote":
+			reference.RenoteID = note.ID
+		case "quote":
+			reference.QuoteID = note.ID
+		}
+		notesByURI[reference.URI] = reference
+	}
+	noteRepo := &fakeNoteRepo{notes: notesByURI}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remotes: remoteActors}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetAccountCleanupRepository(&fakeAccountCleanupRepo{})
+
+	if _, err := h.DeletePost(context.Background(), connector.PostDeleteCommand{ActorID: local.ID, NoteID: note.ID}); err != nil {
+		t.Fatalf("DeletePost returned error: %v", err)
+	}
+	if len(q.tasks) != 3 {
+		t.Fatalf("delivery task count = %d, want 3", len(q.tasks))
+	}
+	recipients := make(map[string]struct{})
+	for _, task := range q.tasks {
+		payload, ok := task.Payload.(queue.DeliverPayload)
+		if !ok || payload.Object["type"] != "Delete" {
+			t.Fatalf("unexpected delivery: %#v", task)
+		}
+		recipients[payload.To] = struct{}{}
+	}
+	for i := range 3 {
+		inbox := fmt.Sprintf("https://remote-%d.example/inbox", i)
+		if _, ok := recipients[inbox]; !ok {
+			t.Fatalf("missing concerned recipient %s: %#v", inbox, recipients)
+		}
+	}
+}
+
+func TestActiveReferenceAuthorURIsPaginates(t *testing.T) {
+	noteRepo := &fakeNoteRepo{notes: make(map[string]*domainnotes.Note)}
+	for i := 0; i < postDeliveryFollowerLimit*2+5; i++ {
+		uri := fmt.Sprintf("https://remote.example/users/%03d", i)
+		noteRepo.notes[uri] = &domainnotes.Note{ID: fmt.Sprintf("reply-%03d", i), AttributedTo: uri, ReplyID: "target"}
+	}
+	h := &Handler{notes: noteRepo}
+	result, err := h.activeReferenceAuthorURIs(context.Background(), "target")
+	if err != nil {
+		t.Fatalf("activeReferenceAuthorURIs returned error: %v", err)
+	}
+	if len(result) != postDeliveryFollowerLimit*2+5 {
+		t.Fatalf("reference author count = %d", len(result))
 	}
 }
 

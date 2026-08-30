@@ -61,6 +61,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Keys:    bson.D{{Key: "renoteId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}},
 			Options: options.Index().SetName("idx_notes_renote_active_created_at"),
 		},
+		{
+			Keys:    bson.D{{Key: "quoteId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}},
+			Options: options.Index().SetName("idx_notes_quote_active_created_at"),
+		},
 	})
 	if err != nil {
 		return err

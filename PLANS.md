@@ -1212,6 +1212,9 @@ focused unit/integration coverage until the fixture can cover it.
 - [x] Have Rosmarinus send `Like` and `Announce` for a Misskey note.
 - [x] Confirm Misskey accepts both activities and their Undo forms without a
       retry loop remaining in Asynq.
+- [x] Delete a local Note and confirm `Delete(Tombstone)` reaches both ordinary
+      followers and a non-following current-Misskey Actor that replied to the
+      Note, matching Misskey's concerned-user delivery behavior.
 
 ### Operational Checks
 

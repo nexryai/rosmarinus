@@ -2257,6 +2257,10 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 			return connector.PostDeleted{}, err
 		}
 	}
+	additionalRecipients, err := h.activeReferenceAuthorURIs(ctx, note.ID)
+	if err != nil {
+		return connector.PostDeleted{}, fmt.Errorf("list remote post references: %w", err)
+	}
 	deletedAt := time.Now().UTC()
 	if note.DeletedAt == nil {
 		if err := h.notes.DeleteLocalNote(ctx, note.ID, actor.ID); err != nil {
@@ -2269,15 +2273,34 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 		return connector.PostDeleted{}, err
 	}
 	activity := apnotes.RenderDelete(note, deletedAt)
-	additionalRecipients := []string(nil)
 	if renoteTarget != nil {
 		activity = apnotes.RenderUndoAnnounce(note, deletedAt)
-		additionalRecipients = []string{renoteTarget.AttributedTo}
+		additionalRecipients = append(additionalRecipients, renoteTarget.AttributedTo)
 	}
 	if err := h.enqueueNoteActivityDeliveriesTo(ctx, actor, note, activity, additionalRecipients); err != nil {
 		return connector.PostDeleted{}, err
 	}
 	return connector.PostDeleted{ActorID: actor.ID, NoteID: note.ID, URI: note.URI}, nil
+}
+
+func (h *Handler) activeReferenceAuthorURIs(ctx context.Context, noteID string) ([]string, error) {
+	result := make([]string, 0)
+	afterURI := ""
+	for {
+		page, err := h.notes.ListActiveReferenceAuthorURIsPage(ctx, noteID, afterURI, postDeliveryFollowerLimit)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, page...)
+		if len(page) < postDeliveryFollowerLimit {
+			return result, nil
+		}
+		next := page[len(page)-1]
+		if next <= afterURI {
+			return nil, fmt.Errorf("reference author pagination did not advance")
+		}
+		afterURI = next
+	}
 }
 
 func (h *Handler) CreateReaction(ctx context.Context, command connector.ReactionCreateCommand) (connector.ReactionCreated, error) {

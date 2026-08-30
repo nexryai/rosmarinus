@@ -85,11 +85,18 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	misskey := newMisskeyClient(t)
 	admin := misskey.createAdmin(ctx, "federationadmin", "federation-password")
 	t.Logf("Misskey test account created actor_id=%s", admin.ID)
+	misskeyB := newMisskeyClientAt(t, "https://b.test")
+	adminB := misskeyB.createAdmin(ctx, "concernedremote", "federation-password")
+	t.Logf("second Misskey test account created actor_id=%s", adminB.ID)
 	directRecipient := misskey.createAccount(ctx, admin.Token, "directrecipient", "direct-password")
 	directRecipientURI := "https://a.test/users/" + directRecipient.ID
 	t.Logf("Misskey direct recipient created actor_id=%s", directRecipient.ID)
 	misskey.call(ctx, "admin/update-meta", map[string]any{
 		"i":          admin.Token,
+		"federation": "all",
+	}, nil)
+	misskeyB.call(ctx, "admin/update-meta", map[string]any{
+		"i":          adminB.Token,
 		"federation": "all",
 	}, nil)
 
@@ -709,6 +716,41 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if storedLocalNoteText != misskeyLocalNoteText {
 		t.Fatalf("Misskey stored simple MFM text %q, want %q", storedLocalNoteText, misskeyLocalNoteText)
 	}
+	var shownOnMisskeyB struct {
+		Type   string `json:"type"`
+		Object struct {
+			ID  string `json:"id"`
+			URI string `json:"uri"`
+		} `json:"object"`
+	}
+	misskeyB.call(ctx, "ap/show", map[string]any{"i": adminB.Token, "uri": createdLocal.URI}, &shownOnMisskeyB)
+	if shownOnMisskeyB.Type != "Note" || shownOnMisskeyB.Object.ID == "" || shownOnMisskeyB.Object.URI != createdLocal.URI {
+		t.Fatalf("second Misskey did not resolve local Note: %+v", shownOnMisskeyB)
+	}
+	var replyFromMisskeyB struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskeyB.call(ctx, "notes/create", map[string]any{
+		"i": adminB.Token, "text": "Concerned remote reply", "replyId": shownOnMisskeyB.Object.ID,
+	}, &replyFromMisskeyB)
+	if replyFromMisskeyB.CreatedNote.ID == "" {
+		t.Fatalf("second Misskey reply creation returned no note id")
+	}
+	misskeyBActorURI := "https://b.test/users/" + adminB.ID
+	waitFor(t, ctx, "non-follower reply stored by Rosmarinus", func() bool {
+		authors, listErr := noteRepo.ListActiveReferenceAuthorURIsPage(ctx, localNoteID, "", 100)
+		if listErr != nil {
+			return false
+		}
+		for _, uri := range authors {
+			if uri == misskeyBActorURI {
+				return true
+			}
+		}
+		return false
+	})
 
 	const advancedNoteID = "latest-misskey-outbound-advanced-mfm"
 	const advancedNoteText = "**Hello from Rosmarinus** $[ruby 漢字 かんじ]"
@@ -783,7 +825,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 18: soft-delete the local Note, verify Rosmarinus removes its Poll,
 	// votes, and reactions, and verify current Misskey accepts the identified
-	// Delete(Tombstone) activity and removes its federated copy.
+	// Delete(Tombstone) activity. The second Misskey is not a follower, so its
+	// federated copy disappearing also verifies delivery to a remote reply
+	// author that is concerned with the deleted Note.
 	deletedLocal, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localNoteID})
 	if err != nil {
 		t.Fatalf("delete local Rosmarinus post: %v", err)
@@ -812,6 +856,11 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			}
 		}
 		return true
+	})
+	waitFor(t, ctx, "Delete(Tombstone) delivered to non-follower reply author", func() bool {
+		return misskeyB.callStatus(ctx, "notes/show", map[string]any{
+			"i": adminB.Token, "noteId": shownOnMisskeyB.Object.ID,
+		}, nil) == http.StatusNotFound
 	})
 	if poll, findErr := pollRepo.FindByNoteID(ctx, localNoteID); findErr != nil || poll != nil {
 		t.Fatalf("deleted Note poll remains: poll=%+v err=%v", poll, findErr)
@@ -1001,7 +1050,12 @@ type misskeyDriveFile struct {
 
 func newMisskeyClient(t *testing.T) *misskeyClient {
 	t.Helper()
-	return &misskeyClient{t: t, baseURL: "https://a.test", httpClient: &http.Client{Timeout: 30 * time.Second}}
+	return newMisskeyClientAt(t, "https://a.test")
+}
+
+func newMisskeyClientAt(t *testing.T, baseURL string) *misskeyClient {
+	t.Helper()
+	return &misskeyClient{t: t, baseURL: strings.TrimRight(baseURL, "/"), httpClient: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (m *misskeyClient) createAdmin(ctx context.Context, username, password string) misskeyAccount {
