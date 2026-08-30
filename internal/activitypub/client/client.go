@@ -77,10 +77,15 @@ func (c *Client) FetchObject(ctx context.Context, targetURL string, signer *acto
 	if err != nil {
 		return nil, fmt.Errorf("invalid activitypub url: %w", err)
 	}
-	if err := c.validateFederationURL(requestedURL); err != nil {
+	// Mastodon can use fragments in IDs for transient activities such as Like
+	// and Delete. Fragments are client-side identifiers and are not part of the
+	// HTTP request target, so fetch and sign the underlying resource URL.
+	fetchURL := *requestedURL
+	fetchURL.Fragment = ""
+	if err := c.validateFederationURL(&fetchURL); err != nil {
 		return nil, err
 	}
-	req, err := c.newGetRequest(ctx, targetURL, signer)
+	req, err := c.newGetRequest(ctx, fetchURL.String(), signer)
 	if err != nil {
 		return nil, err
 	}

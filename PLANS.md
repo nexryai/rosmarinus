@@ -1045,6 +1045,9 @@ Rosmarinus must write to MongoDB.
 - [x] `ap-request.ts`
   - [x] `createSignedPost with verify`
   - [x] `createSignedGet with verify`
+  - [x] strict request/final/object-ID origin and canonical URL validation,
+        including `www.` normalization, redirect downgrade rejection, and
+        Mastodon-compatible fragment removal for fetched activity IDs.
 - [x] `activitypub.ts`
   - [x] `Parse minimum object / Minimum Actor`
   - [x] `Parse minimum object / Minimum Note` as AP note parser and basic

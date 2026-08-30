@@ -113,9 +113,28 @@ func TestFetchObjectRejectsRedirectToPrivateAddress(t *testing.T) {
 	}
 }
 
-func TestFetchObjectRejectsFragment(t *testing.T) {
+func TestFetchObjectIgnoresFragment(t *testing.T) {
+	server := activityServer(t, func(r *http.Request) string {
+		if r.URL.Fragment != "" {
+			t.Fatalf("request fragment = %q", r.URL.Fragment)
+		}
+		return fmt.Sprintf(`{"@context":%q,"id":%q,"type":"Like"}`, activityStreamsContext, serverURL(r))
+	})
+	defer server.Close()
+
+	target := server.URL + "/activities/like#activity"
+	object, err := New(activityTestConfig(), server.Client()).FetchObject(context.Background(), target, nil)
+	if err != nil {
+		t.Fatalf("FetchObject returned error: %v", err)
+	}
+	if object["id"] != server.URL+"/activities/like" {
+		t.Fatalf("unexpected object: %+v", object)
+	}
+}
+
+func TestDeliverRejectsFragment(t *testing.T) {
 	client := New(config.Config{}, nil)
-	if _, err := client.FetchObject(context.Background(), "https://remote.example/actor#key", nil); err == nil || !strings.Contains(err.Error(), "fragment") {
+	if _, err := client.Deliver(context.Background(), "https://remote.example/inbox#fragment", actors.Actor{}, map[string]any{}); err == nil || !strings.Contains(err.Error(), "fragment") {
 		t.Fatalf("expected fragment error, got %v", err)
 	}
 }
