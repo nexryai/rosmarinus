@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1027,6 +1028,7 @@ type fakeActivityLocker struct {
 }
 
 type fakeActivityReceiptRepo struct {
+	mu        sync.Mutex
 	completed map[string]string
 	active    map[string]activities.Claim
 	claims    int
@@ -1037,6 +1039,8 @@ type fakeActivityReceiptRepo struct {
 }
 
 func (r *fakeActivityReceiptRepo) Claim(_ context.Context, activityID, actorURI string, _ time.Time, lease, retention time.Duration) (*activities.Claim, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.claims++
 	r.lease = lease
 	r.retention = retention
@@ -1058,6 +1062,8 @@ func (r *fakeActivityReceiptRepo) Claim(_ context.Context, activityID, actorURI 
 }
 
 func (r *fakeActivityReceiptRepo) Complete(_ context.Context, claim activities.Claim, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.completes++
 	if r.completed == nil {
 		r.completed = map[string]string{}
@@ -1068,9 +1074,17 @@ func (r *fakeActivityReceiptRepo) Complete(_ context.Context, claim activities.C
 }
 
 func (r *fakeActivityReceiptRepo) Release(_ context.Context, claim activities.Claim) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.releases++
 	delete(r.active, claim.ActivityID)
 	return nil
+}
+
+func (r *fakeActivityReceiptRepo) counts() (claims, completes, releases int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.claims, r.completes, r.releases
 }
 
 func (l *fakeActivityLocker) Acquire(_ context.Context, name string) (func(context.Context) error, bool, error) {
@@ -1750,6 +1764,99 @@ func TestProcessInboxFollowStoresPendingRequest(t *testing.T) {
 	}
 	if connectorPublisher.requestCalls != 2 {
 		t.Fatalf("duplicate activity repeated connector side effects: calls=%d", connectorPublisher.requestCalls)
+	}
+}
+
+func TestProcessInboxConcurrentDuplicatePerformsOneSideEffect(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatalf("GenerateKey returned error: %v", err)
+	}
+	signingString := "(request-target): post /inbox\nhost: rosmarinus.example"
+	sum := sha256.Sum256([]byte(signingString))
+	rawSignature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, sum[:])
+	if err != nil {
+		t.Fatalf("SignPKCS1v15 returned error: %v", err)
+	}
+	host := "remote.example"
+	local := &actors.Actor{
+		ID: "relay", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/relay",
+	}
+	remote := &actors.Actor{
+		ID: "remote-alice", Host: &host, URI: "https://remote.example/users/alice",
+		Inbox:       "https://remote.example/users/alice/inbox",
+		PublicKeyID: "https://remote.example/users/alice#main-key", PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
+	}
+	followRepo := &fakeFollowRepo{}
+	publisher := &fakeConnectorPublisher{}
+	receipts := &fakeActivityReceiptRepo{}
+	h := New(config.Config{
+		InboxQueue: config.QueueConfig{Timeout: 5 * time.Minute}, InboxActivityReceiptTTL: 7 * 24 * time.Hour,
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+	h.SetActivityReceiptRepository(receipts)
+	payload := queue.InboxPayload{
+		Version: 1,
+		Activity: map[string]any{
+			"id": "https://remote.example/activities/concurrent-follow", "type": "Follow",
+			"actor": remote.URI, "object": local.URI,
+		},
+		Signature: map[string]any{
+			"keyId": remote.PublicKeyID, "algorithm": "rsa-sha256",
+			"headers":   []string{"(request-target)", "host"},
+			"signature": base64.StdEncoding.EncodeToString(rawSignature), "signingString": signingString,
+		},
+	}
+
+	const deliveries = 32
+	start := make(chan struct{})
+	results := make(chan string, deliveries)
+	errors := make(chan error, deliveries)
+	var workers sync.WaitGroup
+	workers.Add(deliveries)
+	for range deliveries {
+		go func() {
+			defer workers.Done()
+			<-start
+			result, err := h.ProcessInbox(context.Background(), payload)
+			results <- result
+			errors <- err
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+	close(errors)
+
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent ProcessInbox returned error: %v", err)
+		}
+	}
+	performed := 0
+	skipped := 0
+	for result := range results {
+		switch result {
+		case "ok: follow request pending":
+			performed++
+		case "skip: activity was already processed or is in progress":
+			skipped++
+		default:
+			t.Fatalf("unexpected concurrent result: %q", result)
+		}
+	}
+	if performed != 1 || skipped != deliveries-1 {
+		t.Fatalf("concurrent results performed=%d skipped=%d", performed, skipped)
+	}
+	if publisher.requestCalls != 1 {
+		t.Fatalf("follow request side effects = %d", publisher.requestCalls)
+	}
+	if follow, findErr := followRepo.Find(context.Background(), remote.ID, local.ID); findErr != nil || follow == nil || follow.Status != follows.StatusPending {
+		t.Fatalf("pending follow after duplicate delivery: follow=%+v err=%v", follow, findErr)
+	}
+	claims, completes, releases := receipts.counts()
+	if claims != deliveries || completes != 1 || releases != 0 {
+		t.Fatalf("receipt transitions claims=%d completes=%d releases=%d", claims, completes, releases)
 	}
 }
 

@@ -1010,12 +1010,19 @@ Implement this phase before exposing additional browser-driven mutations.
 
 ### Phase 7: Federation Hardening
 
-- [ ] Implement blocked/suspended host checks everywhere current Misskey
-      applies them.
-- [ ] Implement instance metadata refresh.
+- [x] Apply configured blocked-host checks (including subdomains) at inbox
+      authentication, resolution, redirects, Announce targets, direct
+      recipients, follower fan-out, and delivery; reject suspended Actors and
+      skip delivery to manually/automatically/gone-suspended instances while
+      restoring auto-suspended instances after authenticated inbound traffic.
+- [x] Implement daily deduplicated instance metadata refresh through NodeInfo,
+      persist software/registration/usage metadata, and verify it against the
+      real-Misskey fixture.
 - [ ] Implement queue inspection and delayed job promotion commands or admin
       hooks suitable for operations.
-- [ ] Add load/race tests for duplicate inbox delivery.
+- [x] Add a race-tested 32-way duplicate inbox delivery fixture proving the
+      atomic Activity receipt permits exactly one federation side effect and
+      one completion.
 - [ ] Add compatibility fixtures from current Misskey for ActivityPub
       render/parse, then retain useful Concorde fixtures as historical
       regressions.
