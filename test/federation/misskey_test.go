@@ -858,9 +858,11 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 	waitFor(t, ctx, "Delete(Tombstone) delivered to non-follower reply author", func() bool {
+		// Current Misskey reports NO_SUCH_NOTE as a client error rather than
+		// mapping it to HTTP 404.
 		return misskeyB.callStatus(ctx, "notes/show", map[string]any{
 			"i": adminB.Token, "noteId": shownOnMisskeyB.Object.ID,
-		}, nil) == http.StatusNotFound
+		}, nil) == http.StatusBadRequest
 	})
 	if poll, findErr := pollRepo.FindByNoteID(ctx, localNoteID); findErr != nil || poll != nil {
 		t.Fatalf("deleted Note poll remains: poll=%+v err=%v", poll, findErr)
