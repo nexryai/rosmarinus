@@ -1,5 +1,30 @@
 # Rosmarinus Operations
 
+## MongoDB and Redis
+
+`MONGO_URI` and `MONGO_DATABASE` select Rosmarinus's durable federation store.
+Startup requires a writable primary and bootstraps indexes only for
+Rosmarinus-owned collections. Use the collection-scoped `rosmarinusService`
+role documented in `salvia-integration.md`; do not grant Rosmarinus index or
+write privileges on `salvia_accounts`. Back up the database consistently with
+the deployment's normal MongoDB snapshot or replica-set procedure because
+Actors, signing keys, command receipts, and federation relationships are not
+reconstructible from Redis.
+
+`REDIS_ADDR`, `REDIS_PASSWORD`, and `REDIS_DB` select the Asynq queue, AP locks,
+rate-limit buckets, and bounded caches. Use a dedicated Redis database or
+instance and enable persistence suitable for queued federation work. Losing
+Redis may discard pending deliveries, but MongoDB receipts and unique indexes
+still prevent replayed inbound activities from duplicating completed domain
+side effects. Never use broad key deletion or database flushes as routine queue
+maintenance; use the inspection and promotion commands below.
+
+Rosmarinus verifies MongoDB and Redis connectivity before serving traffic.
+Shutdown allows up to 30 seconds for workers and network servers to stop. The
+TTL indexes on inbox and command receipts are intentional bounded retention;
+Actor, Note, relationship, and signing-key data require normal deployment
+backups rather than TTL cleanup.
+
 ## Queue capacity
 
 Rosmarinus runs one Asynq server by default and applies Redis-backed global

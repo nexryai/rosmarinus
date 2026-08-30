@@ -1018,15 +1018,18 @@ Implement this phase before exposing additional browser-driven mutations.
 - [x] Implement daily deduplicated instance metadata refresh through NodeInfo,
       persist software/registration/usage metadata, and verify it against the
       real-Misskey fixture.
-- [ ] Implement queue inspection and delayed job promotion commands or admin
-      hooks suitable for operations.
+- [x] Provide queue operations commands to inspect archived tasks as structured
+      JSON and promote only `inbox`/`deliver` tasks by ID without starting the
+      application server.
 - [x] Add a race-tested 32-way duplicate inbox delivery fixture proving the
       atomic Activity receipt permits exactly one federation side effect and
       one completion.
 - [ ] Add compatibility fixtures from current Misskey for ActivityPub
       render/parse, then retain useful Concorde fixtures as historical
       regressions.
-- [ ] Document operational Redis and MongoDB settings.
+- [x] Document operational Redis and MongoDB configuration, durability,
+      startup index ownership, receipt retention, queue inspection, and safe
+      task promotion.
 
 ## Federation Compatibility Test Adoption Status
 
@@ -1047,6 +1050,11 @@ Rosmarinus must write to MongoDB.
   - [x] `Parse minimum object / Minimum Note` as AP note parser and basic
         DB-backed note creation behavior.
   - [x] `Truncate long name / Actor`
+  - [x] `Normalize empty name / Actor`
+  - [x] scalar and array `alsoKnownAs`, including Update(Person) persistence.
+  - [x] same-origin embedded featured Notes without redundant fetches, while
+        cross-origin featured items are fetched canonically to reject embedded
+        content substitution.
 - [x] `fetch-resource.ts`
   - [x] AP `GET /@:username` and `GET /users/:id` return
         `application/activity+json` when AP is requested.

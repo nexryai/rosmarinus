@@ -230,7 +230,15 @@ func (r *Resolver) resolveFeaturedNotes(ctx context.Context, collectionURI strin
 		if err != nil {
 			return nil, err
 		}
-		note, err := r.ResolveNote(ctx, uri)
+		var note *domainnotes.Note
+		// A collection may inline objects it serves from its own origin. An
+		// off-origin object is only a claim and must be fetched canonically so
+		// the collection owner cannot substitute another server's Note body.
+		if embedded, ok := value.(map[string]any); ok && sameOrigin(uri, collectionURI) {
+			note, err = r.resolveNoteValue(ctx, uri, embedded, &noteResolution{history: map[string]struct{}{}})
+		} else {
+			note, err = r.ResolveNote(ctx, uri)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -280,6 +288,10 @@ func (e *permanentNoteResolutionError) Unwrap() error {
 }
 
 func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *noteResolution) (*domainnotes.Note, error) {
+	return r.resolveNoteValue(ctx, uri, nil, resolution)
+}
+
+func (r *Resolver) resolveNoteValue(ctx context.Context, uri string, embedded map[string]any, resolution *noteResolution) (*domainnotes.Note, error) {
 	if uri == "" {
 		return nil, nil
 	}
@@ -326,9 +338,12 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 		}
 	}
 
-	object, err := r.fetcher.FetchObject(ctx, uri, r.signer)
-	if err != nil {
-		return nil, err
+	object := embedded
+	if object == nil {
+		object, err = r.fetcher.FetchObject(ctx, uri, r.signer)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if !aptypes.IsPost(object) {
 		return nil, &permanentNoteResolutionError{err: fmt.Errorf("resolved object is not a post: %v", object["type"])}
@@ -378,6 +393,14 @@ func (r *Resolver) resolveNote(ctx context.Context, uri string, resolution *note
 		}
 	}
 	return stored, nil
+}
+
+func sameOrigin(left, right string) bool {
+	leftURL, leftErr := url.Parse(left)
+	rightURL, rightErr := url.Parse(right)
+	return leftErr == nil && rightErr == nil &&
+		strings.EqualFold(leftURL.Scheme, rightURL.Scheme) &&
+		strings.EqualFold(leftURL.Host, rightURL.Host)
 }
 
 func (r *Resolver) scheduleActorMedia(ctx context.Context, actor *actors.Actor) {

@@ -144,16 +144,15 @@ func TestResolveActorKeepsFreshRemoteActor(t *testing.T) {
 func TestResolveActorUpdatesFeaturedNotes(t *testing.T) {
 	actorURI := "https://remote.example/users/alice"
 	featuredURI := "https://remote.example/users/alice/collections/featured"
-	noteURI := "https://remote.example/notes/pinned"
+	embeddedNote := remoteNoteObject(actorURI, "pinned", nil)
 	fetcher := &mappedResolverFetcher{objects: map[string]map[string]any{
 		actorURI: {
 			"id": actorURI, "type": "Person", "preferredUsername": "alice",
 			"inbox": actorURI + "/inbox", "featured": featuredURI,
 		},
 		featuredURI: {
-			"id": featuredURI, "type": "OrderedCollection", "orderedItems": []any{noteURI},
+			"id": featuredURI, "type": "OrderedCollection", "orderedItems": []any{embeddedNote},
 		},
-		noteURI: remoteNoteObject(actorURI, "pinned", nil),
 	}}
 	repo := &resolverActorRepository{}
 	noteRepo := &resolverNoteRepository{}
@@ -169,8 +168,54 @@ func TestResolveActorUpdatesFeaturedNotes(t *testing.T) {
 	if len(actor.FeaturedNoteIDs) != 1 || actor.FeaturedNoteIDs[0] == "" || len(noteRepo.notes) != 1 {
 		t.Fatalf("actor=%+v notes=%+v", actor, noteRepo.notes)
 	}
+	if fetcher.calls != 2 || strings.Join(fetcher.uris, ",") != actorURI+","+featuredURI {
+		t.Fatalf("same-origin embedded Note was fetched again: calls=%d uris=%v", fetcher.calls, fetcher.uris)
+	}
 	if len(locker.names) != 2 || locker.unlocked != 2 {
 		t.Fatalf("object locks names=%v unlocked=%d", locker.names, locker.unlocked)
+	}
+}
+
+func TestResolveActorRefetchesCrossOriginFeaturedNote(t *testing.T) {
+	actorURI := "https://remote.example/users/alice"
+	featuredURI := actorURI + "/collections/featured"
+	otherHost := "other.example"
+	otherActorURI := "https://other.example/users/bob"
+	otherNoteURI := "https://other.example/notes/canonical"
+	embedded := map[string]any{
+		"id": otherNoteURI, "type": "Note", "attributedTo": otherActorURI,
+		"content": "fraudulent embedded content", "to": "https://www.w3.org/ns/activitystreams#Public",
+	}
+	fetcher := &mappedResolverFetcher{objects: map[string]map[string]any{
+		actorURI: {
+			"id": actorURI, "type": "Person", "preferredUsername": "alice",
+			"inbox": actorURI + "/inbox", "featured": featuredURI,
+		},
+		featuredURI: {
+			"id": featuredURI, "type": "OrderedCollection", "orderedItems": []any{embedded},
+		},
+		otherNoteURI: {
+			"id": otherNoteURI, "type": "Note", "attributedTo": otherActorURI,
+			"content": "canonical content", "to": "https://www.w3.org/ns/activitystreams#Public",
+		},
+	}}
+	repo := &resolverActorRepository{actors: map[string]*actors.Actor{
+		otherActorURI: {ID: "other-actor", URI: otherActorURI, Host: &otherHost, LastFetchedAt: time.Now()},
+	}}
+	noteRepo := &resolverNoteRepository{}
+	resolver := New(repo, fetcher, nil)
+	resolver.SetNoteRepository(noteRepo)
+
+	actor, err := resolver.ResolveActor(context.Background(), actorURI)
+	if err != nil {
+		t.Fatalf("ResolveActor returned error: %v", err)
+	}
+	stored := noteRepo.notes[otherNoteURI]
+	if len(actor.FeaturedNoteIDs) != 1 || stored == nil || stored.Text != "canonical content" {
+		t.Fatalf("actor=%+v stored=%+v", actor, stored)
+	}
+	if strings.Join(fetcher.uris, ",") != actorURI+","+featuredURI+","+otherNoteURI {
+		t.Fatalf("cross-origin fetches = %v", fetcher.uris)
 	}
 }
 
@@ -378,6 +423,46 @@ func TestConcordeTruncateLongActorName(t *testing.T) {
 	}
 }
 
+func TestCurrentMisskeyNormalizesEmptyActorName(t *testing.T) {
+	actorURI := "https://remote.example/users/alice"
+	actor, err := ParseRemoteActor(map[string]any{
+		"id": actorURI, "type": "Person", "preferredUsername": "alice",
+		"name": "", "inbox": actorURI + "/inbox",
+	}, actorURI)
+	if err != nil {
+		t.Fatalf("ParseRemoteActor returned error: %v", err)
+	}
+	if actor.Name != "" {
+		t.Fatalf("Name = %q", actor.Name)
+	}
+}
+
+func TestCurrentMisskeyAcceptsScalarAndArrayAlsoKnownAs(t *testing.T) {
+	actorURI := "https://remote.example/users/alice"
+	aliases := []string{"https://old.example/users/alice", "https://older.example/users/alice"}
+	for name, value := range map[string]any{
+		"scalar": aliases[0],
+		"array":  []any{aliases[0], aliases[1]},
+	} {
+		t.Run(name, func(t *testing.T) {
+			actor, err := ParseRemoteActor(map[string]any{
+				"id": actorURI, "type": "Person", "preferredUsername": "alice",
+				"inbox": actorURI + "/inbox", "alsoKnownAs": value,
+			}, actorURI)
+			if err != nil {
+				t.Fatalf("ParseRemoteActor returned error: %v", err)
+			}
+			want := aliases[:1]
+			if name == "array" {
+				want = aliases
+			}
+			if strings.Join(actor.AlsoKnownAs, ",") != strings.Join(want, ",") {
+				t.Fatalf("AlsoKnownAs = %#v, want %#v", actor.AlsoKnownAs, want)
+			}
+		})
+	}
+}
+
 func TestParseRemoteActor(t *testing.T) {
 	actor, err := ParseRemoteActor(map[string]any{
 		"type":              "Person",
@@ -517,6 +602,7 @@ func TestParseRemoteActorRejectsWrongCollectionHosts(t *testing.T) {
 type resolverActorRepository struct {
 	upserted *actors.Actor
 	existing *actors.Actor
+	actors   map[string]*actors.Actor
 }
 
 type resolverEmojiRepository struct {
@@ -593,12 +679,19 @@ func (r *resolverActorRepository) ListOwnedAccountIDs(context.Context) ([]string
 	return nil, nil
 }
 
-func (r *resolverActorRepository) FindByURI(context.Context, string) (*actors.Actor, error) {
-	return r.existing, nil
+func (r *resolverActorRepository) FindByURI(_ context.Context, uri string) (*actors.Actor, error) {
+	return r.actorByURI(uri), nil
 }
 
-func (r *resolverActorRepository) FindAnyByURI(context.Context, string) (*actors.Actor, error) {
-	return r.existing, nil
+func (r *resolverActorRepository) FindAnyByURI(_ context.Context, uri string) (*actors.Actor, error) {
+	return r.actorByURI(uri), nil
+}
+
+func (r *resolverActorRepository) actorByURI(uri string) *actors.Actor {
+	if r.existing != nil && r.existing.URI == uri {
+		return r.existing
+	}
+	return r.actors[uri]
 }
 
 func (r *resolverActorRepository) FilterActiveRemoteIDs(_ context.Context, ids []string) (map[string]struct{}, error) {
@@ -622,6 +715,10 @@ func (r *resolverActorRepository) UpsertRemoteActor(_ context.Context, actor act
 	actor.LastFetchedAt = time.Now()
 	r.upserted = &actor
 	r.existing = &actor
+	if r.actors == nil {
+		r.actors = make(map[string]*actors.Actor)
+	}
+	r.actors[actor.URI] = &actor
 	return &actor, nil
 }
 
@@ -679,10 +776,12 @@ type mappedResolverFetcher struct {
 	objects map[string]map[string]any
 	errors  map[string]error
 	calls   int
+	uris    []string
 }
 
 func (f *mappedResolverFetcher) FetchObject(_ context.Context, uri string, _ *actors.Actor) (map[string]any, error) {
 	f.calls++
+	f.uris = append(f.uris, uri)
 	if err := f.errors[uri]; err != nil {
 		return nil, err
 	}
