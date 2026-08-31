@@ -914,9 +914,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			ReplyID string `json:"replyId"`
 		}
 		misskey.call(ctx, "users/notes", map[string]any{
-			"i":      directRecipient.Token,
-			"userId": relayOnMisskey.ID,
-			"limit":  10,
+			"i":           directRecipient.Token,
+			"userId":      relayOnMisskey.ID,
+			"limit":       10,
+			"withReplies": true,
 		}, &notes)
 		for _, note := range notes {
 			if note.Text == specifiedNoteText && note.URI == createdSpecified.URI && note.ReplyID == specifiedReplyTarget.CreatedNote.ID {
