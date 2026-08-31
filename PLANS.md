@@ -997,6 +997,9 @@ Implement this phase before exposing additional browser-driven mutations.
       unsupported.
 - [x] Implement inbound remote note delete.
 - [x] Implement retryable local note delete delivery.
+- [x] Resolve local reply/quote targets before insertion, enforce target
+      visibility/shareability, persist canonical IDs, and directly deliver
+      Create(Note) to remote target authors even when they are not followers.
 - [x] Implement idempotent Note-delete cleanup for reactions, polls, poll
       votes, and related notifications.
 - [x] Implement inbound remote actor delete and account cleanup queue enqueue.

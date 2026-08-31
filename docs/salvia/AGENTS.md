@@ -282,16 +282,19 @@ Use these Ably message names and payloads:
   `visibility`, `content_warning`, `sensitive`, `in_reply_to_uri`, `quote_uri`,
   `mention_uris`, `hashtags`, and `emoji_names`. `emoji_names` contains at most
   100 local names without colons; Rosmarinus resolves the URLs. When
-  `visibility` is `specified`,
-  `mention_uris` is required, must contain at least one Actor URI, and defines
-  the direct recipients. It may also contain `poll` with `choices`, optional
+  `visibility` is `specified`, at least one visible recipient must come from
+  `mention_uris`, `in_reply_to_uri`, or `quote_uri`; explicit mentions and
+  validated target authors define the direct recipients. It may also contain
+  `poll` with `choices`, optional
   `multiple`, and optional RFC 3339 `expires_at`; `text` may be empty when
   `poll` is present. `text` is current Misskey-compatible MFM source; send it
   unchanged and never send pre-rendered HTML. Rosmarinus owns safe ActivityPub
   HTML rendering and conditional Misskey source metadata. `renote_id` is the
   Rosmarinus-owned ID of a stored target Note. A pure renote cannot contain any
   content metadata or use `specified` visibility; Rosmarinus delivers it as
-  `Announce` and may narrow visibility to match the target.
+  `Announce` and may narrow visibility to match the target. Rosmarinus resolves
+  `in_reply_to_uri` and `quote_uri`, rejects invisible or unshareable targets,
+  stores their canonical IDs, and directly delivers to remote target authors.
 - `post.delete`: `data` contains `note_id`; top-level `actor_id` must own the
   local Note. Treat success as a soft deletion plus queued federation delivery;
   deleting a pure renote delivers `Undo(Announce)` when its target still exists.

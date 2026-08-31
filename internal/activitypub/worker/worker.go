@@ -1941,6 +1941,33 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if strings.TrimSpace(command.RenoteID) != "" {
 		return h.createRenote(ctx, actor, command, visibility)
 	}
+	var replyTarget, quoteTarget *domainnotes.Note
+	if strings.TrimSpace(command.InReplyToURI) != "" {
+		replyTarget, err = h.resolveLocalPostReference(ctx, actor, command.InReplyToURI, "reply")
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+	}
+	if strings.TrimSpace(command.QuoteURI) != "" {
+		quoteTarget, err = h.resolveLocalPostReference(ctx, actor, command.QuoteURI, "quote")
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+		if isPureRenote(quoteTarget) {
+			return connector.PostCreated{}, fmt.Errorf("cannot quote a pure renote")
+		}
+		visibility, err = localRenoteVisibility(actor, quoteTarget, visibility)
+		if err != nil {
+			return connector.PostCreated{}, fmt.Errorf("quote target is not shareable: %w", err)
+		}
+	}
+	additionalRecipientURIs := make([]string, 0, 2)
+	if replyTarget != nil {
+		additionalRecipientURIs = append(additionalRecipientURIs, replyTarget.AttributedTo)
+	}
+	if quoteTarget != nil {
+		additionalRecipientURIs = append(additionalRecipientURIs, quoteTarget.AttributedTo)
+	}
 	var localPoll *polls.Poll
 	if command.Poll != nil {
 		if h.polls == nil {
@@ -1952,9 +1979,15 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	mentionURIs := command.MentionURIs
+	visibleUserURIs := []string(nil)
 	var specifiedRecipients []*actors.Actor
 	if visibility == domainnotes.VisibilitySpecified {
-		specifiedRecipients, mentionURIs, err = h.resolveSpecifiedRecipients(ctx, actor, command.MentionURIs)
+		_, mentionURIs, err = h.resolveDirectRecipients(ctx, actor, mentionURIs)
+		if err != nil {
+			return connector.PostCreated{}, err
+		}
+		deliveryURIs := append(append([]string(nil), mentionURIs...), additionalRecipientURIs...)
+		specifiedRecipients, visibleUserURIs, err = h.resolveSpecifiedRecipients(ctx, actor, deliveryURIs)
 		if err != nil {
 			return connector.PostCreated{}, err
 		}
@@ -1970,9 +2003,13 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		return connector.PostCreated{}, err
 	}
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
-	visibleUserURIs := []string(nil)
-	if visibility == domainnotes.VisibilitySpecified {
-		visibleUserURIs = mentionURIs
+	inReplyToURI, replyID := "", ""
+	if replyTarget != nil {
+		inReplyToURI, replyID = replyTarget.URI, replyTarget.ID
+	}
+	quoteURI, quoteID := "", ""
+	if quoteTarget != nil {
+		quoteURI, quoteID = quoteTarget.URI, quoteTarget.ID
 	}
 	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
 		ID:              command.NoteID,
@@ -1982,8 +2019,10 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		Text:            command.Text,
 		ContentWarning:  command.ContentWarning,
 		Sensitive:       command.Sensitive,
-		InReplyToURI:    command.InReplyToURI,
-		QuoteURI:        command.QuoteURI,
+		InReplyToURI:    inReplyToURI,
+		ReplyID:         replyID,
+		QuoteURI:        quoteURI,
+		QuoteID:         quoteID,
 		Visibility:      visibility,
 		MentionURIs:     mentionURIs,
 		VisibleUserURIs: visibleUserURIs,
@@ -2019,7 +2058,8 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 			return connector.PostCreated{}, err
 		}
 	} else {
-		if err := h.enqueueCreateNoteDeliveries(ctx, actor, note, localPoll); err != nil {
+		activity := apnotes.RenderCreateWithPoll(note, localPoll)
+		if err := h.enqueueNoteActivityDeliveriesTo(ctx, actor, note, activity, additionalRecipientURIs); err != nil {
 			return connector.PostCreated{}, err
 		}
 	}
@@ -2035,6 +2075,28 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		}
 	}
 	return payload, nil
+}
+
+func (h *Handler) resolveLocalPostReference(ctx context.Context, actor *actors.Actor, rawURI, kind string) (*domainnotes.Note, error) {
+	if h.resolver == nil {
+		return nil, fmt.Errorf("note resolver is not configured")
+	}
+	uri := strings.TrimSpace(rawURI)
+	target, err := h.resolver.ResolveNote(ctx, uri)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s target %s: %w", kind, uri, err)
+	}
+	if target == nil {
+		return nil, fmt.Errorf("%s target not found: %s", kind, uri)
+	}
+	allowed, err := h.canReactToNote(ctx, actor, target)
+	if err != nil {
+		return nil, fmt.Errorf("validate %s target visibility: %w", kind, err)
+	}
+	if !allowed {
+		return nil, fmt.Errorf("%s target is not visible to actor", kind)
+	}
+	return target, nil
 }
 
 func (h *Handler) createRenote(ctx context.Context, actor *actors.Actor, command connector.PostCreateCommand, visibility domainnotes.Visibility) (connector.PostCreated, error) {
@@ -2453,7 +2515,7 @@ func (h *Handler) resolveSpecifiedRecipients(ctx context.Context, actor *actors.
 		return nil, nil, err
 	}
 	if len(recipients) == 0 {
-		return nil, nil, fmt.Errorf("specified visibility requires at least one mention_uri")
+		return nil, nil, fmt.Errorf("specified visibility requires at least one visible recipient")
 	}
 	return recipients, uris, nil
 }
@@ -2525,10 +2587,6 @@ func (h *Handler) enqueueSpecifiedCreateNoteDeliveries(ctx context.Context, acto
 		}
 	}
 	return nil
-}
-
-func (h *Handler) enqueueCreateNoteDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, poll *polls.Poll) error {
-	return h.enqueueNoteActivityDeliveries(ctx, actor, note, apnotes.RenderCreateWithPoll(note, poll))
 }
 
 func (h *Handler) enqueueNoteActivityDeliveries(ctx context.Context, actor *actors.Actor, note *domainnotes.Note, activity map[string]any) error {

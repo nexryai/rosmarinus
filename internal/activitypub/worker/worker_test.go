@@ -3098,6 +3098,133 @@ func TestCreatePostDeliversPublicMentionToNonFollower(t *testing.T) {
 	}
 }
 
+func TestCreatePostResolvesAndDeliversReplyAndQuoteTargets(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	replyHost := "reply.example"
+	quoteHost := "quote.example"
+	replyAuthor := &actors.Actor{
+		ID: "reply-author", Host: &replyHost, URI: "https://reply.example/users/alice", Inbox: "https://reply.example/inbox",
+	}
+	quoteAuthor := &actors.Actor{
+		ID: "quote-author", Host: &quoteHost, URI: "https://quote.example/users/bob", Inbox: "https://quote.example/inbox",
+	}
+	replyTarget := &domainnotes.Note{
+		ID: "reply-target", URI: "https://reply.example/notes/1", AuthorID: replyAuthor.ID,
+		AttributedTo: replyAuthor.URI, Text: "reply target", Visibility: domainnotes.VisibilityPublic,
+	}
+	quoteTarget := &domainnotes.Note{
+		ID: "quote-target", URI: "https://quote.example/notes/1", AuthorID: quoteAuthor.ID,
+		AttributedTo: quoteAuthor.URI, Text: "quote target", Visibility: domainnotes.VisibilityHome,
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		replyTarget.URI: replyTarget,
+		quoteTarget.URI: quoteTarget,
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remotes: map[string]*actors.Actor{replyAuthor.URI: replyAuthor, quoteAuthor.URI: quoteAuthor}},
+		noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "reply-and-quote", Text: "both",
+		InReplyToURI: " " + replyTarget.URI + " ", QuoteURI: quoteTarget.URI,
+		Visibility: string(domainnotes.VisibilityPublic),
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	stored, err := noteRepo.FindByID(context.Background(), "reply-and-quote")
+	if err != nil || stored == nil {
+		t.Fatalf("stored note = %#v, err=%v", stored, err)
+	}
+	if stored.ReplyID != replyTarget.ID || stored.InReplyToURI != replyTarget.URI || stored.QuoteID != quoteTarget.ID || stored.QuoteURI != quoteTarget.URI {
+		t.Fatalf("stored references = %#v", stored)
+	}
+	if stored.Visibility != domainnotes.VisibilityHome {
+		t.Fatalf("visibility = %q, want home", stored.Visibility)
+	}
+	if len(q.tasks) != 2 {
+		t.Fatalf("delivery task count = %d, want 2", len(q.tasks))
+	}
+	recipients := map[string]struct{}{}
+	for _, task := range q.tasks {
+		payload, ok := task.Payload.(queue.DeliverPayload)
+		if !ok || payload.Object["type"] != "Create" {
+			t.Fatalf("unexpected delivery: %#v", task)
+		}
+		recipients[payload.To] = struct{}{}
+	}
+	for _, inbox := range []string{replyAuthor.Inbox, quoteAuthor.Inbox} {
+		if _, ok := recipients[inbox]; !ok {
+			t.Fatalf("missing direct recipient %s: %#v", inbox, recipients)
+		}
+	}
+}
+
+func TestCreateSpecifiedReplyUsesTargetAsVisibleRecipient(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remoteHost := "remote.example"
+	remote := &actors.Actor{
+		ID: "remote-alice", Host: &remoteHost, URI: "https://remote.example/users/alice", Inbox: "https://remote.example/inbox",
+	}
+	target := &domainnotes.Note{
+		ID: "target", URI: "https://remote.example/notes/target", AuthorID: remote.ID,
+		AttributedTo: remote.URI, Visibility: domainnotes.VisibilityPublic,
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{target.URI: target}}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "specified-reply", Text: "private reply",
+		InReplyToURI: target.URI, Visibility: string(domainnotes.VisibilitySpecified),
+	})
+	if err != nil {
+		t.Fatalf("CreatePost returned error: %v", err)
+	}
+	stored, _ := noteRepo.FindByID(context.Background(), "specified-reply")
+	if stored == nil || len(stored.MentionURIs) != 0 || len(stored.VisibleUserURIs) != 1 || stored.VisibleUserURIs[0] != remote.URI {
+		t.Fatalf("stored specified reply = %#v", stored)
+	}
+	if len(q.tasks) != 1 {
+		t.Fatalf("delivery task count = %d", len(q.tasks))
+	}
+	payload, ok := q.tasks[0].Payload.(queue.DeliverPayload)
+	object, objectOK := payload.Object["object"].(map[string]any)
+	to, toOK := object["to"].([]string)
+	if !ok || !objectOK || !toOK || len(to) != 1 || to[0] != remote.URI || payload.To != remote.Inbox {
+		t.Fatalf("unexpected specified reply delivery: %#v", q.tasks[0])
+	}
+}
+
+func TestCreatePostRejectsUnshareableQuote(t *testing.T) {
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remoteHost := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", Host: &remoteHost, URI: "https://remote.example/users/alice"}
+	target := &domainnotes.Note{
+		ID: "followers-target", URI: "https://remote.example/notes/followers", AuthorID: remote.ID,
+		AttributedTo: remote.URI, Visibility: domainnotes.VisibilityFollowers,
+	}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{target.URI: target}}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: local.ID, FolloweeID: remote.ID, FollowerURI: local.URI, FolloweeURI: remote.URI, Status: follows.StatusAccepted,
+	})
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
+		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+
+	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+		ActorID: local.ID, NoteID: "invalid-quote", Text: "leak", QuoteURI: target.URI,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not shareable") {
+		t.Fatalf("expected unshareable quote error, got %v", err)
+	}
+	if stored, _ := noteRepo.FindByID(context.Background(), "invalid-quote"); stored != nil {
+		t.Fatalf("invalid quote was stored: %#v", stored)
+	}
+}
+
 func TestCreatePostRejectsSpecifiedPostWithoutRecipients(t *testing.T) {
 	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
 	noteRepo := &fakeNoteRepo{}

@@ -69,7 +69,7 @@ idempotent content/relationship cleanup. The tombstoned Actor and private key
 remain Rosmarinus-owned so queued `Delete` retries can still be signed; no
 other queued activity may be sent after deletion.
 
-Remote Note documents retain ActivityPub relationship URIs and resolved local
+Note documents retain ActivityPub relationship URIs and resolved local
 references together:
 
 ```text
@@ -86,6 +86,11 @@ Misskey can send both `_misskey_quote` and `quoteUrl`; Rosmarinus tries each
 unique candidate and stores the URI corresponding to `quoteId` when one
 resolves. The URI fields are federation source data and remain useful for
 diagnostics and outbound rendering; they are not MongoDB foreign keys.
+For local `post.create`, Rosmarinus resolves `in_reply_to_uri` and `quote_uri`
+before insertion, stores the canonical target URI/ID pair, rejects targets the
+Actor cannot view or share, and directly federates to remote target authors.
+With `specified` visibility, those validated authors also satisfy the visible
+recipient requirement when `mention_uris` is empty.
 
 For `specified` Notes, Salvia must apply `visibleUserUris` in addition to
 Actor/account ownership before returning content to a browser. `mentionUris`

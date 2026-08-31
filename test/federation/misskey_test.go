@@ -874,17 +874,27 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("deleted Note poll votes remain: count=%d err=%v", votes, countErr)
 	}
 
-	// Phase 19: publish a specified-visibility note, verify it is not publicly
-	// dereferenceable, and confirm that the non-following Misskey recipient
-	// still receives it through the individual inbox delivery.
+	// Phase 19: let a non-following Misskey Actor publish a target Note, then
+	// reply with specified visibility from Rosmarinus. Verify Rosmarinus resolves
+	// and persists the reply target, keeps the reply non-dereferenceable, and
+	// directly delivers it to the target author without an explicit mention.
+	var specifiedReplyTarget struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i": directRecipient.Token, "text": "Reply target for Rosmarinus",
+	}, &specifiedReplyTarget)
+	if specifiedReplyTarget.CreatedNote.ID == "" {
+		t.Fatalf("specified reply target creation returned no note id")
+	}
+	specifiedReplyTargetURI := "https://a.test/notes/" + specifiedReplyTarget.CreatedNote.ID
 	const specifiedNoteID = "latest-misskey-specified-note"
 	const specifiedNoteText = "Private hello from Rosmarinus"
 	createdSpecified, err := worker.CreatePost(ctx, connector.PostCreateCommand{
-		ActorID:     localActor.ID,
-		NoteID:      specifiedNoteID,
-		Text:        specifiedNoteText,
-		Visibility:  string(domainnotes.VisibilitySpecified),
-		MentionURIs: []string{directRecipientURI},
+		ActorID: localActor.ID, NoteID: specifiedNoteID, Text: specifiedNoteText,
+		Visibility: string(domainnotes.VisibilitySpecified), InReplyToURI: specifiedReplyTargetURI,
 	})
 	if err != nil {
 		t.Fatalf("create specified Rosmarinus post: %v", err)
@@ -893,10 +903,15 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if status := misskey.getStatus(ctx, createdSpecified.URI+"/activity"); status != http.StatusNotFound {
 		t.Fatalf("specified Create activity status = %d, want %d", status, http.StatusNotFound)
 	}
+	storedSpecified, err := noteRepo.FindByID(ctx, specifiedNoteID)
+	if err != nil || storedSpecified == nil || storedSpecified.InReplyToURI != specifiedReplyTargetURI || storedSpecified.ReplyID == "" {
+		t.Fatalf("specified reply target was not resolved: note=%+v err=%v", storedSpecified, err)
+	}
 	waitFor(t, ctx, "specified Create(Note) stored for Misskey recipient", func() bool {
 		var notes []struct {
-			Text string `json:"text"`
-			URI  string `json:"uri"`
+			Text    string `json:"text"`
+			URI     string `json:"uri"`
+			ReplyID string `json:"replyId"`
 		}
 		misskey.call(ctx, "users/notes", map[string]any{
 			"i":      directRecipient.Token,
@@ -904,7 +919,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			"limit":  10,
 		}, &notes)
 		for _, note := range notes {
-			if note.Text == specifiedNoteText && note.URI == createdSpecified.URI {
+			if note.Text == specifiedNoteText && note.URI == createdSpecified.URI && note.ReplyID == specifiedReplyTarget.CreatedNote.ID {
 				return true
 			}
 		}

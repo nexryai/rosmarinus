@@ -227,7 +227,10 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
       `quote_uri`, `mention_uris`, `hashtags`, `emoji_names`, and `poll`. Send
       only local emoji names and never media URLs. Allow empty text only when
       the command includes a valid Poll or pure renote. Do not combine
-      `renote_id` with content metadata or `specified` visibility.
+      `renote_id` with content metadata or `specified` visibility. Treat
+      `in_reply_to_uri` and `quote_uri` as server-resolved references; for
+      `specified` visibility, require at least one recipient from those
+      references or `mention_uris`.
 - [ ] Implement `post.delete` with the owned local `actor_id` and
       `data.note_id`; expect pure-renote deletion to federate as
       `Undo(Announce)`, and reuse the original request ID on retry.
