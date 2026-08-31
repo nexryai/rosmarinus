@@ -1305,6 +1305,18 @@ func TestPerformCollectionRejectsForeignActivityAndLargeCollection(t *testing.T)
 	if len(noteRepo.notes) != 0 {
 		t.Fatalf("foreign activity stored notes: %#v", noteRepo.notes)
 	}
+	result, err = h.performActivity(context.Background(), remote, map[string]any{
+		"id":   "https://remote.example/collections/inbox-port",
+		"type": "Collection",
+		"items": []any{map[string]any{
+			"id":    "https://remote.example:8443/activities/1",
+			"type":  "Create",
+			"actor": remote.URI,
+		}},
+	})
+	if err != nil || !strings.Contains(result, "activity id host mismatches signer") {
+		t.Fatalf("different-port result=%q err=%v", result, err)
+	}
 
 	items := make([]any, collectionActivityLimit)
 	for i := range items {
@@ -1317,6 +1329,26 @@ func TestPerformCollectionRejectsForeignActivityAndLargeCollection(t *testing.T)
 	})
 	if err != nil || result != "skip: collection would surpass recursion limit" {
 		t.Fatalf("result=%q err=%v", result, err)
+	}
+}
+
+func TestPerformCreateRejectsNoteOnDifferentActorPort(t *testing.T) {
+	host := "remote.example"
+	remote := &actors.Actor{ID: "remote-alice", URI: "https://remote.example:8443/users/alice", Host: &host}
+	noteRepo := &fakeNoteRepo{}
+	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example:8443/activities/create", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example:9443/notes/1", "type": "Note",
+			"attributedTo": remote.URI, "to": apnotes.PublicAudience, "content": "wrong port",
+		},
+	})
+	if err != nil || result != "skip: host in actor.uri !== note.id" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(noteRepo.notes) != 0 {
+		t.Fatalf("different-port note was stored: %#v", noteRepo.notes)
 	}
 }
 

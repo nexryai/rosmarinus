@@ -2,6 +2,25 @@ package types
 
 import "testing"
 
+func TestAuthorityMatchesCurrentMisskeyHostSemantics(t *testing.T) {
+	for name, test := range map[string]struct {
+		raw  string
+		want string
+	}{
+		"hostname":     {raw: "https://Remote.Example/users/alice", want: "remote.example"},
+		"default port": {raw: "https://remote.example:443/users/alice", want: "remote.example"},
+		"custom port":  {raw: "https://remote.example:8443/users/alice", want: "remote.example:8443"},
+		"punycode":     {raw: "https://例え.テスト/users/alice", want: "xn--r8jz45g.xn--zckzah"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := Authority(test.raw)
+			if err != nil || got != test.want {
+				t.Fatalf("Authority(%q) = %q, %v; want %q", test.raw, got, err, test.want)
+			}
+		})
+	}
+}
+
 func TestGetAPID(t *testing.T) {
 	id, err := GetAPID("https://example.test/notes/1")
 	if err != nil || id != "https://example.test/notes/1" {

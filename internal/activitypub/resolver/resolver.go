@@ -556,30 +556,30 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	if err != nil {
 		return actors.Actor{}, fmt.Errorf("invalid actor id: %w", err)
 	}
-	expectHost, err := hostOf(uri)
+	expectAuthority, err := aptypes.Authority(uri)
 	if err != nil {
 		return actors.Actor{}, err
 	}
-	idHost, err := hostOf(id)
+	idAuthority, err := aptypes.Authority(id)
 	if err != nil {
 		return actors.Actor{}, fmt.Errorf("invalid actor id host: %w", err)
 	}
-	if idHost != expectHost {
+	if idAuthority != expectAuthority {
 		return actors.Actor{}, fmt.Errorf("invalid actor: id has different host")
 	}
-	inbox, err := requiredSameHostID(object["inbox"], expectHost, "inbox")
+	inbox, err := requiredSameAuthorityID(object["inbox"], expectAuthority, "inbox")
 	if err != nil {
 		return actors.Actor{}, err
 	}
-	if _, err := optionalSameHostID(object["outbox"], expectHost, "outbox"); err != nil {
+	if _, err := optionalSameAuthorityID(object["outbox"], expectAuthority, "outbox"); err != nil {
 		return actors.Actor{}, err
 	}
-	sharedInbox := optionalSharedInbox(object, expectHost)
-	followersURI, err := optionalSameHostID(object["followers"], expectHost, "followers")
+	sharedInbox := optionalSharedInbox(object, expectAuthority)
+	followersURI, err := optionalSameAuthorityID(object["followers"], expectAuthority, "followers")
 	if err != nil {
 		return actors.Actor{}, err
 	}
-	followingURI, err := optionalSameHostID(object["following"], expectHost, "following")
+	followingURI, err := optionalSameAuthorityID(object["following"], expectAuthority, "following")
 	if err != nil {
 		return actors.Actor{}, err
 	}
@@ -590,7 +590,10 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	if !ok || !validRemoteUsername(username) {
 		return actors.Actor{}, fmt.Errorf("invalid actor: wrong username")
 	}
-	name, _ := object["name"].(string)
+	name, nameOK := object["name"].(string)
+	if object["name"] != nil && !nameOK {
+		return actors.Actor{}, fmt.Errorf("invalid actor: wrong name")
+	}
 	name = truncateRunes(name, 128)
 	summary, err := actorSummary(object)
 	if err != nil {
@@ -608,12 +611,15 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	birthday := actorBirthday(object["vcard:bday"])
 	location, _ := object["vcard:Address"].(string)
 	location = truncateRunes(location, maxActorLocationLength)
-	publicKeyID, publicKeyPEM, err := publicKey(object, expectHost)
+	publicKeyID, publicKeyPEM, err := publicKey(object, expectAuthority)
 	if err != nil {
 		return actors.Actor{}, err
 	}
 	kind := actorType(object)
-	host := expectHost
+	host, err := resolvableHostOf(uri)
+	if err != nil {
+		return actors.Actor{}, err
+	}
 	return actors.Actor{
 		ID:             remoteActorID(id),
 		Username:       username,
@@ -789,19 +795,19 @@ func truncateRunes(value string, max int) string {
 	return string(runes[:max])
 }
 
-func requiredSameHostID(value any, expectHost, field string) (string, error) {
+func requiredSameAuthorityID(value any, expectAuthority, field string) (string, error) {
 	id, err := aptypes.GetAPID(value)
 	if err != nil {
 		return "", fmt.Errorf("invalid actor: wrong %s", field)
 	}
-	host, err := hostOf(id)
-	if err != nil || host != expectHost {
+	authority, err := aptypes.Authority(id)
+	if err != nil || authority != expectAuthority {
 		return "", fmt.Errorf("invalid actor: wrong %s", field)
 	}
 	return id, nil
 }
 
-func optionalSharedInbox(object map[string]any, expectHost string) string {
+func optionalSharedInbox(object map[string]any, expectAuthority string) string {
 	value := object["sharedInbox"]
 	if value == nil {
 		if endpoints, ok := object["endpoints"].(map[string]any); ok {
@@ -811,7 +817,7 @@ func optionalSharedInbox(object map[string]any, expectHost string) string {
 	if value == nil {
 		return ""
 	}
-	sharedInbox, err := requiredSameHostID(value, expectHost, "shared inbox")
+	sharedInbox, err := requiredSameAuthorityID(value, expectAuthority, "shared inbox")
 	if err != nil {
 		// A shared inbox is only an optimization. Falling back to the validated
 		// individual inbox preserves federation without trusting a foreign host.
@@ -820,11 +826,11 @@ func optionalSharedInbox(object map[string]any, expectHost string) string {
 	return sharedInbox
 }
 
-func optionalSameHostID(value any, expectHost, field string) (string, error) {
+func optionalSameAuthorityID(value any, expectAuthority, field string) (string, error) {
 	if value == nil {
 		return "", nil
 	}
-	return requiredSameHostID(value, expectHost, field)
+	return requiredSameAuthorityID(value, expectAuthority, field)
 }
 
 func optionalAPID(value any) string {
@@ -838,7 +844,7 @@ func optionalAPID(value any) string {
 	return id
 }
 
-func publicKey(object map[string]any, expectHost string) (string, string, error) {
+func publicKey(object map[string]any, expectAuthority string) (string, string, error) {
 	value, ok := object["publicKey"].(map[string]any)
 	if !ok || value == nil {
 		return "", "", nil
@@ -847,8 +853,8 @@ func publicKey(object map[string]any, expectHost string) (string, string, error)
 	if !ok || id == "" {
 		return "", "", fmt.Errorf("invalid actor: publicKey.id is not a string")
 	}
-	host, err := hostOf(id)
-	if err != nil || host != expectHost {
+	authority, err := aptypes.Authority(id)
+	if err != nil || authority != expectAuthority {
 		return "", "", fmt.Errorf("invalid actor: publicKey.id has different host")
 	}
 	pem, ok := value["publicKeyPem"].(string)
@@ -864,14 +870,6 @@ func actorType(object map[string]any) string {
 		return "Person"
 	}
 	return typ
-}
-
-func hostOf(raw string) (string, error) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return "", fmt.Errorf("invalid url: %s", raw)
-	}
-	return strings.ToLower(u.Hostname()), nil
 }
 
 func remoteActorID(uri string) string {

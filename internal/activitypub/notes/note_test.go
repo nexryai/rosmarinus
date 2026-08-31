@@ -31,6 +31,19 @@ func TestConcordeMinimumNote(t *testing.T) {
 	}
 }
 
+func TestCurrentMisskeyRejectsNoteActorOnDifferentPort(t *testing.T) {
+	_, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test:8443/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test:9443/users/alice",
+		"to":           PublicAudience,
+		"content":      "test",
+	}, "https://host1.test:8443/notes/1")
+	if err == nil {
+		t.Fatal("ParseRemoteNote should reject an actor on a different port")
+	}
+}
+
 func TestConcordeNoteTextPrefersMisskeyMarkdownSource(t *testing.T) {
 	note, err := ParseRemoteNote(map[string]any{
 		"id":           "https://host1.test/notes/1",

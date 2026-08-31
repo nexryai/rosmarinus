@@ -576,6 +576,46 @@ func TestParseRemoteActorRejectsWrongInboxHost(t *testing.T) {
 	}
 }
 
+func TestParseRemoteActorRejectsSameHostnameDifferentPort(t *testing.T) {
+	base := map[string]any{
+		"type":              "Person",
+		"id":                "https://remote.example:8443/users/alice",
+		"inbox":             "https://remote.example:8443/users/alice/inbox",
+		"preferredUsername": "alice",
+	}
+	for _, field := range []string{"id", "inbox", "outbox", "followers", "following", "publicKey"} {
+		t.Run(field, func(t *testing.T) {
+			object := make(map[string]any, len(base)+1)
+			for key, value := range base {
+				object[key] = value
+			}
+			if field == "publicKey" {
+				object[field] = map[string]any{
+					"id": "https://remote.example:9443/users/alice#main-key", "publicKeyPem": "pem",
+				}
+			} else {
+				object[field] = "https://remote.example:9443/users/alice/" + field
+			}
+			if _, err := ParseRemoteActor(object, "https://remote.example:8443/users/alice"); err == nil {
+				t.Fatalf("ParseRemoteActor should reject %s on a different port", field)
+			}
+		})
+	}
+}
+
+func TestParseRemoteActorRejectsNonStringName(t *testing.T) {
+	_, err := ParseRemoteActor(map[string]any{
+		"type":              "Person",
+		"id":                "https://remote.example/users/alice",
+		"inbox":             "https://remote.example/users/alice/inbox",
+		"preferredUsername": "alice",
+		"name":              42,
+	}, "https://remote.example/users/alice")
+	if err == nil || !strings.Contains(err.Error(), "wrong name") {
+		t.Fatalf("expected invalid name error, got %v", err)
+	}
+}
+
 func TestParseRemoteActorRejectsWrongCollectionHosts(t *testing.T) {
 	base := map[string]any{
 		"type":              "Person",

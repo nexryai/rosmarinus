@@ -487,9 +487,9 @@ func contains(ids []string, target string) bool {
 }
 
 func hostOf(raw string) string {
-	u, err := url.Parse(raw)
+	authority, err := aptypes.Authority(raw)
 	if err != nil {
 		return ""
 	}
-	return strings.ToLower(u.Hostname())
+	return authority
 }

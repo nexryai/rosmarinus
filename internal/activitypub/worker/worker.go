@@ -602,15 +602,16 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 	if !ok || activityID == "" {
 		return "skip: activity.id is not a string", nil
 	}
-	signerHost, err := hostOf(authActor.URI)
+	signerAuthority, err := aptypes.Authority(authActor.URI)
 	if err != nil {
 		return "skip: signer uri host is invalid", nil
 	}
-	activityHost, err := hostOf(activityID)
-	if err != nil || signerHost != activityHost {
-		return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerHost, activityHost), nil
+	activityAuthority, err := aptypes.Authority(activityID)
+	if err != nil || signerAuthority != activityAuthority {
+		return fmt.Sprintf("skip: signerHost(%s) != activity.id host(%s)", signerAuthority, activityAuthority), nil
 	}
 	if h.instances != nil {
+		signerHost, _ := hostOf(authActor.URI)
 		if instance, recordErr := h.instances.RecordReceived(ctx, signerHost, time.Now().UTC()); recordErr != nil {
 			if h.logger != nil {
 				h.logger.Printf("instance: record inbox host=%s error=%v", signerHost, recordErr)
@@ -719,7 +720,7 @@ func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, co
 	if len(activities) >= collectionActivityLimit {
 		return "skip: collection would surpass recursion limit", nil
 	}
-	actorHost, err := hostOf(actor.URI)
+	actorAuthority, err := aptypes.Authority(actor.URI)
 	if err != nil {
 		return "skip: collection actor uri host is invalid", nil
 	}
@@ -736,8 +737,8 @@ func (h *Handler) performCollection(ctx context.Context, actor *actors.Actor, co
 			reasons = append(reasons, "unknown: activity id is missing")
 			continue
 		}
-		activityHost, err := hostOf(activityID)
-		if err != nil || activityHost != actorHost {
+		activityAuthority, err := aptypes.Authority(activityID)
+		if err != nil || activityAuthority != actorAuthority {
 			reasons = append(reasons, activityID+": activity id host mismatches signer")
 			continue
 		}
@@ -1517,12 +1518,12 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err != nil {
 		return "skip: note.id is not a string", nil
 	}
-	actorHost, err := hostOf(actor.URI)
+	actorAuthority, err := aptypes.Authority(actor.URI)
 	if err != nil {
 		return "skip: actor uri host is invalid", nil
 	}
-	noteHost, err := hostOf(uri)
-	if err != nil || actorHost != noteHost {
+	noteAuthority, err := aptypes.Authority(uri)
+	if err != nil || actorAuthority != noteAuthority {
 		return "skip: host in actor.uri !== note.id", nil
 	}
 	existing, err := h.notes.FindByURI(ctx, uri)

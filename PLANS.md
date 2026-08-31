@@ -885,7 +885,7 @@ workflow may require both services to update the same document or collection.
 - [x] Implement remote actor create/update baseline.
 - [x] Implement signed remote AP GET.
 - [x] Add Actor validation tests based on historical Concorde edge cases.
-- [ ] Add current Misskey Actor validation and resolver edge cases, treating
+- [x] Add current Misskey Actor validation and resolver edge cases, treating
       any intentionally retained historical behavior as an explicit exception.
 
 ### Phase 2A: Salvia Boundary And Multi-Actor Authorization

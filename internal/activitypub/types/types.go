@@ -3,9 +3,35 @@ package types
 import (
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
+	"strings"
+
+	"golang.org/x/net/idna"
 )
 
 type Object map[string]any
+
+// Authority returns the canonical host and non-default port used by current
+// Misskey when it checks whether ActivityPub identifiers belong to one host.
+func Authority(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("invalid url: %s", raw)
+	}
+	host, err := idna.Lookup.ToASCII(strings.TrimSuffix(strings.ToLower(u.Hostname()), "."))
+	if err != nil || host == "" {
+		return "", fmt.Errorf("invalid url host: %s", raw)
+	}
+	port := u.Port()
+	if (strings.EqualFold(u.Scheme, "http") && port == "80") || (strings.EqualFold(u.Scheme, "https") && port == "443") {
+		port = ""
+	}
+	if port != "" {
+		return net.JoinHostPort(host, port), nil
+	}
+	return host, nil
+}
 
 var ValidPostTypes = map[string]struct{}{
 	"Note":     {},
