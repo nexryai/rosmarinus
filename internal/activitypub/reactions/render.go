@@ -13,6 +13,20 @@ func RenderLike(publicURL string, reaction *domainreactions.Reaction) map[string
 	return RenderLikeWithEmoji(publicURL, reaction, nil)
 }
 
+func LocalEmojiName(reaction string) (string, bool) {
+	if len(reaction) < 3 || reaction[0] != ':' || reaction[len(reaction)-1] != ':' {
+		return "", false
+	}
+	name := reaction[1 : len(reaction)-1]
+	if strings.HasSuffix(name, "@.") {
+		return strings.TrimSuffix(name, "@."), true
+	}
+	if strings.Contains(name, "@") {
+		return "", false
+	}
+	return name, true
+}
+
 func RenderLikeWithEmoji(publicURL string, reaction *domainreactions.Reaction, emoji *emojis.Emoji) map[string]any {
 	activity := map[string]any{
 		"@context": []any{

@@ -2491,13 +2491,8 @@ func (h *Handler) DeleteReaction(ctx context.Context, command connector.Reaction
 }
 
 func (h *Handler) resolveLocalReactionEmoji(ctx context.Context, reaction string) (string, *emojis.Emoji, error) {
-	if len(reaction) < 3 || reaction[0] != ':' || reaction[len(reaction)-1] != ':' {
-		return reaction, nil, nil
-	}
-	name := reaction[1 : len(reaction)-1]
-	if strings.HasSuffix(name, "@.") {
-		name = strings.TrimSuffix(name, "@.")
-	} else if strings.Contains(name, "@") {
+	name, local := apreactions.LocalEmojiName(reaction)
+	if !local {
 		return reaction, nil, nil
 	}
 	if !validLocalEmojiName(name) {

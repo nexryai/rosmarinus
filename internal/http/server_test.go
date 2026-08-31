@@ -759,6 +759,25 @@ func TestLikeByIDReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestLikeByIDRendersLocalCustomEmojiTag(t *testing.T) {
+	reactionLookup := fakeReactionLookup{reaction: &reactions.Reaction{
+		ID: "reaction-id", NoteID: "note-id", ActorURI: "https://example.test/users/alice", Reaction: ":party@.:",
+	}}
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{ID: "note-id", URI: "https://remote.example/notes/1"}}
+	emojiLookup := fakeEmojiLookup{emoji: &domainemojis.Emoji{Name: "party", PublicURL: "https://cdn.example.test/party.webp", MediaType: "image/webp"}}
+	req := httptest.NewRequest(http.MethodGet, "/likes/reaction-id", nil)
+	rec := httptest.NewRecorder()
+	NewHandlerWithAllStores(testConfig(), nil, nil, noteLookup, nil, reactionLookup, nil, nil, nil, emojiLookup).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{`"_misskey_reaction":":party@.:"`, `"tag":[`, `"name":":party:"`, `"url":"https://cdn.example.test/party.webp"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
+		}
+	}
+}
+
 func TestInboxEnqueuesAcceptedActivity(t *testing.T) {
 	cfg := testConfig()
 	body := []byte(`{"type":"Create","actor":"https://remote.example/users/alice","id":"https://remote.example/activities/1","object":{"type":"Note","id":"https://remote.example/notes/1"}}`)

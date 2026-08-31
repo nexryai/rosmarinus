@@ -48,6 +48,25 @@ func TestRenderLikeWithLocalEmojiTag(t *testing.T) {
 	}
 }
 
+func TestLocalEmojiName(t *testing.T) {
+	tests := []struct {
+		reaction string
+		name     string
+		local    bool
+	}{
+		{reaction: ":party:", name: "party", local: true},
+		{reaction: ":party@.:", name: "party", local: true},
+		{reaction: ":party@remote.example:"},
+		{reaction: "👍"},
+	}
+	for _, test := range tests {
+		name, local := LocalEmojiName(test.reaction)
+		if name != test.name || local != test.local {
+			t.Fatalf("LocalEmojiName(%q) = %q, %v", test.reaction, name, local)
+		}
+	}
+}
+
 func TestRenderUndoLike(t *testing.T) {
 	published := time.Date(2026, 7, 26, 1, 2, 3, 0, time.UTC)
 	reaction := &domainreactions.Reaction{

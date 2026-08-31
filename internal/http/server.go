@@ -91,7 +91,7 @@ func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup 
 	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
 	mux.HandleFunc("/media/", mediaByID(mediaLookup))
 	mux.HandleFunc("/emojis/", emojiByName(cfg, emojiLookup))
-	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup))
+	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup, emojiLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
@@ -207,7 +207,7 @@ func mediaByID(mediaLookup MediaLookup) http.HandlerFunc {
 	}
 }
 
-func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteLookup) http.HandlerFunc {
+func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteLookup, emojiLookup EmojiLookup) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -242,7 +242,15 @@ func likeByID(cfg config.Config, reactionLookup ReactionLookup, noteLookup NoteL
 		}
 		renderReaction := *reaction
 		renderReaction.NoteURI = note.URI
-		writeActivityJSON(w, apreactions.RenderLike(cfg.PublicURL, &renderReaction))
+		var emoji *domainemojis.Emoji
+		if name, local := apreactions.LocalEmojiName(renderReaction.Reaction); local && emojiLookup != nil {
+			emoji, err = emojiLookup.FindLocalByName(r.Context(), name)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		writeActivityJSON(w, apreactions.RenderLikeWithEmoji(cfg.PublicURL, &renderReaction, emoji))
 	}
 }
 
