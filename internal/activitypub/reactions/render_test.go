@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainreactions "github.com/nexryai/rosmarinus/internal/domain/reactions"
 )
 
@@ -20,6 +21,30 @@ func TestRenderLike(t *testing.T) {
 		rendered["object"] != "https://remote.example/notes/1" ||
 		rendered["_misskey_reaction"] != "👍" {
 		t.Fatalf("unexpected Like activity: %#v", rendered)
+	}
+}
+
+func TestRenderLikeWithLocalEmojiTag(t *testing.T) {
+	updatedAt := time.Date(2026, 8, 31, 1, 2, 3, 0, time.UTC)
+	rendered := RenderLikeWithEmoji("https://example.test/", &domainreactions.Reaction{
+		ID:       "reaction-id",
+		NoteURI:  "https://remote.example/notes/1",
+		ActorURI: "https://example.test/users/alice",
+		Reaction: ":party@.:",
+	}, &emojis.Emoji{
+		Name:      "party",
+		PublicURL: "https://cdn.example.test/party.webp",
+		MediaType: "image/webp",
+		UpdatedAt: updatedAt,
+	})
+	tags, ok := rendered["tag"].([]any)
+	if !ok || len(tags) != 1 {
+		t.Fatalf("unexpected emoji tags: %#v", rendered["tag"])
+	}
+	tag, ok := tags[0].(map[string]any)
+	icon, iconOK := tag["icon"].(map[string]any)
+	if !ok || !iconOK || tag["id"] != "https://example.test/emojis/party" || tag["name"] != ":party:" || tag["updated"] != updatedAt.Format(time.RFC3339) || icon["url"] != "https://cdn.example.test/party.webp" || icon["mediaType"] != "image/webp" {
+		t.Fatalf("unexpected emoji tag: %#v", tags[0])
 	}
 }
 

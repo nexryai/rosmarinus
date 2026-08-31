@@ -241,7 +241,8 @@ Actors while Rosmarinus remains the authority for Actor lifecycle and ownership.
 - [ ] Implement `follow.delete` with the owned local `actor_id` and the same
       handle or absolute Actor URL in `data.target`.
 - [ ] Implement `reaction.create` with the owned local `actor_id`,
-      `data.note_id`, and `data.reaction`.
+      `data.note_id`, and `data.reaction`; send local custom emoji as `:name:`
+      and accept Rosmarinus's normalized `:name@.:` result.
 - [ ] Implement `reaction.delete` with the owned local `actor_id` and
       `data.note_id`.
 - [ ] Implement `block.create` and `block.delete` with the owned local

@@ -306,7 +306,9 @@ Use these Ably message names and payloads:
   top-level `actor_id` is the owned local Actor whose outgoing relationship is
   removed.
 - `reaction.create`: `data` contains `note_id` and `reaction`; top-level
-  `actor_id` is the owned local Actor applying the reaction.
+  `actor_id` is the owned local Actor applying the reaction. Local custom emoji
+  use `:name:`; Rosmarinus validates the owned emoji and returns the normalized
+  `:name@.:` reaction while federating its `Emoji` tag.
 - `reaction.delete`: `data` contains `note_id`; top-level `actor_id` is the
   owned local Actor whose reaction is removed.
 - `block.create`: `data` contains a remote handle or absolute Actor URL in

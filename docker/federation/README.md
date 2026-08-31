@@ -26,9 +26,9 @@ The Go integration test performs this real federation sequence:
    `Announce` with its resolved target reference;
 11. publish a Misskey `Question` and verify Rosmarinus stores its ordered poll
    choices, vote counts, multiplicity, and expiration;
-12. react to that Misskey note from Rosmarinus, verify Misskey applies the
-   delivered Like, dereference its Rosmarinus Like activity, then deliver
-   `Undo(Like)` and verify Misskey removes the reaction;
+12. react to that Misskey note with a Rosmarinus local custom emoji, verify
+   Misskey applies the tagged Like and resolves its image, dereference the Like,
+   then deliver `Undo(Like)` and verify Misskey removes the reaction;
 13. deliver `Undo(Follow)` from Rosmarinus, verify its MongoDB relationship is
    soft-deleted, and verify Misskey removes the relay from its followers;
 14. approve Misskey's inbound follow and verify Misskey applies the delivered

@@ -373,6 +373,12 @@ Rosmarinus verifies Actor ownership and Note visibility, stores the reaction,
 and enqueues a Misskey-compatible `Like` to the remote author's individual
 inbox. `command.succeeded.data.result` contains `reaction_id`, `note_id`,
 `reaction`, and the dereferenceable local `uri`. MongoDB remains canonical.
+For a local custom emoji, send `reaction` as `:name:` (or the normalized
+`:name@.:` form). Rosmarinus requires that local emoji to exist, normalizes the
+stored/result value to `:name@.:`, and attaches its Rosmarinus-owned `Emoji`
+tag and image URL to both `Like` and the embedded Like in `Undo(Like)`. A
+qualified remote reaction such as `:name@remote.example:` is passed through
+without claiming or attaching local emoji metadata.
 
 To remove that Actor's reaction, publish `reaction.delete` with the same
 top-level `actor_id` and `data.note_id`. Rosmarinus verifies ownership, removes

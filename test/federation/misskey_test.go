@@ -317,30 +317,32 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			len(poll.Votes) == 2 && poll.Votes[0] == 0 && poll.Votes[1] == 0
 	})
 
-	// Phase 9: react to the Misskey note as the local Actor, verify Misskey
-	// applies the delivered Like, dereference it, then deliver Undo(Like) and
-	// verify Misskey removes the reaction.
+	// Phase 9: react to the Misskey note with a local custom emoji, verify
+	// Misskey applies the tagged Like and resolves its emoji image, dereference
+	// it, then deliver Undo(Like) and verify Misskey removes the reaction.
 	createdReaction, err := worker.CreateReaction(ctx, connector.ReactionCreateCommand{
 		ActorID:  localActor.ID,
 		NoteID:   remoteNote.ID,
-		Reaction: "👍",
+		Reaction: ":party:",
 	})
 	if err != nil {
 		t.Fatalf("create Rosmarinus reaction: %v", err)
 	}
 	waitFor(t, ctx, "Rosmarinus reaction applied by Misskey", func() bool {
 		var shown struct {
-			Reactions map[string]int `json:"reactions"`
+			Reactions      map[string]int    `json:"reactions"`
+			ReactionEmojis map[string]string `json:"reactionEmojis"`
 		}
 		misskey.call(ctx, "notes/show", map[string]any{
 			"i":      admin.Token,
 			"noteId": created.CreatedNote.ID,
 		}, &shown)
-		return shown.Reactions["👍"] > 0
+		return shown.Reactions[":party@rosmarinus.test:"] > 0 && shown.ReactionEmojis["party@rosmarinus.test"] == remoteActor.AvatarURL
 	})
 	var outgoingLike map[string]any
 	misskey.get(ctx, createdReaction.URI, &outgoingLike)
-	if outgoingLike["type"] != "Like" || outgoingLike["actor"] != localActor.URI || outgoingLike["object"] != noteURI || outgoingLike["_misskey_reaction"] != "👍" {
+	likeTags, _ := outgoingLike["tag"].([]any)
+	if outgoingLike["type"] != "Like" || outgoingLike["actor"] != localActor.URI || outgoingLike["object"] != noteURI || outgoingLike["_misskey_reaction"] != ":party@.:" || len(likeTags) != 1 {
 		t.Fatalf("unexpected outgoing Like activity: %#v", outgoingLike)
 	}
 	deletedReaction, err := worker.DeleteReaction(ctx, connector.ReactionDeleteCommand{
@@ -361,7 +363,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			"i":      admin.Token,
 			"noteId": created.CreatedNote.ID,
 		}, &shown)
-		return shown.Reactions["👍"] == 0
+		return shown.Reactions[":party@rosmarinus.test:"] == 0
 	})
 
 	// Phase 10: undo Rosmarinus's accepted outgoing Follow, verify its MongoDB

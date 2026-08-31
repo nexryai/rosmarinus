@@ -3393,6 +3393,63 @@ func TestCreateReactionRejectsNoteInvisibleToActor(t *testing.T) {
 	}
 }
 
+func TestCreateReactionDeliversLocalCustomEmojiTag(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{ID: "remote-alice", Host: &remoteHost, URI: "https://remote.example/users/alice", Inbox: "https://remote.example/users/alice/inbox"}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"remote-note": {ID: "remote-note", URI: "https://remote.example/notes/1", AttributedTo: remote.URI, AuthorID: remote.ID, Visibility: domainnotes.VisibilityPublic},
+	}}
+	emojiRepo := &fakeEmojiRepo{emojis: map[string]*emojis.Emoji{
+		"local-party": {Name: "party", PublicURL: "https://cdn.rosmarinus.example/party.webp", MediaType: "image/webp"},
+	}}
+	q := &fakeQueue{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute}}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetEmojiRepository(emojiRepo)
+
+	created, err := h.CreateReaction(context.Background(), connector.ReactionCreateCommand{ActorID: local.ID, NoteID: "remote-note", Reaction: ":party:"})
+	if err != nil {
+		t.Fatalf("CreateReaction returned error: %v", err)
+	}
+	if created.Reaction != ":party@.:" {
+		t.Fatalf("normalized reaction = %q", created.Reaction)
+	}
+	delivery := q.tasks[0].Payload.(queue.DeliverPayload)
+	tags, ok := delivery.Object["tag"].([]any)
+	if !ok || len(tags) != 1 {
+		t.Fatalf("delivery emoji tags = %#v", delivery.Object["tag"])
+	}
+	tag := tags[0].(map[string]any)
+	icon := tag["icon"].(map[string]any)
+	if tag["name"] != ":party:" || icon["url"] != "https://cdn.rosmarinus.example/party.webp" || delivery.Object["_misskey_reaction"] != ":party@.:" {
+		t.Fatalf("delivery = %#v", delivery.Object)
+	}
+
+	if _, err := h.DeleteReaction(context.Background(), connector.ReactionDeleteCommand{ActorID: local.ID, NoteID: "remote-note"}); err != nil {
+		t.Fatalf("DeleteReaction returned error: %v", err)
+	}
+	undo := q.tasks[1].Payload.(queue.DeliverPayload).Object
+	like := undo["object"].(map[string]any)
+	if _, ok := like["tag"]; !ok {
+		t.Fatalf("Undo embedded Like omitted emoji tag: %#v", like)
+	}
+}
+
+func TestCreateReactionRejectsUnknownLocalCustomEmoji(t *testing.T) {
+	remoteHost := "remote.example"
+	local := &actors.Actor{ID: "relay", URI: "https://rosmarinus.example/users/relay"}
+	remote := &actors.Actor{ID: "remote-alice", Host: &remoteHost, URI: "https://remote.example/users/alice", Inbox: "https://remote.example/users/alice/inbox"}
+	noteRepo := &fakeNoteRepo{notes: map[string]*domainnotes.Note{
+		"remote-note": {ID: "remote-note", URI: "https://remote.example/notes/1", AttributedTo: remote.URI, AuthorID: remote.ID, Visibility: domainnotes.VisibilityPublic},
+	}}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetEmojiRepository(&fakeEmojiRepo{})
+
+	if _, err := h.CreateReaction(context.Background(), connector.ReactionCreateCommand{ActorID: local.ID, NoteID: "remote-note", Reaction: ":missing:"}); err == nil {
+		t.Fatal("expected unknown local custom emoji to fail")
+	}
+}
+
 func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
 	repo := &fakeRepo{}
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)

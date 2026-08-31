@@ -375,6 +375,8 @@ Concorde's older MFM behavior must not constrain Salvia-authored notes.
 
 - [x] Resolve `post.create` local emoji names from Rosmarinus-owned records and
       render them as ActivityPub `Emoji` tags.
+- [x] Resolve local custom emoji reactions, normalize them to Misskey's
+      `:name@.:` form, and include their `Emoji` tag in `Like` and `Undo(Like)`.
 - [x] Extract remote `Emoji` tags from notes.
 - [x] Extract remote `Emoji` names and direct icon URLs from Actor tags.
 - [x] Normalize `:name:` to `name`.

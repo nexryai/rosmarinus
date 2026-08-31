@@ -2395,6 +2395,10 @@ func (h *Handler) CreateReaction(ctx context.Context, command connector.Reaction
 	if reactionValue == "" {
 		return connector.ReactionCreated{}, fmt.Errorf("reaction is required")
 	}
+	reactionValue, localEmoji, err := h.resolveLocalReactionEmoji(ctx, reactionValue)
+	if err != nil {
+		return connector.ReactionCreated{}, err
+	}
 	recipient, err := h.repo.FindByURI(ctx, note.AttributedTo)
 	if err != nil {
 		return connector.ReactionCreated{}, err
@@ -2418,7 +2422,7 @@ func (h *Handler) CreateReaction(ctx context.Context, command connector.Reaction
 	if err != nil {
 		return connector.ReactionCreated{}, err
 	}
-	activity := apreactions.RenderLike(h.cfg.PublicURL, stored)
+	activity := apreactions.RenderLikeWithEmoji(h.cfg.PublicURL, stored, localEmoji)
 	task := queue.NewDeliverTask(actor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
 	if err := h.queue.Enqueue(ctx, task); err != nil {
 		return connector.ReactionCreated{}, fmt.Errorf("enqueue Like delivery: %w", err)
@@ -2467,7 +2471,11 @@ func (h *Handler) DeleteReaction(ctx context.Context, command connector.Reaction
 	if inbox == "" {
 		return connector.ReactionDeleted{}, fmt.Errorf("reaction target inbox is empty")
 	}
-	undo := apreactions.RenderUndoLike(h.cfg.PublicURL, existing, time.Now().UTC())
+	_, localEmoji, err := h.resolveLocalReactionEmoji(ctx, existing.Reaction)
+	if err != nil {
+		return connector.ReactionDeleted{}, err
+	}
+	undo := apreactions.RenderUndoLikeWithEmoji(h.cfg.PublicURL, existing, localEmoji, time.Now().UTC())
 	if err := h.reactions.Delete(ctx, note.ID, actor.ID, ""); err != nil {
 		return connector.ReactionDeleted{}, err
 	}
@@ -2480,6 +2488,32 @@ func (h *Handler) DeleteReaction(ctx context.Context, command connector.Reaction
 		NoteID:     existing.NoteID,
 		URI:        undo["id"].(string),
 	}, nil
+}
+
+func (h *Handler) resolveLocalReactionEmoji(ctx context.Context, reaction string) (string, *emojis.Emoji, error) {
+	if len(reaction) < 3 || reaction[0] != ':' || reaction[len(reaction)-1] != ':' {
+		return reaction, nil, nil
+	}
+	name := reaction[1 : len(reaction)-1]
+	if strings.HasSuffix(name, "@.") {
+		name = strings.TrimSuffix(name, "@.")
+	} else if strings.Contains(name, "@") {
+		return reaction, nil, nil
+	}
+	if !validLocalEmojiName(name) {
+		return "", nil, fmt.Errorf("invalid local custom emoji reaction: %q", reaction)
+	}
+	if h.emojis == nil {
+		return "", nil, fmt.Errorf("emoji repository is not configured")
+	}
+	emoji, err := h.emojis.FindLocalByName(ctx, name)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve local reaction emoji: %w", err)
+	}
+	if emoji == nil || (emoji.PublicURL == "" && emoji.OriginalURL == "") {
+		return "", nil, fmt.Errorf("local custom emoji not found: %s", name)
+	}
+	return ":" + name + "@.:", emoji, nil
 }
 
 func (h *Handler) canReactToNote(ctx context.Context, actor *actors.Actor, note *domainnotes.Note) (bool, error) {
