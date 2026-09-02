@@ -1,4 +1,4 @@
-# Rosmarinus ActivityPub Server
+# Rosmarinus Backend and Salvia SPA
 
 ## Engineering Rules
 
@@ -16,9 +16,34 @@
 ## Project Scope
 
 - Rosmarinus is the successor project to Concorde, a Misskey fork.
-- Rosmarinus is an ActivityPub microservice. It does not include a frontend or a public Misskey-compatible API.
-- Its main responsibility is communicating with other ActivityPub servers and writing federation state to MongoDB.
+- Rosmarinus is the integrated backend for ActivityPub federation, local
+  accounts, passkey authentication, sessions, local Actor management, and the
+  authenticated application API. It does not expose a public Misskey-compatible
+  API.
+- Salvia is a React single-page application in `./salvia`. It is built as
+  static assets and contains no Next.js or other server-side backend.
+- Do not introduce Ably. Browser commands and queries use Rosmarinus HTTP APIs;
+  live server-to-browser updates use an authenticated Rosmarinus event stream.
+  Redis Pub/Sub is an internal, local deployment transport for fan-out between
+  Rosmarinus processes and is never exposed directly to browsers.
 - Use MongoDB as the database and design collections/indexes with MongoDB best practices.
+- Keep one account distinct from its Actors. An authenticated account may own
+  multiple local Actors, and every Actor-scoped operation must verify ownership
+  server-side.
+- Authenticate local accounts exclusively with passkeys (WebAuthn). Do not add
+  passwords, password reset, or TOTP authentication.
+
+## Salvia Frontend
+
+- Treat `./salvia/salvia-old` as the product and design reference for passkey
+  authentication, multiple-Actor workflows, simplified Misskey-inspired UI,
+  the yellow default theme, custom emoji reactions, and Tabler Icons.
+- Do not edit `./salvia/salvia-old`; implement the current frontend in
+  `./salvia` as a React SPA.
+- Keep authentication secrets, WebAuthn verification, sessions, authorization,
+  MongoDB access, Redis access, and ActivityPub key material in Rosmarinus.
+- The SPA must not connect directly to MongoDB or Redis and must not treat its
+  selected Actor as authorization evidence.
 
 ## Federation Compatibility
 
@@ -33,7 +58,7 @@
   the predecessor's behavior and to identify compatibility regressions, but do
   not let it override current Misskey behavior.
 - When Rosmarinus intentionally differs from current Misskey because of its
-  microservice scope, MongoDB model, mandatory follow approval policy, Go
+  focused backend scope, MongoDB model, mandatory follow approval policy, Go
   implementation, or real-world interoperability requirements, document and
   test the exception explicitly.
 
@@ -57,9 +82,10 @@
 
 ## Salvia Integration Documentation
 
-- For every implementation checkpoint, assess whether it changes an Ably
-  command or event, a shared MongoDB read contract, account/Actor ownership,
-  authorization behavior, or federation state consumed by Salvia.
+- For every implementation checkpoint, assess whether it changes the
+  Rosmarinus application API or event stream, passkey/session behavior,
+  account/Actor ownership, authorization behavior, or federation state
+  consumed by Salvia.
 - When it does, update the applicable handoff documents in the same checkpoint:
   `docs/salvia-integration.md`, `docs/salvia/AGENTS.md`, and/or
   `docs/salvia/PLANS.md`.

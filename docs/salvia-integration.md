@@ -1,579 +1,244 @@
 # Salvia Integration Contract
 
-Salvia and Rosmarinus share MongoDB and Ably Pub/Sub. They do not call each
-other over HTTP. MongoDB is authoritative; Ably carries browser commands,
-command results, account events, and low-latency account invalidations.
+## Architecture
 
-## Collection ownership
-
-Each collection has one writer and one migration/index owner.
-
-| Collection | Writer | Other service access |
-| --- | --- | --- |
-| `salvia_accounts` | Salvia | Rosmarinus reads the authorization projection |
-| Salvia session and UI collections | Salvia | No Rosmarinus access |
-| `actors`, `notes`, `polls`, `poll_votes`, `follows`, `reactions`, `blocks`, `emojis`, `instances`, `abuse_reports`, `notifications` | Rosmarinus | Salvia reads UI-facing state |
-| `connector_command_receipts` | Rosmarinus | Salvia does not need write access |
-
-Use separate MongoDB users with collection-scoped custom roles. The Salvia role
-must have read/write and index privileges only on Salvia-owned collections and
-`find` on the Rosmarinus collections it renders. The Rosmarinus role must have
-read/write and index privileges only on Rosmarinus-owned collections and
-`find` on `salvia_accounts`. It must not have access to Salvia sessions.
-
-Rosmarinus never creates an index on `salvia_accounts`. Salvia must provide a
-unique index on `ablyClientId`.
-
-Remote documents in `actors` are refreshed by Rosmarinus after it verifies a
-signed ActivityPub `Update(Person)`. Salvia should render the current shared
-document and must not maintain a separately writable remote-profile copy.
-
-The read-only remote profile projection includes `summary`, `url`,
-`profileFields`, `birthday`, `location`, `avatarUrl`, `bannerUrl`, `tags`,
-`emojiNames`, `isBot`, `isCat`, `isLocked`, `isDiscoverable`, and
-`lastFetchedAt`. `featuredNoteIds` contains up to five resolved `notes._id`
-values from the Actor's current ActivityPub featured collection. Rosmarinus
-converts ActivityPub HTML summaries and property values to its MFM-compatible
-text representation before storing them. The avatar and banner values are
-validated HTTPS source URLs supplied directly to Salvia. They are untrusted
-remote resources, not Rosmarinus-hosted cache URLs.
-
-Remote Actor documents may contain additive account-migration fields owned by
-Rosmarinus:
+Salvia is a static React SPA and Rosmarinus is its only backend. The former
+Next.js backend, shared-database frontend access, and Ably Connector are legacy
+architecture and must not receive new features.
 
 ```text
-movedToUri    destination ActivityPub Actor URI claimed by the remote Actor
-alsoKnownAs   Actor URIs claimed as aliases by the remote Actor
-movedAt       timestamp when Rosmarinus accepted the verified Move
+Salvia SPA
+  | same-origin HTTPS
+  |-- passkey/session endpoints
+  |-- versioned JSON application API
+  `-- authenticated server event stream
+             |
+             v
+       Rosmarinus backend
+         |          |
+      MongoDB     Redis
+                  queues, locks, rate limits, local Pub/Sub
 ```
 
-Salvia may use these fields to redirect profile navigation or label a remote
-account as moved. It must not infer a valid migration from `movedToUri` alone:
-Rosmarinus writes `movedAt` only after fetching both Actors, confirming the
-source claim, and finding the source URI in the destination's `alsoKnownAs`.
+MongoDB is the durable source of truth. Redis Pub/Sub carries best-effort
+invalidation messages between local Rosmarinus processes so any instance can
+refresh an attached browser. It is not durable and is never exposed directly
+to the SPA. Browser reconnect always reconciles through API reads.
 
-After an authenticated remote `Delete(Actor)`, Rosmarinus suspends the Actor
-immediately and runs an idempotent `account-delete` job. The job soft-deletes
-the Actor's Notes, its reactions, reactions on its Notes, and Follow/Block
-relationships involving it; it removes the Actor's polls and notifications it
-originated or whose related Note was removed. Salvia must tolerate those
-records disappearing asynchronously after the Actor becomes suspended.
+Rosmarinus may serve the SPA build or run behind a same-origin reverse proxy.
+SPA history fallback must run only after application/API and federation routes
+have been excluded.
 
-For an account-owned local Actor, Salvia initiates the same lifecycle through
-`actor.delete`; it never writes `isSuspended`, `suspendedAt`, or `deletedAt`
-itself. Rosmarinus atomically records the suspension and deletion fields,
-removes the Actor from normal lookup and
-authorization immediately, delivers a signed `Delete` to known remote
-followers and followees with shared-inbox deduplication, and queues the same
-idempotent content/relationship cleanup. The tombstoned Actor and private key
-remain Rosmarinus-owned so queued `Delete` retries can still be signed; no
-other queued activity may be sent after deletion.
+## Ownership
 
-Note documents retain ActivityPub relationship URIs and resolved local
-references together:
+Rosmarinus is the sole runtime writer and migration/index owner for all durable
+collections, including:
+
+- accounts, passkey credentials, WebAuthn challenges, sessions, and UI/Actor
+  settings;
+- local and remote Actors, key material, Notes, Polls, Follow relationships,
+  reactions, blocks, emoji, instances, reports, and notifications; and
+- delivery, queue-domain, idempotency, and operational records.
+
+Salvia has no MongoDB user and no Redis credentials. It receives only
+browser-safe projections through Rosmarinus APIs and must not depend on BSON
+shapes as a frontend contract.
+
+The legacy `salvia_accounts`, `salvia_sessions`, `salvia_ui_settings`,
+`salvia_actor_settings`, and `connector_command_receipts` collections require
+an explicit migration decision before removal. Preserve stable account IDs
+during migration so existing Actor `ownerAccountId` values do not change.
+Retire the old cross-service MongoDB roles only after migration has been
+verified and rolled out.
+
+## Passkey-Only Authentication
+
+- Passkeys/WebAuthn are the only authentication method. Passwords, password
+  reset, recovery passwords, and TOTP are outside the contract.
+- When no account exists, Rosmarinus permits one initial administrator setup.
+  The eligibility check and completed account creation must use a
+  database-enforced atomic guard.
+- Initial account creation completes only after successful passkey registration.
+  Once an account exists, public setup and registration are rejected by the
+  backend regardless of which SPA route is shown.
+- Rosmarinus creates short-lived, single-use challenges bound to the account or
+  bootstrap attempt, ceremony type, RP ID, allowed origin, and expiry.
+- Rosmarinus verifies the WebAuthn response, user verification, signature, and
+  credential counter behavior before changing account or session state.
+- Successful authentication creates a revocable server-side session referenced
+  by a random secure, HTTP-only, same-site cookie. Store only a digest of the
+  session token in MongoDB.
+- Rotate session identity after authentication and authorization changes.
+  Suspended or deleted accounts cannot create sessions, mutate state, or open
+  an event stream.
+- Cookie-authenticated mutations require CSRF protection in addition to
+  same-site cookie policy. Authentication and setup endpoints are rate-limited
+  with Redis-backed controls.
+
+The SPA may call browser WebAuthn APIs, but it never verifies a ceremony,
+stores passkey private material, or receives session/database secrets.
+
+## Account And Actor Authorization
+
+An account is an authenticated local administrative identity. An Actor is a
+local federated identity. One account may own multiple Actors; one user-managed
+local Actor has exactly one `ownerAccountId`. Remote Actors and the optional
+environment-provisioned system Actor have no user owner.
+
+Actor-scoped handlers must load the Actor with a single ownership-aware filter
+equivalent to:
 
 ```text
-inReplyToUri   ActivityPub URI claimed by the remote Note
-replyId        Rosmarinus Note `_id` after successful recursive resolution
-quoteUri       successfully resolved `_misskey_quote` or `quoteUrl` URI;
-               otherwise the first claimed quote URI for diagnostics
-quoteId        Rosmarinus Note `_id` after successful recursive resolution
-visibleUserUris ActivityPub Actor URIs allowed to read a `specified` Note
+_id = requested Actor
+ownerAccountId = authenticated account
+host = null
+isSuspended = false
+deletedAt = null
 ```
 
-Salvia should join thread/quote views by `replyId` and `quoteId`. Current
-Misskey can send both `_misskey_quote` and `quoteUrl`; Rosmarinus tries each
-unique candidate and stores the URI corresponding to `quoteId` when one
-resolves. The URI fields are federation source data and remain useful for
-diagnostics and outbound rendering; they are not MongoDB foreign keys.
-For local `post.create`, Rosmarinus resolves `in_reply_to_uri` and `quote_uri`
-before insertion, stores the canonical target URI/ID pair, rejects targets the
-Actor cannot view or share, and directly federates to remote target authors.
-With `specified` visibility, those validated authors also satisfy the visible
-recipient requirement when `mention_uris` is empty.
+The route or request Actor ID selects an acting identity but never proves
+authorization. The API does not accept an account ID, username, session ID, or
+client-provided ownership field as authorization evidence. Actor creation
+derives `ownerAccountId` from the authenticated session. Ordinary API calls do
+not transfer ownership.
 
-For `specified` Notes, Salvia must apply `visibleUserUris` in addition to
-Actor/account ownership before returning content to a browser. `mentionUris`
-is a notification/rendering projection and is not itself the authorization
-list.
+Account suspension immediately revokes effective API and event-stream access
+and triggers Rosmarinus's reversible Actor suspension policy. Account deletion
+permanently tombstones owned Actors through the existing federation cleanup
+path. These lifecycle changes are Rosmarinus-owned transactions/workflows; the
+SPA never edits Actor state directly.
 
-Remote custom emoji metadata is keyed uniquely by `{ host, name }` in the
-Rosmarinus-owned `emojis` collection. `uri`, `originalUrl`, `publicUrl`,
-`mediaType`, `remoteUpdatedAt`, and `updatedAt` are read-only federation state.
-The emoji document's `originalUrl` and `publicUrl` are direct remote URLs.
-Remote Note attachments retain only HTTPS ActivityPub media objects of type
-`Audio`, `Document`, `Image`, `Page`, or `Video`. Their read-only projection is
-`uri`, `type`, `mediaType`, `url`, `name`, `width`, `height`, and `sensitive`;
-invalid or non-integral dimensions are stored as zero/absent. Rosmarinus does
-not download, transform, proxy, or cache these resources.
-Salvia owns the browser presentation policy: it may render direct URLs or use a
-separately secured frontend image service. Any server-side frontend fetcher
-must independently enforce DNS rebinding/SSRF protection, byte and time limits,
-MIME validation, and active-content rejection.
+## Application API
 
-Rosmarinus owns the `instances` collection and registers a normalized remote
-host after authenticated inbound contact or outbound delivery. Salvia may use
-this read-only projection for federation administration and remote-server UI:
+The application API is versioned independently of ActivityPub. Its concrete
+route and schema inventory must be finalized before implementation, using
+`/api/v1` as the default namespace. It returns JSON projections designed for
+the SPA, not raw MongoDB documents or a public Misskey-compatible API.
 
-```text
-_id                      stable opaque instance ID
-host                     normalized ASCII host; unique
-usersCount               remote NodeInfo user count
-notesCount               remote NodeInfo local post plus comment count
-followingCount           accepted remote-host users following local Actors
-followersCount           accepted local Actors following remote-host users
-latestRequestReceivedAt  latest authenticated inbound Activity timestamp
-latestRequestSentAt      latest attempted outbound delivery timestamp
-latestStatus             latest outbound HTTP status, or 0 for transport errors
-isNotResponding          whether the latest delivery path is failing
-notRespondingSince       start of the current delivery-failure period
-suspensionState          none | manuallySuspended | goneSuspended | autoSuspendedForNotResponding
-softwareName             normalized NodeInfo software name
-softwareVersion          NodeInfo software version
-openRegistrations        NodeInfo registration flag when supplied
-name, description        remote server presentation metadata
-maintainerName, maintainerEmail
-iconUrl, faviconUrl      validated remote HTTPS source URLs
-themeColor               remote theme-color metadata
-firstRetrievedAt         first contact timestamp
-infoUpdatedAt            latest metadata refresh timestamp
-updatedAt                latest operational update timestamp
-```
+The first API milestone must cover:
 
-Rosmarinus refreshes metadata no more than daily unless explicitly forced and
-keeps relationship counts current when accepted follows change. `iconUrl` and
-`faviconUrl` are validated direct remote URLs subject to the same frontend
-media policy.
-Treat any non-`none` suspension state as an outbound-delivery stop. A host that
-fails continuously for seven days is automatically suspended; authenticated
-inbound traffic revives only that automatic failure suspension, never a manual
-or gone suspension.
+- bootstrap status, passkey registration/authentication ceremonies, current
+  session, and logout;
+- owned Actor list/create/read/update/delete and Actor-scoped settings;
+- public/home timelines, Note detail and thread/quote projections;
+- post create/delete, poll vote, reaction create/delete;
+- follow create/delete and mandatory inbound follow approve/reject;
+- block create/delete;
+- account- and Actor-scoped notifications and mark-read; and
+- safe profile, follower/following, emoji, instance, and settings projections.
 
-ActivityPub `Question` state is stored in `polls`, keyed by the related
-`notes._id`. The read projection contains `authorId`, `authorHost`, ordered
-`choices`, positionally matching `votes`, `multiple`, optional `expiresAt`, and
-timestamps. `Update(Question)` may change vote counts but not the stored choice
-identity or ordering. Salvia must zip `choices` and `votes` by array index and
-treat both arrays as Rosmarinus-owned.
+Use stable cursor pagination with deterministic tie-breakers. Enforce Note
+visibility, block state, account ownership, and Actor ownership in backend
+queries before projection. In particular, `specified` Note visibility is based
+on its explicit allowed Actor URI set, not its mention list.
 
-`poll_votes` is Rosmarinus-owned and contains deterministic vote documents
-with `noteId`, `actorId`, zero-based `choice`, and `createdAt`. For a
-single-choice poll, one Actor can have only one vote; for a multiple-choice
-poll, one Actor can vote once per choice. Salvia may use this collection to
-project the authenticated Actor's selected choices but must not mutate it.
+Mutations that can cause federation side effects accept an opaque idempotency
+key scoped to the authenticated account and operation. A duplicate request with
+the same validated intent returns the stored outcome without repeating the side
+effect; reuse with different intent is rejected. Internal errors are logged
+with correlation context and returned as stable public error codes.
 
-Deleting a local or remote Note first soft-deletes the Note and then
-idempotently soft-deletes its reactions and removes its Poll, Poll votes, and
-related notifications. Salvia must treat `notes.deletedAt` as authoritative
-immediately and tolerate the dependent collections converging during a retry.
+Use conventional status semantics:
 
-Rosmarinus intentionally keeps reply, renote, and reaction records normalized
-instead of maintaining crash-prone cross-document counters. Salvia derives
-counts for a batch of Note IDs with MongoDB aggregation over active documents:
-`notes.replyId`, `notes.renoteId`, and `reactions.noteId`, always filtering
-`deletedAt: null`. Group reactions by `reaction` when per-emoji counts are
-needed. Rosmarinus owns the supporting indexes; Salvia must not write cached
-counts back into Note documents.
+- `400` for malformed input;
+- `401` for no valid session;
+- `403` for an authenticated account lacking access;
+- `404` when hiding existence is required or a resource is absent;
+- `409` for state/idempotency conflicts; and
+- `429` for rate limits.
 
-Local user-facing federation notifications are durable documents in the
-Rosmarinus-owned `notifications` collection:
+Error bodies and successful projections must be runtime-validatable by the SPA
+and versioned when compatibility cannot be preserved.
 
-```text
-_id                 stable opaque notification ID
-recipientAccountId  owning Salvia account ID
-recipientActorId    local Actor receiving the notification
-kind                followRequest | reaction | renote | reply | mention | pollEnded
-sourceActorId        Actor that caused the notification
-noteId               related Note ID when applicable
-remoteActivityId     source ActivityPub object/activity ID used for deduplication
-createdAt            notification creation timestamp
-isRead               authoritative read state
-readAt               timestamp set when marked read
-```
+## Authenticated Event Stream
 
-Salvia scopes notification queries by the authenticated account and, for an
-Actor-specific view, `recipientActorId`. Sort by `createdAt` descending with
-`_id` as the stable pagination tie-breaker. Salvia reads these documents
-directly but changes read state only through the Connector command below.
+Rosmarinus exposes a same-origin, session-authenticated server-to-browser event
+stream. Server-Sent Events is the default transport because browser commands
+use HTTP; WebSocket requires a separately documented need and equivalent
+origin/session/CSRF protections.
 
-When Rosmarinus accepts an ActivityPub `Block`, it stores the block and
-soft-deletes active/pending `follows` in both directions for that Actor pair.
-Salvia must derive the resulting relationship state from the current `blocks`
-and `follows` documents rather than preserving a UI-only follow flag.
-
-### MongoDB role bootstrap
-
-[`docker/mongo/init-users.js`](../docker/mongo/init-users.js) creates two custom
-roles and service users on a new MongoDB deployment:
-
-- `rosmarinusService` can write and manage indexes only on Rosmarinus-owned
-  collections, and can only `find`
-  documents in `salvia_accounts`.
-- `salviaService` can write and manage indexes only on the four documented
-  `salvia_*` collections, and can only `find` documents in Rosmarinus-owned
-  federation collections.
-
-The script requires `ROSMARINUS_MONGO_USERNAME`,
-`ROSMARINUS_MONGO_PASSWORD`, `SALVIA_MONGO_USERNAME`, and
-`SALVIA_MONGO_PASSWORD`. `ROSMARINUS_MONGO_DATABASE` defaults to
-`rosmarinus_federation`. Mount it into `/docker-entrypoint-initdb.d` for the
-official MongoDB image. MongoDB runs these scripts only when initializing an
-empty data directory; apply equivalent role changes explicitly to an existing
-deployment.
-
-Each service should use its own authenticated URI with the application database
-as `authSource`, for example:
-
-```text
-mongodb://<service-user>:<percent-encoded-password>@mongo:27017/rosmarinus_federation?authSource=rosmarinus_federation
-```
-
-Generate independent, high-entropy root and service passwords through the
-deployment secret manager. The literal credentials in the Docker federation
-compose files are disposable fixture values and must not be reused outside
-those fixtures.
-
-## Salvia account projection
-
-Salvia writes one document per local account:
-
-```json
-{
-  "_id": "account-01J...",
-  "ablyClientId": "client-01J...",
-  "status": "active",
-  "authzRevision": 4,
-  "deletedAt": null
-}
-```
-
-Supported status values are `active`, `suspended`, and `deleted`. Accounts
-referenced by Actors are soft-deleted. Rosmarinus accepts a state-changing
-command only when the account is `active` and `deletedAt` is absent or null.
-
-`ablyClientId` is an opaque, stable, URL-safe account identifier. It is not an
-Actor ID, username, or email address. Changing it immediately prevents the old
-client ID from resolving in Rosmarinus, independently of Ably token expiry.
-
-## Actor ownership
-
-Rosmarinus writes `ownerAccountId` on every user-managed local Actor. One
-account can own multiple Actors; one Actor has one owner. Remote Actors have no
-owner. The environment-provisioned Actor has `isSystemActor: true` and no
-account owner.
-
-Actor-bound commands are authorized with one MongoDB query over `_id`,
-`ownerAccountId`, `host: null`, `isSuspended: false`, and `deletedAt: null`.
-The command payload cannot override account ownership. The sole exception is
-`actor.delete` receipt replay, which verifies the same owner against the
-retained tombstone but cannot reactivate or otherwise mutate it.
-
-Owned local Actor documents may also contain `suspendedAt`. It is
-Rosmarinus-owned federation state used to give a temporary account-suspension
-`Delete` and its later `Undo(Delete)` the same stable object ID. Salvia may read
-it for diagnostics but must not write or infer account status from it.
-
-System Actor events are not published to an account event channel because no
-account owns them. A future operator workflow must use a separately authorized
-system-event channel rather than assigning a fake account owner.
-
-## Ably channels and keys
-
-Default channels are:
-
-| Channel | Publisher | Subscriber |
-| --- | --- | --- |
-| `rosmarinus:commands` | Authenticated browser | Rosmarinus |
-| `rosmarinus:accounts:{accountId}:events` | Rosmarinus | That account's browser clients |
-| `rosmarinus:control:accounts` | Salvia backend | Rosmarinus |
-
-Use five least-privilege Ably keys:
-
-1. Salvia browser-token issuer key: tokens may publish to
-   `rosmarinus:commands` and subscribe only to the authenticated account's
-   exact event channel.
-2. Salvia control key: publish only to `rosmarinus:control:accounts`.
-3. Rosmarinus command key: subscribe only to `rosmarinus:commands`.
-4. Rosmarinus account-event key: publish only to
-   `rosmarinus:accounts:*:events`.
-5. Rosmarinus account-control key: subscribe only to
-   `rosmarinus:control:accounts`.
-
-Salvia sets a non-wildcard `x-ably-clientId` and explicit capabilities in every
-short-lived browser JWT. The browser never receives an API key, wildcard
-capability, command-channel subscribe permission, event-channel publish
-permission, or control-channel access.
-
-## Browser command envelope
-
-The browser subscribes to its account event channel before publishing a
-command. Every command has an Ably message name and this versioned payload:
+Events use a small versioned envelope:
 
 ```json
 {
   "version": 1,
-  "request_id": "request-01J...",
-  "actor_id": "actor-01J...",
+  "type": "notification.created",
+  "event_id": "opaque-id",
+  "actor_id": "optional-local-actor-id",
+  "occurred_at": "RFC3339 timestamp",
   "data": {}
 }
 ```
 
-`request_id` is stable across retries. Rosmarinus claims a unique
-`{accountId, requestId}` receipt before mutation. A duplicate does not repeat
-the mutation; it republishes the stored result or reports that the original is
-still in progress.
+- Authenticate the session before opening the stream and re-check account
+  status during long-lived connections.
+- Publish only to the authenticated account. Include an Actor ID where it
+  narrows invalidation; never trust a client-supplied subscription account.
+- Keep payloads minimal and browser-safe. Prefer resource IDs and projection
+  invalidation over copying federation documents into Pub/Sub.
+- Use per-account Redis channel derivation exclusively inside Rosmarinus. Do
+  not document internal channel names as a browser contract.
+- Treat Redis delivery as at-most-best-effort. Slow clients are disconnected or
+  coalesced rather than allowed to block domain processing.
+- Duplicate or missed events are valid. The SPA re-reads API state on reconnect
+  and after ambiguous outcomes; event receipt is not durable business success.
 
-To follow a remote Actor, publish a `follow.create` command. `actor_id` is the
-owned local Actor that will follow the target. `target` accepts either a
-Fediverse handle or an absolute ActivityPub Actor URL:
+Initial event types should cover Actor lifecycle, Note changes, reaction
+changes, notification creation/read state, follow approval state, account
+authorization changes, and generic projection invalidation. Event additions
+may be backward-compatible; envelope or meaning changes require a new version.
 
-```json
-{
-  "version": 1,
-  "request_id": "request-01J...",
-  "actor_id": "actor-01J...",
-  "data": {
-    "target": "alice@remote.example"
-  }
-}
-```
+## Federation Projection Safety
 
-A `command.succeeded` result means the remote Actor was resolved, the outgoing
-request was stored as `pending`, and its signed `Follow` delivery was enqueued.
-It does not mean the remote server accepted it. Salvia reads the
-Rosmarinus-owned `follows` collection for authoritative status: the relationship
-changes to `accepted` only after Rosmarinus verifies and processes the remote
-`Accept(Follow)`. A remote `Reject(Follow)` removes the pending relationship.
+Rosmarinus remains responsible for remote object validation and returns only
+the fields required by each UI view. The SPA must treat all remote content and
+URLs as untrusted.
 
-To stop following the same remote Actor, publish `follow.delete` with the owned
-local Actor in `actor_id` and the handle or absolute Actor URL in `data.target`.
-Rosmarinus resolves the target, soft-deletes the active relationship from its
-`follows` collection, and enqueues `Undo(Follow)` to the remote Actor. A
-successful `command.succeeded.data.result` contains `follower_id`,
-`followee_id`, and the Undo activity `uri`. Retrying the same logical removal
-must reuse its original `request_id`; a new request after the relationship is
-already absent fails as `command_failed`.
+- Preserve remote Actor move state only after Rosmarinus has validated the
+  reciprocal alias relationship.
+- Hide soft-deleted Notes immediately and tolerate dependent reactions, polls,
+  votes, and notifications converging through retryable cleanup.
+- Derive reply, renote, and reaction counts from normalized active records; do
+  not let the client write cached federation counters.
+- Keep poll choice ordering aligned with vote-count indexes and authorize local
+  vote projections by the selected owned Actor.
+- Return validated HTTPS media/emoji/avatar/banner URLs as untrusted remote
+  resources. Do not forward cookies or authorization headers to them.
+- Sanitize or convert ActivityPub HTML server-side. The SPA must not introduce
+  a raw-HTML escape hatch for remote content.
 
-To react to a Rosmarinus-stored remote Note, publish `reaction.create` with the
-owned local Actor in `actor_id`:
+## Runtime Configuration
 
-```json
-{
-  "version": 1,
-  "request_id": "request-01J...",
-  "actor_id": "actor-01J...",
-  "data": {
-    "note_id": "remote-note-id",
-    "reaction": "👍"
-  }
-}
-```
+The integrated target removes all `ABLY_*` and legacy Connector channel
+variables. Rosmarinus configuration must add environment-backed values for:
 
-Rosmarinus verifies Actor ownership and Note visibility, stores the reaction,
-and enqueues a Misskey-compatible `Like` to the remote author's individual
-inbox. `command.succeeded.data.result` contains `reaction_id`, `note_id`,
-`reaction`, and the dereferenceable local `uri`. MongoDB remains canonical.
-For a local custom emoji, send `reaction` as `:name:` (or the normalized
-`:name@.:` form). Rosmarinus requires that local emoji to exist, normalizes the
-stored/result value to `:name@.:`, and attaches its Rosmarinus-owned `Emoji`
-tag and image URL to both `Like` and the embedded Like in `Undo(Like)`. A
-qualified remote reaction such as `:name@remote.example:` is passed through
-without claiming or attaching local emoji metadata.
+- WebAuthn RP ID, RP display name, and allowed origins;
+- session cookie name, lifetime, signing/encryption material if required, and
+  secure-cookie policy;
+- challenge/session retention and authentication rate limits;
+- application API and event-stream timeouts/limits; and
+- internal Redis Pub/Sub namespace and subscriber buffer limits.
 
-To remove that Actor's reaction, publish `reaction.delete` with the same
-top-level `actor_id` and `data.note_id`. Rosmarinus verifies ownership, removes
-the matching stored reaction, and delivers `Undo(Like)` to the remote author.
-Its successful result contains `reaction_id`, `note_id`, and the Undo activity
-`uri`. Retrying the same logical removal must reuse its original `request_id`;
-a new request after the reaction is already absent fails as `command_failed`.
+Exact variable names are finalized with implementation. Defaults must be safe,
+secrets must fail closed when missing, and no secret may enter the SPA bundle.
 
-To block a remote Actor, publish `block.create` with the owned local Actor in
-top-level `actor_id` and a handle or absolute Actor URL in `data.target`.
-Rosmarinus resolves the remote Actor, stores the block, removes active Follow
-relationships in both directions, and delivers `Block` to the remote Actor.
-The successful result contains `block_id`, `blockee_id`, and the local Block
-activity `uri`.
+## Migration And Verification
 
-To unblock the same Actor, publish `block.delete` with the same data shape.
-Rosmarinus removes the active block and delivers `Undo(Block)`. Its result
-contains `block_id`, `blockee_id`, and the Undo activity `uri`. A new request
-for an absent block fails; retries of the same logical operation must reuse the
-original `request_id`.
+1. Add Rosmarinus-owned account/passkey/session schemas and indexes.
+2. Migrate stable account identity and Actor ownership references from legacy
+   Salvia collections, with rollback-safe validation before cutover.
+3. Implement and test passkey/session APIs, application endpoints, and the
+   authenticated event stream while legacy Connector traffic is still
+   isolated.
+4. Move the React SPA to the HTTP/event contracts and verify feature parity for
+   every existing domain command.
+5. Disable and remove Ably subscribers/publishers, SDKs, environment variables,
+   command receipts that are no longer needed, and cross-service MongoDB roles.
+6. Remove the Next.js deployment after the static SPA and integrated backend
+   pass end-to-end, security, and federation tests.
 
-`actor.create` omits `actor_id` because the Actor does not exist yet:
-
-```json
-{
-  "version": 1,
-  "request_id": "request-01J...",
-  "data": {
-    "username": "alice-work",
-    "name": "Alice Work",
-    "type": "Person"
-  }
-}
-```
-
-Rosmarinus generates the Actor ID, URI, and key pair and derives
-`ownerAccountId` from Ably `message.clientId` through `salvia_accounts`.
-
-To change an account-owned Actor profile, publish `actor.update` with that
-Actor in top-level `actor_id`. `data` is a patch and must contain at least one
-of `name`, `summary`, `url`, `profile_fields`, `birthday`, `location`,
-`avatar_url`, `banner_url`, `tags`, `emoji_names`, `is_bot`, `is_cat`,
-`is_locked`, or `is_discoverable`. An omitted field is unchanged, JSON `null`
-clears a nullable value, and an empty array explicitly replaces an existing
-array. `profile_fields` is an array of `{ "name": "...", "value": "..." }`.
-`emoji_names` contains at most 100 existing local names using only ASCII
-letters, digits, and underscores; do not include surrounding colons.
-Identity, ownership, username, Actor type, federation endpoint, and key fields
-cannot be supplied directly. For an owned Person/Service, `is_bot` controls the
-federated `Person` versus `Service` type; other Actor types reject `is_bot`.
-Rosmarinus requires explicit approval for every inbound Follow,
-so `is_locked` may only be set to `true` and cannot be cleared. A successful
-update atomically checks ownership, updates MongoDB, and queues a full
-`Update(Person)` or `Update(Service)` to accepted active remote followers with
-shared-inbox deduplication.
-
-Rosmarinus publishes `actor.updated` followed by `command.succeeded` for a
-successful command. `actor.updated.data` contains `actor_id`, the Actor `uri`,
-and `fields`, the stable contract-order list of patched JSON field names. Treat
-the event as an invalidation hint and re-read the Actor document rather than
-merging its payload into cached state.
-
-To close an account-owned Actor, publish `actor.delete` with its top-level
-`actor_id` and an empty `data` object. Success publishes `actor.deleted`
-followed by `command.succeeded`. `actor.deleted.data` contains `actor_id`,
-`uri`, and RFC 3339 `deleted_at`. Treat this event as an immediate invalidation,
-stop offering that Actor for commands, and re-query MongoDB. Reuse the original
-`request_id` after an ambiguous outcome; Rosmarinus keeps the tombstone so a
-completed receipt can be replayed without restoring the Actor.
-
-`post.create.data` always contains the client-generated local `note_id` and
-exactly one of normal post content (`text` or `poll`) or `renote_id`. A pure
-renote uses the Rosmarinus-owned ID of an already stored target Note:
-
-```json
-{
-  "version": 1,
-  "request_id": "request-01J...",
-  "actor_id": "actor-01J...",
-  "data": {
-    "note_id": "new-local-renote-id",
-    "renote_id": "stored-target-note-id",
-    "visibility": "public"
-  }
-}
-```
-
-A pure renote cannot also contain text, a Poll, CW, reply, quote, mentions,
-hashtags, custom emoji, or sensitive metadata, and cannot use `specified`
-visibility. Rosmarinus rejects pure-renote targets, blocks, and unshareable
-visibility; it narrows a public renote of a home Note to home and a renote of
-the local Actor's own followers-only Note to followers. Success stores a local
-renote Note, publishes the normal `post.created` result, and delivers a
-Misskey-compatible `Announce` to followers and the remote target author.
-
-For `post.create` with `visibility: "specified"`, `mention_uris` is the
-recipient list and must contain at least one Actor URI. Rosmarinus resolves
-every recipient before storing the note, places the deduplicated Actor URIs in
-the ActivityPub `to` audience, and delivers remote recipients to their
-individual inboxes rather than a shared inbox.
-
-`post.create.data.text` is current Misskey-compatible MFM, not HTML. Salvia
-must pass the user's MFM source unchanged and must not pre-render or inject
-HTML. Rosmarinus parses it at the federation boundary, emits escaped safe HTML,
-and includes `_misskey_content` plus `source.mediaType =
-text/x.misskeymarkdown` only when advanced MFM syntax or an inline quote needs
-the original source for lossless Misskey rendering.
-
-`post.create.data.emoji_names` may contain up to 100 local custom emoji names
-without surrounding colons. Names use Misskey-compatible ASCII letters,
-digits, and underscores. Rosmarinus resolves only locally provisioned records
-from `emojis` and embeds their owned URI/public URL as ActivityPub `Emoji`
-tags; unknown names are ignored. Salvia must not supply or override emoji URLs.
-
-To delete a local Note, publish `post.delete` with the owned local Actor in
-`actor_id` and `note_id` in `data`. Rosmarinus verifies Note ownership,
-soft-deletes the Note, and enqueues a Misskey-compatible `Delete(Tombstone)` to
-remote followers and direct recipients. For a pure renote whose target still
-exists, the same command delivers `Undo(Announce)` to followers and the target
-author instead. A successful result contains `actor_id`, `note_id`, and the
-deleted Note `uri`. Reuse the same `request_id` when retrying the same logical
-deletion.
-
-`post.create` may include `data.poll` with `choices` (2–10 unique strings, at
-most 50 characters each), optional `multiple`, and optional RFC 3339
-`expires_at`. Text may be empty when a Poll is present. To vote, publish
-`poll.vote` with the owned local Actor in `actor_id`, plus `note_id` and a
-zero-based `choice` in `data`. Rosmarinus enforces visibility, blocks,
-expiration, and single/multiple-choice uniqueness. A successful result contains
-`vote_id`, `note_id`, `choice`, and, for a remote Poll, the delivered vote
-activity `uri`.
-
-For a local Poll with `expires_at`, Rosmarinus schedules durable delayed work.
-At expiration it creates a stable `pollEnded` notification for the local Poll
-owner and each local Actor that voted. Repeated delayed-job execution does not
-create duplicate notification documents.
-
-To mark a notification read, publish `notification.mark_read` with the owned
-recipient Actor in `actor_id` and `notification_id` in `data`. A successful
-result contains `notification_id` and `is_read: true`. Rosmarinus updates a
-notification only when both `recipientAccountId` and `recipientActorId` match
-the authenticated command; unknown or cross-Actor IDs fail without revealing
-the notification.
-
-Rosmarinus publishes `notification.created` to the recipient account event
-channel after persisting the notification. Its `data` contains
-`recipient_actor_id`, `notification_id`, `kind`, and optional
-`source_actor_id` and `note_id`. Activity retries can republish the same event,
-so Salvia deduplicates by `notification_id` and refreshes the durable MongoDB
-document rather than treating the event as canonical state.
-
-## Account invalidation and recovery
-
-After updating `salvia_accounts`, Salvia publishes:
-
-```json
-{
-  "account_id": "account-01J...",
-  "authz_revision": 5
-}
-```
-
-with the message name `account.authorization.changed` on the account control
-channel. The event is only an invalidation. Rosmarinus reads the current Salvia
-document and never trusts status supplied in the event payload.
-
-Inactive or missing accounts are rejected on every browser mutation. A control
-event immediately applies the authoritative account lifecycle to every owned
-Actor:
-
-- `suspended`, an unknown status, or a missing account temporarily suspends
-  each Actor and sends a uniquely identified signed `Delete` to known remote
-  followers and followees. Relationships are retained for recovery.
-- `active` resumes temporarily suspended Actors and sends the matching signed
-  `Undo(Delete)` to the same known peers.
-- `deleted` or a non-null `deletedAt` permanently tombstones each Actor through
-  the same delivery and cleanup path as `actor.delete`.
-
-Rosmarinus also periodically lists account owners and re-reads
-`salvia_accounts`, so a missed Ably control event is eventually repaired from
-MongoDB. Peer recovery after `Undo(Delete)` is implementation-dependent;
-Rosmarinus restores its Actor endpoint immediately, but peers that retain a
-remote tombstone may need to resolve the Actor again.
-
-## Rosmarinus environment
-
-| Variable | Default |
-| --- | --- |
-| `ABLY_COMMAND_SUBSCRIBE_API_KEY` | empty; command subscription disabled |
-| `ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY` | empty; account-event publishing disabled |
-| `ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY` | empty; account-control subscription disabled |
-| `ABLY_ROSMARINUS_API_KEY` | empty; deprecated fallback for each unset role-specific key |
-| `CONNECTOR_COMMAND_CHANNEL` | `rosmarinus:commands` |
-| `CONNECTOR_ACCOUNT_EVENT_NAMESPACE` | `rosmarinus:accounts` |
-| `CONNECTOR_ACCOUNT_CONTROL_CHANNEL` | `rosmarinus:control:accounts` |
-| `SALVIA_ACCOUNT_COLLECTION` | `salvia_accounts` |
-| `CONNECTOR_RECEIPT_TTL` | `168h` |
-| `CONNECTOR_ACCOUNT_RECONCILE_INTERVAL` | `5m` |
+Required negative tests include concurrent initial setup, expired/replayed
+WebAuthn challenges, invalid origin/RP ID, stolen/expired sessions, CSRF,
+cross-account Actor IDs, suspended/deleted accounts, idempotency conflicts,
+event-stream account isolation, slow clients, duplicate/missed Pub/Sub events,
+and SPA history fallback over API/federation paths.
