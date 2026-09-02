@@ -84,7 +84,14 @@ func NewHandlerWithStores(cfg config.Config, logger *log.Logger, actorLookup Act
 }
 
 func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup, emojiLookup EmojiLookup) http.Handler {
+	return NewHandlerWithAllStoresAndAPI(cfg, logger, actorLookup, noteLookup, followLookup, reactionLookup, queueClient, pollLookup, mediaLookup, emojiLookup, nil)
+}
+
+func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup, emojiLookup EmojiLookup, applicationAPI http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	if applicationAPI != nil {
+		mux.Handle("/api/v1/", applicationAPI)
+	}
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
 	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, emojiLookup, queueClient, logger))

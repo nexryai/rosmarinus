@@ -261,6 +261,21 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestApplicationAPIRouteIsMountedBeforeFallback(t *testing.T) {
+	applicationAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/session" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := NewHandlerWithAllStoresAndAPI(testConfig(), nil, nil, nil, nil, nil, nil, nil, nil, nil, applicationAPI)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/session", nil))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHostMeta(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/host-meta", nil)
 	rec := httptest.NewRecorder()

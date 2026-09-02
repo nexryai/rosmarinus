@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -20,6 +22,8 @@ import (
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
 	apwebfinger "github.com/nexryai/rosmarinus/internal/activitypub/webfinger"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
+	api "github.com/nexryai/rosmarinus/internal/api"
+	appauth "github.com/nexryai/rosmarinus/internal/auth"
 	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
@@ -50,6 +54,11 @@ type App struct {
 	accountCleanup              *mongostore.AccountCleanupRepository
 	reports                     *mongostore.ReportRepository
 	notifications               *mongostore.NotificationRepository
+	accounts                    *mongostore.AccountRepository
+	sessions                    *mongostore.SessionRepository
+	webauthnCeremonies          *mongostore.WebAuthnCeremonyRepository
+	sessionManager              *appauth.SessionManager
+	passkeys                    *appauth.PasskeyService
 	salviaAccounts              *mongostore.SalviaAccountRepository
 	connectorReceipts           *mongostore.ConnectorReceiptRepository
 	activityReceipts            *mongostore.ActivityReceiptRepository
@@ -123,6 +132,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	accountCleanupRepo := mongostore.NewAccountCleanupRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
 	notificationRepo := mongostore.NewNotificationRepository(mongoDB)
+	accountRepo := mongostore.NewAccountRepository(mongoDB)
+	sessionRepo := mongostore.NewSessionRepository(mongoDB)
+	webauthnCeremonyRepo := mongostore.NewWebAuthnCeremonyRepository(mongoDB)
 	salviaAccountRepo := mongostore.NewSalviaAccountRepository(mongoDB, cfg.SalviaAccountCollection)
 	connectorReceiptRepo := mongostore.NewConnectorReceiptRepository(mongoDB)
 	activityReceiptRepo := mongostore.NewActivityReceiptRepository(mongoDB)
@@ -219,6 +231,24 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	if connectorPublisher != nil {
 		apWorker.SetConnectorPublisher(connectorPublisher)
 	}
+	sessionManager := appauth.NewSessionManager(sessionRepo, accountRepo, cfg.SessionCookieName, cfg.SessionTTL, cfg.SessionSecure)
+	passkeys, err := appauth.NewPasskeyService(&webauthn.Config{
+		RPID:          cfg.WebAuthnRPID,
+		RPDisplayName: cfg.WebAuthnRPName,
+		RPOrigins:     cfg.WebAuthnOrigins,
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired,
+		},
+	}, accountRepo, webauthnCeremonyRepo, sessionManager, cfg.WebAuthnCeremonyTTL)
+	if err != nil {
+		_ = mongoClient.Disconnect(context.Background())
+		_ = redisClient.Close()
+		_ = queueClient.Close()
+		return nil, err
+	}
+	authAPI := api.NewAuthHandler(passkeys, sessionManager, accountRepo, logger)
+	applicationAPI := api.NewHandlerWithAuth(sessionManager, cachedActorRepo, apWorker, connectorReceiptRepo, authAPI, logger, cfg.ConnectorReceiptTTL)
 
 	return &App{
 		cfg:                        cfg,
@@ -239,6 +269,11 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		accountCleanup:             accountCleanupRepo,
 		reports:                    reportRepo,
 		notifications:              notificationRepo,
+		accounts:                   accountRepo,
+		sessions:                   sessionRepo,
+		webauthnCeremonies:         webauthnCeremonyRepo,
+		sessionManager:             sessionManager,
+		passkeys:                   passkeys,
 		salviaAccounts:             salviaAccountRepo,
 		connectorReceipts:          connectorReceiptRepo,
 		activityReceipts:           activityReceiptRepo,
@@ -255,7 +290,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:                queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithAllStores(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo),
+			Handler:           httpserver.NewHandlerWithAllStoresAndAPI(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo, applicationAPI),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

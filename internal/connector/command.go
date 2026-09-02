@@ -714,8 +714,16 @@ func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID 
 }
 
 func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID string, data any) (any, string, error) {
-	if h.executor == nil {
-		return nil, actorID, fmt.Errorf("connector command executor is not configured")
+	return ExecuteCommand(ctx, h.executor, name, accountID, actorID, data)
+}
+
+// ExecuteCommand validates and executes a user-facing operation independently
+// of its transport. Account and Actor authorization must be completed before
+// calling it; keeping those checks outside this function lets the legacy Ably
+// adapter and the REST API use their own authenticated identities.
+func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, accountID, actorID string, data any) (any, string, error) {
+	if executor == nil {
+		return nil, actorID, fmt.Errorf("command executor is not configured")
 	}
 	switch name {
 	case CommandFollowCreate:
@@ -726,7 +734,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.Target) == "" {
 			return nil, actorID, fmt.Errorf("target is required")
 		}
-		result, err := h.executor.CreateFollow(ctx, actorID, command.Target)
+		result, err := executor.CreateFollow(ctx, actorID, command.Target)
 		return result, actorID, err
 	case CommandFollowDelete:
 		var command FollowDeleteData
@@ -736,7 +744,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.Target) == "" {
 			return nil, actorID, fmt.Errorf("target is required")
 		}
-		result, err := h.executor.DeleteFollow(ctx, FollowDeleteCommand{
+		result, err := executor.DeleteFollow(ctx, FollowDeleteCommand{
 			ActorID: actorID,
 			Target:  command.Target,
 		})
@@ -749,7 +757,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.FollowerID) == "" {
 			return nil, actorID, fmt.Errorf("follower_id is required")
 		}
-		result, err := h.executor.ApproveFollow(ctx, command.FollowerID, actorID)
+		result, err := executor.ApproveFollow(ctx, command.FollowerID, actorID)
 		return result, actorID, err
 	case CommandFollowReject:
 		var command FollowRejectData
@@ -759,7 +767,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.FollowerID) == "" {
 			return nil, actorID, fmt.Errorf("follower_id is required")
 		}
-		result, err := h.executor.RejectFollow(ctx, command.FollowerID, actorID)
+		result, err := executor.RejectFollow(ctx, command.FollowerID, actorID)
 		return result, actorID, err
 	case CommandPostCreate:
 		var command PostCreateData
@@ -775,7 +783,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if command.Poll != nil {
 			poll = &PollCreateCommand{Choices: command.Poll.Choices, Multiple: command.Poll.Multiple, ExpiresAt: command.Poll.ExpiresAt}
 		}
-		result, err := h.executor.CreatePost(ctx, PostCreateCommand{
+		result, err := executor.CreatePost(ctx, PostCreateCommand{
 			ActorID:        actorID,
 			NoteID:         command.NoteID,
 			RenoteID:       command.RenoteID,
@@ -799,7 +807,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.NoteID) == "" {
 			return nil, actorID, fmt.Errorf("note_id is required")
 		}
-		result, err := h.executor.DeletePost(ctx, PostDeleteCommand{ActorID: actorID, NoteID: command.NoteID})
+		result, err := executor.DeletePost(ctx, PostDeleteCommand{ActorID: actorID, NoteID: command.NoteID})
 		return result, actorID, err
 	case CommandPollVote:
 		var command PollVoteData
@@ -809,7 +817,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.NoteID) == "" || command.Choice < 0 {
 			return nil, actorID, fmt.Errorf("note_id and a non-negative choice are required")
 		}
-		result, err := h.executor.VotePoll(ctx, PollVoteCommand{ActorID: actorID, NoteID: command.NoteID, Choice: command.Choice})
+		result, err := executor.VotePoll(ctx, PollVoteCommand{ActorID: actorID, NoteID: command.NoteID, Choice: command.Choice})
 		return result, actorID, err
 	case CommandReactionCreate:
 		var command ReactionCreateData
@@ -819,7 +827,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.NoteID) == "" || strings.TrimSpace(command.Reaction) == "" {
 			return nil, actorID, fmt.Errorf("note_id and reaction are required")
 		}
-		result, err := h.executor.CreateReaction(ctx, ReactionCreateCommand{
+		result, err := executor.CreateReaction(ctx, ReactionCreateCommand{
 			ActorID:  actorID,
 			NoteID:   command.NoteID,
 			Reaction: command.Reaction,
@@ -833,7 +841,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.NoteID) == "" {
 			return nil, actorID, fmt.Errorf("note_id is required")
 		}
-		result, err := h.executor.DeleteReaction(ctx, ReactionDeleteCommand{
+		result, err := executor.DeleteReaction(ctx, ReactionDeleteCommand{
 			ActorID: actorID,
 			NoteID:  command.NoteID,
 		})
@@ -846,7 +854,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.Target) == "" {
 			return nil, actorID, fmt.Errorf("target is required")
 		}
-		result, err := h.executor.CreateBlock(ctx, BlockCreateCommand{ActorID: actorID, Target: command.Target})
+		result, err := executor.CreateBlock(ctx, BlockCreateCommand{ActorID: actorID, Target: command.Target})
 		return result, actorID, err
 	case CommandBlockDelete:
 		var command BlockDeleteData
@@ -856,7 +864,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.Target) == "" {
 			return nil, actorID, fmt.Errorf("target is required")
 		}
-		result, err := h.executor.DeleteBlock(ctx, BlockDeleteCommand{ActorID: actorID, Target: command.Target})
+		result, err := executor.DeleteBlock(ctx, BlockDeleteCommand{ActorID: actorID, Target: command.Target})
 		return result, actorID, err
 	case CommandNotificationMarkRead:
 		var command NotificationMarkReadData
@@ -866,7 +874,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.NotificationID) == "" {
 			return nil, actorID, fmt.Errorf("notification_id is required")
 		}
-		result, err := h.executor.MarkNotificationRead(ctx, accountID, actorID, command.NotificationID)
+		result, err := executor.MarkNotificationRead(ctx, accountID, actorID, command.NotificationID)
 		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData
@@ -876,7 +884,7 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if strings.TrimSpace(command.Username) == "" {
 			return nil, "", fmt.Errorf("username is required")
 		}
-		result, err := h.executor.CreateActor(ctx, accountID, ActorCreateCommand{
+		result, err := executor.CreateActor(ctx, accountID, ActorCreateCommand{
 			Username: command.Username,
 			Name:     command.Name,
 			Type:     command.Type,
@@ -893,13 +901,13 @@ func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID s
 		if command.IsPresent("is_locked") && (command.IsNull("is_locked") || !command.IsLocked) {
 			return nil, actorID, fmt.Errorf("is_locked cannot disable mandatory follow approval")
 		}
-		result, err := h.executor.UpdateActor(ctx, accountID, ActorUpdateCommand{ActorID: actorID, Patch: command})
+		result, err := executor.UpdateActor(ctx, accountID, ActorUpdateCommand{ActorID: actorID, Patch: command})
 		return result, actorID, err
 	case CommandActorDelete:
 		if err := requireEmptyCommandData(data); err != nil {
 			return nil, actorID, err
 		}
-		result, err := h.executor.DeleteActor(ctx, accountID, ActorDeleteCommand{ActorID: actorID})
+		result, err := executor.DeleteActor(ctx, accountID, ActorDeleteCommand{ActorID: actorID})
 		return result, actorID, err
 	default:
 		return nil, actorID, fmt.Errorf("unknown connector command: %s", name)

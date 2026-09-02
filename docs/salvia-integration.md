@@ -128,6 +128,47 @@ The first REST milestone must cover:
 - account- and Actor-scoped notifications and mark-read; and
 - safe profile, follower/following, emoji, instance, and settings projections.
 
+### Implemented authentication endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/auth/setup` | Return whether initial administrator setup is required |
+| `POST` | `/api/v1/auth/setup/start` | Reserve the sole initial account and create passkey registration options |
+| `POST` | `/api/v1/auth/setup/finish` | Consume and verify the registration ceremony, activate the account, and create a session |
+| `POST` | `/api/v1/auth/login/start` | Create discoverable passkey assertion options |
+| `POST` | `/api/v1/auth/login/finish` | Consume and verify the assertion and create a session |
+| `POST` | `/api/v1/auth/logout` | Revoke the current session and expire its cookie |
+| `GET` | `/api/v1/session` | Return the authenticated account ID and CSRF token |
+
+The two finish endpoints receive the standard WebAuthn credential JSON body
+and require `X-WebAuthn-Ceremony-ID` from their matching start response.
+Ceremonies are short-lived, stored server-side, and atomically consumed before
+verification. A finish request therefore cannot be replayed. Successful setup
+or login sets a random HTTP-only session cookie; only its SHA-256 digest is
+stored in MongoDB.
+
+### Implemented Actor and mutation endpoints
+
+| Method | Path | Domain operation |
+| --- | --- | --- |
+| `GET`, `POST` | `/api/v1/actors` | List owned Actors or create one |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/actors/{actorId}` | Read, update, or delete an owned Actor |
+| `POST` | `/api/v1/actors/{actorId}/posts` | Create a Note, Poll, or pure renote |
+| `DELETE` | `/api/v1/actors/{actorId}/posts/{noteId}` | Delete an owned Note |
+| `POST` | `/api/v1/actors/{actorId}/poll-votes` | Vote in a Poll |
+| `PUT`, `DELETE` | `/api/v1/actors/{actorId}/reactions/{noteId}` | Create/replace or remove a reaction |
+| `POST`, `DELETE` | `/api/v1/actors/{actorId}/follows` | Follow or unfollow the body `target` |
+| `POST`, `DELETE` | `/api/v1/actors/{actorId}/blocks` | Block or unblock the body `target` |
+| `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted` or `rejected` |
+| `PATCH` | `/api/v1/actors/{actorId}/notifications/{notificationId}` | Set `is_read` to `true` |
+
+Every endpoint is session-scoped. Mutations require `X-CSRF-Token` and an
+opaque 16–200 character `Idempotency-Key`. Receipt keys are scoped to the
+authenticated account; reusing one for a different operation or Actor returns
+`409`. Request JSON is limited to 1 MiB, rejects unknown fields, and cannot
+supply account ownership. Actor responses explicitly omit owner IDs, public
+key material, private keys, inboxes, and internal delivery state.
+
 Use stable cursor pagination with deterministic tie-breakers. Enforce Note
 visibility, block state, account ownership, and Actor ownership in backend
 queries before projection. In particular, `specified` Note visibility is based

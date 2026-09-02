@@ -902,11 +902,19 @@ by Phase 8.
 
 ### Phase 8: Integrated Backend And React SPA Boundary
 
+- [x] Add Rosmarinus-owned account, WebAuthn ceremony, and session collections
+      with unique/TTL indexes. Fresh initial setup now creates its account
+      directly in Rosmarinus; migration of legacy account rows remains open.
 - [ ] Move account ownership into Rosmarinus-owned MongoDB collections and
       migrate existing account IDs without changing Actor `ownerAccountId`
       references.
-- [ ] Implement passkey-only bootstrap, registration policy, login, logout,
-      credential management, and revocable cookie sessions in Go.
+- [x] Implement passkey-only initial bootstrap, discoverable login, logout,
+      credential counter updates, and revocable cookie sessions in Go. Further
+      authenticated passkey credential management remains a later endpoint.
+- [x] Add the initial versioned authenticated REST endpoints for owned Actor
+      listing and the existing Actor/post/follow/reaction/block/poll/
+      notification mutations, with CSRF, idempotency, ownership checks, and
+      browser-safe Actor projections.
 - [ ] Add versioned authenticated REST endpoints for queries and all
       existing user-facing domain mutations, with ownership checks and focused
       authorization tests.

@@ -79,10 +79,10 @@ shell without Next.js assumptions.
 
 ## Phase 2: Integrate Passkey-Only Authentication
 
-- [ ] Add an unauthenticated bootstrap-status call. Render first-administrator
+- [x] Add an unauthenticated bootstrap-status call. Render first-administrator
       setup only when Rosmarinus reports an empty installation.
-- [ ] Implement WebAuthn registration and login UI using challenges created by
-      Rosmarinus and responses verified by Rosmarinus.
+- [ ] Implement the SPA WebAuthn registration and login UI using the now
+      available Rosmarinus challenge and verification endpoints.
 - [ ] Do not complete setup or show an authenticated shell until the server has
       accepted the passkey ceremony and established its HTTP-only session.
 - [ ] Implement login, logout, session refresh, expired-session handling, and
@@ -98,8 +98,8 @@ and subsequent anonymous users see passkey login only.
 
 ## Phase 3: Implement Multi-Actor Workflows
 
-- [ ] Load owned Actors from the session-scoped API and handle zero, one, and
-      multiple Actor states.
+- [ ] Load owned Actors from the implemented session-scoped API and handle
+      zero, one, and multiple Actor states.
 - [ ] Build Actor creation, selection, profile editing, and deletion flows.
 - [ ] Include the selected Actor ID in Actor-scoped API paths or request bodies;
       never send an account ID as authorization evidence.

@@ -31,9 +31,16 @@ type Config struct {
 	MongoURI      string
 	MongoDatabase string
 
-	RedisAddr     string
-	RedisPassword string
-	RedisDB       int
+	RedisAddr           string
+	RedisPassword       string
+	RedisDB             int
+	SessionCookieName   string
+	SessionTTL          time.Duration
+	SessionSecure       bool
+	WebAuthnRPID        string
+	WebAuthnRPName      string
+	WebAuthnOrigins     []string
+	WebAuthnCeremonyTTL time.Duration
 
 	AblyServiceAPIKey                 string
 	AblyCommandSubscribeAPIKey        string
@@ -87,6 +94,12 @@ func Load(lookup LookupFunc) (Config, error) {
 		MongoDatabase:                     get(lookup, "MONGO_DATABASE", "rosmarinus"),
 		RedisAddr:                         get(lookup, "REDIS_ADDR", "localhost:6379"),
 		RedisPassword:                     get(lookup, "REDIS_PASSWORD", ""),
+		SessionCookieName:                 get(lookup, "SESSION_COOKIE_NAME", "rosmarinus_session"),
+		SessionTTL:                        getDuration(lookup, "SESSION_TTL", 30*24*time.Hour),
+		WebAuthnRPID:                      get(lookup, "WEBAUTHN_RP_ID", ""),
+		WebAuthnRPName:                    get(lookup, "WEBAUTHN_RP_NAME", "Rosmarinus"),
+		WebAuthnOrigins:                   splitCSV(get(lookup, "WEBAUTHN_ALLOWED_ORIGINS", "")),
+		WebAuthnCeremonyTTL:               getDuration(lookup, "WEBAUTHN_CEREMONY_TTL", 5*time.Minute),
 		AblyServiceAPIKey:                 get(lookup, "ABLY_ROSMARINUS_API_KEY", ""),
 		AblyCommandSubscribeAPIKey:        get(lookup, "ABLY_COMMAND_SUBSCRIBE_API_KEY", ""),
 		AblyAccountEventPublishAPIKey:     get(lookup, "ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY", ""),
@@ -133,6 +146,17 @@ func Load(lookup LookupFunc) (Config, error) {
 	cfg.RunWorkers, err = parseBool(get(lookup, "RUN_WORKERS", "true"), "RUN_WORKERS")
 	if err != nil {
 		return Config{}, err
+	}
+	cfg.SessionSecure, err = parseBool(get(lookup, "SESSION_COOKIE_SECURE", strconv.FormatBool(strings.HasPrefix(cfg.PublicURL, "https://"))), "SESSION_COOKIE_SECURE")
+	if err != nil {
+		return Config{}, err
+	}
+	publicURL, _ := url.Parse(cfg.PublicURL)
+	if cfg.WebAuthnRPID == "" && publicURL != nil {
+		cfg.WebAuthnRPID = publicURL.Hostname()
+	}
+	if len(cfg.WebAuthnOrigins) == 0 {
+		cfg.WebAuthnOrigins = []string{strings.TrimRight(cfg.PublicURL, "/")}
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -210,6 +234,27 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.RedisAddr) == "" {
 		return fmt.Errorf("REDIS_ADDR must not be empty")
+	}
+	if strings.TrimSpace(c.SessionCookieName) == "" {
+		return fmt.Errorf("SESSION_COOKIE_NAME must not be empty")
+	}
+	if c.SessionTTL <= 0 {
+		return fmt.Errorf("SESSION_TTL must be positive")
+	}
+	if strings.TrimSpace(c.WebAuthnRPID) == "" || strings.TrimSpace(c.WebAuthnRPName) == "" {
+		return fmt.Errorf("WEBAUTHN_RP_ID and WEBAUTHN_RP_NAME must not be empty")
+	}
+	if len(c.WebAuthnOrigins) == 0 {
+		return fmt.Errorf("WEBAUTHN_ALLOWED_ORIGINS must not be empty")
+	}
+	for _, origin := range c.WebAuthnOrigins {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" {
+			return fmt.Errorf("WEBAUTHN_ALLOWED_ORIGINS contains invalid origin %q", origin)
+		}
+	}
+	if c.WebAuthnCeremonyTTL <= 0 {
+		return fmt.Errorf("WEBAUTHN_CEREMONY_TTL must be positive")
 	}
 	if strings.TrimSpace(c.ConnectorCommandChannel) == "" {
 		return fmt.Errorf("CONNECTOR_COMMAND_CHANNEL must not be empty")

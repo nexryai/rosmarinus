@@ -9,7 +9,69 @@ import (
 )
 
 func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
-	_, err := db.Collection("actors").Indexes().CreateMany(ctx, []mongo.IndexModel{
+	_, err := db.Collection("accounts").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "usernameLower", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_accounts_username_lower").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "webAuthnId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_accounts_webauthn_id").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "bootstrapSlot", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_accounts_bootstrap_slot").
+				SetUnique(true).
+				SetSparse(true),
+		},
+		{
+			Keys: bson.D{{Key: "credentials.id", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_accounts_credential_id").
+				SetUnique(true).
+				SetSparse(true),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("webauthn_challenges").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "expiresAt", Value: 1}},
+		Options: options.Index().
+			SetName("ttl_webauthn_challenges_expires_at").
+			SetExpireAfterSeconds(0),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("sessions").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "tokenHash", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_sessions_token_hash").
+				SetUnique(true),
+		},
+		{
+			Keys: bson.D{{Key: "accountId", Value: 1}, {Key: "expiresAt", Value: -1}},
+			Options: options.Index().
+				SetName("idx_sessions_account_expires_at"),
+		},
+		{
+			Keys: bson.D{{Key: "expiresAt", Value: 1}},
+			Options: options.Index().
+				SetName("ttl_sessions_expires_at").
+				SetExpireAfterSeconds(0),
+		},
+	})
+	if err != nil {
+		return err
+	}
+	_, err = db.Collection("actors").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{{Key: "uri", Value: 1}},
 			Options: options.Index().

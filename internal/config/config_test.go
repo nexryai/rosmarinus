@@ -49,6 +49,42 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InstanceMetadataTimeout != 30*time.Second {
 		t.Fatalf("InstanceMetadataTimeout = %s", cfg.InstanceMetadataTimeout)
 	}
+	if cfg.SessionCookieName != "rosmarinus_session" || cfg.SessionTTL != 30*24*time.Hour || cfg.SessionSecure {
+		t.Fatalf("unexpected session defaults: %+v", cfg)
+	}
+	if cfg.WebAuthnRPID != "localhost" || cfg.WebAuthnRPName != "Rosmarinus" || len(cfg.WebAuthnOrigins) != 1 || cfg.WebAuthnOrigins[0] != "http://localhost:3000" || cfg.WebAuthnCeremonyTTL != 5*time.Minute {
+		t.Fatalf("unexpected WebAuthn defaults: %+v", cfg)
+	}
+}
+
+func TestLoadSessionConfig(t *testing.T) {
+	cfg, err := Load(func(key string) (string, bool) {
+		switch key {
+		case "PUBLIC_URL":
+			return "https://social.example", true
+		case "SESSION_COOKIE_NAME":
+			return "salvia_session", true
+		case "SESSION_TTL":
+			return "12h", true
+		case "WEBAUTHN_RP_ID":
+			return "social.example", true
+		case "WEBAUTHN_RP_NAME":
+			return "Salvia", true
+		case "WEBAUTHN_ALLOWED_ORIGINS":
+			return "https://social.example,https://admin.social.example", true
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SessionCookieName != "salvia_session" || cfg.SessionTTL != 12*time.Hour || !cfg.SessionSecure {
+		t.Fatalf("session config = %+v", cfg)
+	}
+	if cfg.WebAuthnRPID != "social.example" || cfg.WebAuthnRPName != "Salvia" || len(cfg.WebAuthnOrigins) != 2 {
+		t.Fatalf("WebAuthn config = %+v", cfg)
+	}
 }
 
 func TestLoadMediaConfig(t *testing.T) {

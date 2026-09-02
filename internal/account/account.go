@@ -8,6 +8,7 @@ import (
 type Status string
 
 const (
+	StatusPending   Status = "pending"
 	StatusActive    Status = "active"
 	StatusSuspended Status = "suspended"
 	StatusDeleted   Status = "deleted"
@@ -15,9 +16,14 @@ const (
 
 type Account struct {
 	ID            string
+	Username      string
+	DisplayName   string
+	WebAuthnID    []byte
 	AblyClientID  string
 	Status        Status
 	AuthzRevision int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 	DeletedAt     *time.Time
 }
 
