@@ -45,6 +45,11 @@ Salvia has no MongoDB user and no Redis credentials. It receives only
 browser-safe projections through Rosmarinus APIs and must not depend on BSON
 shapes as a frontend contract.
 
+During the legacy-role transition, the `rosmarinusService` MongoDB role already
+has read/write/index privileges for `accounts`, `sessions`, and
+`webauthn_challenges`. The legacy `salviaService` role receives no access to
+those collections.
+
 The legacy `salvia_accounts`, `salvia_sessions`, `salvia_ui_settings`,
 `salvia_actor_settings`, and `connector_command_receipts` collections require
 an explicit migration decision before removal. Preserve stable account IDs

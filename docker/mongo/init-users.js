@@ -11,6 +11,9 @@ if (!rosmarinusUsername || !rosmarinusPassword || !salviaUsername || !salviaPass
 const applicationDB = db.getSiblingDB(databaseName);
 
 const rosmarinusCollections = [
+  "accounts",
+  "sessions",
+  "webauthn_challenges",
   "actors",
   "actor_profiles",
   "actor_public_keys",
