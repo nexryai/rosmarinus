@@ -18,12 +18,13 @@
 - Rosmarinus is the successor project to Concorde, a Misskey fork.
 - Rosmarinus is the integrated backend for ActivityPub federation, local
   accounts, passkey authentication, sessions, local Actor management, and the
-  authenticated application API. It does not expose a public Misskey-compatible
+  authenticated REST API. It does not expose a public Misskey-compatible
   API.
 - Salvia is a React single-page application in `./salvia`. It is built as
   static assets and contains no Next.js or other server-side backend.
-- Do not introduce Ably. Browser commands and queries use Rosmarinus HTTP APIs;
-  live server-to-browser updates use an authenticated Rosmarinus event stream.
+- Do not introduce Ably. Browser commands and queries use the Rosmarinus REST
+  API; live server-to-browser updates use authenticated Server-Sent Events
+  (SSE).
   Redis Pub/Sub is an internal, local deployment transport for fan-out between
   Rosmarinus processes and is never exposed directly to browsers.
 - Use MongoDB as the database and design collections/indexes with MongoDB best practices.
@@ -83,7 +84,7 @@
 ## Salvia Integration Documentation
 
 - For every implementation checkpoint, assess whether it changes the
-  Rosmarinus application API or event stream, passkey/session behavior,
+  Rosmarinus REST API or SSE contract, passkey/session behavior,
   account/Actor ownership, authorization behavior, or federation state
   consumed by Salvia.
 - When it does, update the applicable handoff documents in the same checkpoint:

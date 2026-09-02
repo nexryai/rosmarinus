@@ -42,14 +42,14 @@ Rosmarinus is the only backend. It owns:
 - local Actor lifecycle, ownership, and key material;
 - all MongoDB reads, writes, indexes, and migrations;
 - ActivityPub processing, delivery, queues, and federation state; and
-- the application HTTP API and authenticated browser event stream.
+- the versioned REST API and authenticated SSE stream.
 
 The SPA must never connect directly to MongoDB, Redis, or ActivityPub peers.
 It must not contain database credentials, Redis credentials, private Actor
 keys, WebAuthn server verification, or authorization policy.
 
-Use same-origin HTTPS for passkey ceremonies, session APIs, JSON APIs, and the
-event stream. The production deployment may serve built SPA assets from
+Use same-origin HTTPS for passkey ceremonies, the REST API, and SSE. The
+production deployment may serve built SPA assets from
 Rosmarinus or route them through the same origin. Client-side history fallback
 must not intercept `/api`, ActivityPub, WebFinger, NodeInfo, inbox, Actor, Note,
 or media routes.
@@ -92,16 +92,16 @@ Account
   profile editing, suspension/deletion status, and command context clear.
 - Do not infer authorization from data already rendered in the browser.
 
-## API And Realtime Rules
+## REST API And SSE Rules
 
-- Use the versioned Rosmarinus application API for all reads and mutations.
+- Use the versioned Rosmarinus REST API for all reads and mutations.
   Do not write federation or UI state directly to MongoDB.
 - Validate API responses at the client boundary and render structured error
   codes without exposing internal backend details.
 - Supply an idempotency key for retryable mutations when the endpoint requires
   it. A network timeout is ambiguous; reconcile canonical state before creating
   a new logical operation.
-- Connect only to the authenticated Rosmarinus event stream. Events are scoped
+- Connect only to authenticated Rosmarinus SSE. Events are scoped
   to the current account and may name an Actor for efficient invalidation.
 - Treat realtime events as refresh hints. They may be duplicated or missed;
   reconnect by re-reading the relevant API views while preserving useful UI
@@ -124,6 +124,6 @@ Account
 ## Verification
 
 Every frontend checkpoint should run formatting, linting, focused tests, and a
-production SPA build. Changes to API shapes, session behavior, Actor ownership,
-or event payloads must update `docs/salvia-integration.md` and the frontend and
-backend plans in the same checkpoint.
+production SPA build. Changes to REST representations, session behavior, Actor
+ownership, or SSE payloads must update `docs/salvia-integration.md` and the
+frontend and backend plans in the same checkpoint.

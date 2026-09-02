@@ -2,7 +2,7 @@
 
 Rosmarinus is the integrated Go backend successor to Concorde. It owns
 ActivityPub federation, local accounts, passkey authentication, sessions,
-local Actor management, and the application API consumed by the Salvia React
+local Actor management, and the REST API consumed by the Salvia React
 SPA. It should not copy Misskey's public API surface, but it should preserve the
 federation behavior that other ActivityPub servers depend on.
 
@@ -20,8 +20,9 @@ differ unless this plan records an intentional Rosmarinus exception.
   locks, and local Pub/Sub fan-out between Rosmarinus processes.
 - Own local accounts, passkey credentials and challenges, sessions, Actor
   ownership, application data, and federation state in Rosmarinus.
-- Serve an authenticated HTTP API and event stream to the React SPA. Redis is
-  an internal transport and is never a browser-facing API.
+- Serve an authenticated REST API and SSE stream to the React SPA. REST handles
+  browser requests and mutations; SSE carries server-to-browser updates. Redis
+  is an internal transport and is never a browser-facing API.
 - Build Salvia from `./salvia` as a static React SPA without Next.js or a
   separate backend. Rosmarinus may serve the built assets or deploy them behind
   the same-origin reverse proxy.
@@ -43,7 +44,7 @@ differ unless this plan records an intentional Rosmarinus exception.
   test verifies the corresponding end-to-end interoperability path when the
   behavior can be exercised through Misskey's public API.
 - Review every implementation checkpoint for Salvia integration impact. When a
-  change affects application API/event contracts, passkey or session behavior,
+  change affects REST API/SSE contracts, passkey or session behavior,
   ownership or authorization rules, or federation state consumed by Salvia,
   update the applicable `docs/salvia-integration.md`, `docs/salvia/AGENTS.md`,
   and `docs/salvia/PLANS.md` documents in the same checkpoint.
@@ -110,7 +111,7 @@ dependencies when a checkpoint needs more detail:
 - Rosmarinus requires explicit local approval for every inbound follow. Current
   Misskey's per-user follow policy must not reintroduce auto-acceptance.
 - Rosmarinus uses MongoDB and exposes ActivityPub plus a purpose-built,
-  authenticated application API for Salvia. Misskey's PostgreSQL entities,
+  authenticated REST API for Salvia. Misskey's PostgreSQL entities,
   public API compatibility, and unrelated side effects are out of scope.
 - Rosmarinus uses `github.com/go-fed/httpsig`. Match current Misskey's wire
   behavior without copying its Node signature implementation.
@@ -122,8 +123,8 @@ dependencies when a checkpoint needs more detail:
   up to seven days, but does not use the Activity URI as a durable domain
   receipt. The stricter Rosmarinus receipt prevents sequential peer retries or
   queue replays from repeating federation side effects.
-- Salvia is a static client of Rosmarinus's same-origin HTTP API and event
-  stream. It never accesses MongoDB or Redis directly.
+- Salvia is a static client of Rosmarinus's same-origin REST API and SSE stream.
+  It never accesses MongoDB or Redis directly.
 
 ### Current-Misskey Baseline Reconciliation
 
@@ -523,16 +524,16 @@ flags, but that is an operational option, not the default architecture.
       health/suspension update propagation.
 - [x] Redis WebFinger cache with a short five-minute TTL.
 
-## Integrated Application Backend
+## Integrated REST And SSE Backend
 
 The target architecture replaces the Ably Connector and the separate Next.js
 backend. Rosmarinus authenticates the user, authorizes the selected Actor,
-executes application commands, reads MongoDB, and returns browser-safe
+executes REST operations, reads MongoDB, and returns browser-safe
 projections. Salvia is an untrusted static client.
 
 ```text
 Salvia React SPA
-  | same-origin HTTPS: passkey ceremonies, session API, JSON API, event stream
+  | same-origin HTTPS: passkey ceremonies, REST API, SSE
   v
 Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
   |
@@ -541,16 +542,16 @@ Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
 
 - [ ] Remove Ably dependencies, credentials, channels, subscribers, publishers,
       and deployment configuration.
-- [ ] Replace Connector commands with versioned authenticated HTTP endpoints.
+- [ ] Replace Connector commands with versioned authenticated REST endpoints.
       Preserve the existing domain services and idempotency guarantees where a
       retry can duplicate a federation side effect.
-- [ ] Add an authenticated server-to-browser event stream. Publish only opaque
+- [ ] Add an authenticated server-to-browser SSE stream. Publish only opaque
       account/Actor-scoped invalidation events through Redis Pub/Sub; each
       Rosmarinus instance re-authorizes its connected clients and reads durable
       state from MongoDB.
 - [ ] Never expose Redis credentials, channel access, or raw MongoDB documents
       to the SPA. Redis Pub/Sub is best-effort and local to the deployment;
-      reconnect always reconciles through the HTTP API.
+      reconnect always reconciles through the REST API.
 - [ ] Delete `connector_command_receipts` after equivalent HTTP idempotency has
       migrated to a transport-neutral receipt collection or endpoint-specific
       idempotency mechanism.
@@ -567,11 +568,11 @@ Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
       the Go backend.
 - [ ] Use secure, HTTP-only, same-site session cookies; rotate sessions after
       authentication and reject suspended or deleted accounts on every
-      state-changing request and event-stream connection.
+      state-changing REST request and SSE connection.
 - [ ] Protect cookie-authenticated mutations against CSRF and apply endpoint-
       appropriate rate limits through Redis.
 
-### Application API And Multiple Actors
+### REST API And Multiple Actors
 
 - [ ] Keep accounts and ActivityPub Actors distinct. One active account may own
       any number of local Actors; each user-managed local Actor has exactly one
@@ -579,15 +580,16 @@ Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
 - [x] Retain `FindOwnedLocalByID(ctx, accountID, actorID)` as the authorization
       boundary for Actor-scoped domain operations. The SPA-selected Actor is
       input, never proof of ownership.
-- [ ] Provide browser-safe API projections and stable pagination for Actors,
-      timelines, notes, notifications, follows, reactions, polls, instances,
-      and settings. Do not expose unrestricted collection-query endpoints.
-- [ ] Add API endpoints for the already implemented Actor, post, follow,
+- [ ] Provide browser-safe REST representations and stable pagination for
+      Actors, timelines, notes, notifications, follows, reactions, polls,
+      instances, and settings. Do not expose unrestricted collection-query
+      endpoints.
+- [ ] Add REST endpoints for the already implemented Actor, post, follow,
       reaction, block, poll, and notification domain operations.
 - [ ] Return structured, versioned errors and use conventional HTTP status
       codes. Accept an idempotency key for mutations that may be retried after
       an ambiguous network result.
-- [ ] Scope event-stream topics and payloads to the authenticated account and,
+- [ ] Scope SSE events and payloads to the authenticated account and,
       where applicable, include `actor_id` so one session supports multiple
       Actors.
 
@@ -602,7 +604,7 @@ adapters and Salvia-owned account projection.
 
 Do not implement any remaining Ably token, channel, credential-splitting, or
 browser-subscription work. Remove the SDK and configuration only after the HTTP
-API and event stream have feature parity and migration tests pass.
+REST API and SSE have feature parity and migration tests pass.
 
 ## Legacy Shared MongoDB Boundary
 
@@ -697,9 +699,9 @@ collection should be added.
 - [ ] `internal/http`: server setup, middleware, route registration.
 - [ ] `internal/auth`: passkey ceremonies, session lifecycle, CSRF protection,
       and authenticated-account middleware.
-- [ ] `internal/api`: versioned Salvia application endpoints, browser-safe
+- [ ] `internal/api`: versioned Salvia REST endpoints, browser-safe
       projections, pagination, and structured errors.
-- [ ] `internal/realtime`: authenticated event streams plus injectable Redis
+- [ ] `internal/realtime`: authenticated SSE streams plus injectable Redis
       Pub/Sub fan-out.
 - [ ] `internal/activitypub/types`: AP object structs and helpers.
 - [x] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
@@ -789,7 +791,7 @@ by Phase 8.
       denial. Preserve these in the integrated backend.
 - [x] Implement the user-facing domain operations, durable notifications, and
       receipt-backed idempotency behind transport adapters. Reuse these through
-      the application API rather than rewriting federation behavior.
+      the REST API rather than rewriting federation behavior.
 - [x] Implement the former account projection and Ably adapters. Treat them as
       migration sources scheduled for removal; do not complete unfinished
       legacy transport work.
@@ -905,10 +907,10 @@ by Phase 8.
       references.
 - [ ] Implement passkey-only bootstrap, registration policy, login, logout,
       credential management, and revocable cookie sessions in Go.
-- [ ] Add versioned authenticated application endpoints for queries and all
+- [ ] Add versioned authenticated REST endpoints for queries and all
       existing user-facing domain mutations, with ownership checks and focused
       authorization tests.
-- [ ] Add the authenticated browser event stream and Redis Pub/Sub fan-out;
+- [ ] Add authenticated SSE and Redis Pub/Sub fan-out;
       verify account isolation, reconnect reconciliation, and multi-instance
       delivery without treating Pub/Sub as durable storage.
 - [ ] Remove Ably and the Connector transport after endpoint parity is tested.
@@ -917,8 +919,8 @@ by Phase 8.
 - [ ] Build `./salvia` as a React SPA, carrying forward the passkey-only,
       multi-Actor, simplified Misskey-inspired product design from
       `./salvia/salvia-old` without carrying forward Next.js or server code.
-- [ ] Define a same-origin production deployment for the SPA, application API,
-      event stream, and ActivityPub routes, including SPA history fallback that
+- [ ] Define a same-origin production deployment for the SPA, REST API, SSE,
+      and ActivityPub routes, including SPA history fallback that
       cannot shadow protocol or API endpoints.
 - [ ] Add integration tests for initial setup, passkey login, session expiry,
       cross-account Actor denial, multi-Actor switching, mutation idempotency,
@@ -1127,8 +1129,8 @@ focused unit/integration coverage until the fixture can cover it.
 
 - [x] Choose the Redis queue implementation: use Asynq by default, hidden behind
       `internal/queue` interfaces.
-- [x] Decide browser integration: Rosmarinus owns the authenticated application
-      API and event stream; Salvia is a React SPA with no backend or direct
+- [x] Decide browser integration: Rosmarinus owns the authenticated REST API and
+      SSE stream; Salvia is a React SPA with no backend or direct
       database access.
 - [x] Decide realtime transport: use Redis Pub/Sub only for local best-effort
       fan-out between Rosmarinus processes. Browsers receive authenticated
@@ -1144,7 +1146,7 @@ focused unit/integration coverage until the fixture can cover it.
       belong in the integrated Rosmarinus product.
 - [x] Decide local Actor provisioning roles: keep the environment-provisioned
       Actor as a stable system Actor for service-level federation work. Create
-      user-managed Actors through authenticated application API calls, store them
+      user-managed Actors through authenticated REST API calls, store them
       in MongoDB with `ownerAccountId`, and allow one Salvia account to own
       multiple Actors.
 - [ ] Decide whether object IDs follow current Misskey's externally observable

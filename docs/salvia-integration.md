@@ -10,8 +10,8 @@ architecture and must not receive new features.
 Salvia SPA
   | same-origin HTTPS
   |-- passkey/session endpoints
-  |-- versioned JSON application API
-  `-- authenticated server event stream
+  |-- versioned REST API
+  `-- authenticated SSE
              |
              v
        Rosmarinus backend
@@ -22,8 +22,9 @@ Salvia SPA
 
 MongoDB is the durable source of truth. Redis Pub/Sub carries best-effort
 invalidation messages between local Rosmarinus processes so any instance can
-refresh an attached browser. It is not durable and is never exposed directly
-to the SPA. Browser reconnect always reconciles through API reads.
+refresh an attached browser through SSE. It is not durable and is never
+exposed directly to the SPA. Browser reconnect always reconciles through REST
+reads.
 
 Rosmarinus may serve the SPA build or run behind a same-origin reverse proxy.
 SPA history fallback must run only after application/API and federation routes
@@ -70,7 +71,7 @@ verified and rolled out.
   session token in MongoDB.
 - Rotate session identity after authentication and authorization changes.
   Suspended or deleted accounts cannot create sessions, mutate state, or open
-  an event stream.
+  an SSE stream.
 - Cookie-authenticated mutations require CSRF protection in addition to
   same-site cookie policy. Authentication and setup endpoints are rate-limited
   with Redis-backed controls.
@@ -102,20 +103,20 @@ client-provided ownership field as authorization evidence. Actor creation
 derives `ownerAccountId` from the authenticated session. Ordinary API calls do
 not transfer ownership.
 
-Account suspension immediately revokes effective API and event-stream access
+Account suspension immediately revokes effective REST and SSE access
 and triggers Rosmarinus's reversible Actor suspension policy. Account deletion
 permanently tombstones owned Actors through the existing federation cleanup
 path. These lifecycle changes are Rosmarinus-owned transactions/workflows; the
 SPA never edits Actor state directly.
 
-## Application API
+## REST API
 
-The application API is versioned independently of ActivityPub. Its concrete
+The REST API is versioned independently of ActivityPub. Its concrete
 route and schema inventory must be finalized before implementation, using
 `/api/v1` as the default namespace. It returns JSON projections designed for
 the SPA, not raw MongoDB documents or a public Misskey-compatible API.
 
-The first API milestone must cover:
+The first REST milestone must cover:
 
 - bootstrap status, passkey registration/authentication ceremonies, current
   session, and logout;
@@ -150,12 +151,11 @@ Use conventional status semantics:
 Error bodies and successful projections must be runtime-validatable by the SPA
 and versioned when compatibility cannot be preserved.
 
-## Authenticated Event Stream
+## Authenticated SSE
 
-Rosmarinus exposes a same-origin, session-authenticated server-to-browser event
-stream. Server-Sent Events is the default transport because browser commands
-use HTTP; WebSocket requires a separately documented need and equivalent
-origin/session/CSRF protections.
+Rosmarinus exposes a same-origin, session-authenticated Server-Sent Events
+(SSE) stream for server-to-browser updates. Browser requests and mutations use
+REST; WebSocket is not part of this integration contract.
 
 Events use a small versioned envelope:
 
@@ -170,7 +170,7 @@ Events use a small versioned envelope:
 }
 ```
 
-- Authenticate the session before opening the stream and re-check account
+- Authenticate the session before opening SSE and re-check account
   status during long-lived connections.
 - Publish only to the authenticated account. Include an Actor ID where it
   narrows invalidation; never trust a client-supplied subscription account.
@@ -180,7 +180,7 @@ Events use a small versioned envelope:
   not document internal channel names as a browser contract.
 - Treat Redis delivery as at-most-best-effort. Slow clients are disconnected or
   coalesced rather than allowed to block domain processing.
-- Duplicate or missed events are valid. The SPA re-reads API state on reconnect
+- Duplicate or missed events are valid. The SPA re-reads REST state on reconnect
   and after ambiguous outcomes; event receipt is not durable business success.
 
 Initial event types should cover Actor lifecycle, Note changes, reaction
@@ -216,7 +216,7 @@ variables. Rosmarinus configuration must add environment-backed values for:
 - session cookie name, lifetime, signing/encryption material if required, and
   secure-cookie policy;
 - challenge/session retention and authentication rate limits;
-- application API and event-stream timeouts/limits; and
+- REST API and SSE timeouts/limits; and
 - internal Redis Pub/Sub namespace and subscriber buffer limits.
 
 Exact variable names are finalized with implementation. Defaults must be safe,
@@ -227,8 +227,8 @@ secrets must fail closed when missing, and no secret may enter the SPA bundle.
 1. Add Rosmarinus-owned account/passkey/session schemas and indexes.
 2. Migrate stable account identity and Actor ownership references from legacy
    Salvia collections, with rollback-safe validation before cutover.
-3. Implement and test passkey/session APIs, application endpoints, and the
-   authenticated event stream while legacy Connector traffic is still
+3. Implement and test passkey/session REST endpoints, application REST
+   endpoints, and authenticated SSE while legacy Connector traffic is still
    isolated.
 4. Move the React SPA to the HTTP/event contracts and verify feature parity for
    every existing domain command.
@@ -240,5 +240,5 @@ secrets must fail closed when missing, and no secret may enter the SPA bundle.
 Required negative tests include concurrent initial setup, expired/replayed
 WebAuthn challenges, invalid origin/RP ID, stolen/expired sessions, CSRF,
 cross-account Actor IDs, suspended/deleted accounts, idempotency conflicts,
-event-stream account isolation, slow clients, duplicate/missed Pub/Sub events,
+SSE account isolation, slow clients, duplicate/missed Pub/Sub events,
 and SPA history fallback over API/federation paths.

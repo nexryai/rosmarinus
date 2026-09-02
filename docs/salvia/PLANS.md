@@ -4,15 +4,15 @@
 
 Build `./salvia` as a static React SPA for the integrated Rosmarinus backend.
 Rosmarinus owns authentication, sessions, accounts, Actor management,
-application APIs, MongoDB, Redis, and ActivityPub. Salvia owns browser
+REST APIs, MongoDB, Redis, and ActivityPub. Salvia owns browser
 presentation and interaction only.
 
 ```text
 Browser: Salvia React SPA
   | same-origin HTTPS
   |-- passkey and session endpoints
-  |-- versioned JSON application API
-  `-- authenticated event stream
+  |-- versioned REST API
+  `-- authenticated SSE
              |
              v
        Rosmarinus backend
@@ -37,8 +37,8 @@ part of the target architecture.
 - Preserve old Salvia's simplified Misskey-inspired design, yellow default
   theme, theme selection, custom emoji reactions, and Tabler Icons.
 - Keep widgets, Deck, and public Misskey API compatibility out of scope.
-- Treat backend event messages as invalidation hints and reconcile through the
-  JSON API after reconnects or ambiguous mutations.
+- Treat SSE messages as invalidation hints and reconcile through the REST API
+  after reconnects or ambiguous mutations.
 - Load all secrets and server policy only in Rosmarinus. Browser-visible build
   configuration may contain public same-origin paths but no credentials.
 
@@ -50,7 +50,7 @@ part of the target architecture.
       Do not copy Next.js routes, server modules, Ably code, or secrets.
 - [ ] Confirm `pnpm format`, `pnpm lint`, `pnpm test`, and `pnpm build`, adding
       focused tooling only where missing.
-- [ ] Define typed public configuration for the same-origin API and event-stream
+- [ ] Define typed public configuration for the same-origin REST and SSE
       paths, preferably using relative defaults.
 - [ ] Add routing with a production history fallback that cannot shadow API or
       ActivityPub routes.
@@ -113,22 +113,22 @@ and subsequent anonymous users see passkey login only.
 Exit criteria: account and Actor identities remain distinct throughout the UI,
 and every Actor mutation is authorized again by Rosmarinus.
 
-## Phase 4: Add API Client And Realtime Reconciliation
+## Phase 4: Add REST Client And SSE Reconciliation
 
-- [ ] Centralize versioned API calls, runtime response validation, structured
+- [ ] Centralize versioned REST calls, runtime response validation, structured
       error handling, cancellation, and session-loss handling.
 - [ ] Generate stable idempotency keys for retryable mutations. Reuse a key for
       the same logical intent; do not invent a new one after an ambiguous
       timeout until canonical state has been checked.
-- [ ] Connect to the authenticated Rosmarinus event stream and close it on
+- [ ] Connect to authenticated Rosmarinus SSE and close it on
       logout or account change.
 - [ ] Scope caches and query keys by account and Actor. Invalidate only affected
       projections when an event names an Actor.
 - [ ] Handle duplicates, reconnects, missed events, and multiple tabs by
       re-reading canonical state while preserving scroll and draft state where
       safe.
-- [ ] Test event isolation, reconnect backoff, duplicate invalidations, missed
-      message recovery, and API/event ordering races.
+- [ ] Test SSE isolation, reconnect backoff, duplicate invalidations, missed
+      message recovery, and REST/SSE ordering races.
 
 Exit criteria: realtime improves freshness but correctness never depends on a
 Pub/Sub message arriving.
@@ -179,5 +179,5 @@ Next.js server.
 - [ ] Account and Actor authorization boundaries have negative tests.
 - [ ] New realtime behavior remains correct when events are duplicated or
       missed.
-- [ ] API, session, Actor ownership, or event-contract changes are reflected in
+- [ ] REST, session, Actor ownership, or SSE-contract changes are reflected in
       `docs/salvia-integration.md`, this plan, and `docs/salvia/AGENTS.md`.
