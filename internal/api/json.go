@@ -33,7 +33,19 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func writeAPIJSON(w http.ResponseWriter, status int, value any) {
+	value = withAPIVersion(value)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func withAPIVersion(value any) any {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if _, exists := object["version"]; !exists {
+		object["version"] = 1
+	}
+	return object
 }

@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
-	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 )
 
@@ -29,28 +27,6 @@ const (
 	CommandActorDelete          = "actor.delete"
 	CommandNotificationMarkRead = "notification.mark_read"
 )
-
-type CommandMessage struct {
-	ID       string
-	ClientID string
-	Name     string
-	Data     any
-}
-
-type CommandEnvelope struct {
-	Version   int    `json:"version"`
-	RequestID string `json:"request_id"`
-	ActorID   string `json:"actor_id"`
-	Data      any    `json:"data"`
-}
-
-type CommandSource interface {
-	Subscribe(context.Context, string, func(CommandMessage)) (func(), error)
-}
-
-type AccountLookup interface {
-	FindActiveByAblyClientID(context.Context, string) (*account.Account, error)
-}
 
 type ActorOwnershipLookup interface {
 	FindOwnedLocalByID(context.Context, string, string) (*actors.Actor, error)
@@ -73,26 +49,6 @@ type CommandExecutor interface {
 	UpdateActor(context.Context, string, ActorUpdateCommand) (ActorUpdated, error)
 	DeleteActor(context.Context, string, ActorDeleteCommand) (ActorDeleted, error)
 	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
-}
-
-type CommandResultPublisher interface {
-	PublishCommandSucceeded(context.Context, string, string, string, string, any) error
-	PublishCommandFailed(context.Context, string, string, string, string, string) error
-	PublishActorCreated(context.Context, string, string, ActorCreated) error
-	PublishActorUpdated(context.Context, string, string, ActorUpdated) error
-	PublishActorDeleted(context.Context, string, string, ActorDeleted) error
-}
-
-type CommandHandler struct {
-	source     CommandSource
-	accounts   AccountLookup
-	actors     ActorOwnershipLookup
-	executor   CommandExecutor
-	publisher  CommandResultPublisher
-	receipts   CommandReceiptStore
-	logger     *log.Logger
-	now        func() time.Time
-	receiptTTL time.Duration
 }
 
 type FollowApproveData struct {
@@ -522,205 +478,8 @@ func (d *ActorUpdateData) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-func NewCommandHandler(source CommandSource, accounts AccountLookup, actorLookup ActorOwnershipLookup, executor CommandExecutor, publisher CommandResultPublisher, receipts CommandReceiptStore, logger *log.Logger, receiptTTL time.Duration) *CommandHandler {
-	if receiptTTL <= 0 {
-		receiptTTL = 7 * 24 * time.Hour
-	}
-	return &CommandHandler{
-		source:     source,
-		accounts:   accounts,
-		actors:     actorLookup,
-		executor:   executor,
-		publisher:  publisher,
-		receipts:   receipts,
-		logger:     logger,
-		now:        func() time.Time { return time.Now().UTC() },
-		receiptTTL: receiptTTL,
-	}
-}
-
-func (h *CommandHandler) Subscribe(ctx context.Context) (func(), error) {
-	if h == nil || h.source == nil {
-		return func() {}, nil
-	}
-	names := []string{CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandActorDelete, CommandNotificationMarkRead}
-	unsubscribes := make([]func(), 0, len(names))
-	for _, name := range names {
-		unsubscribe, err := h.source.Subscribe(ctx, name, func(message CommandMessage) {
-			if err := h.Handle(ctx, message); err != nil && h.logger != nil {
-				h.logger.Printf("connector: command failed name=%s message_id=%s client_id=%s err=%v", message.Name, message.ID, message.ClientID, err)
-			}
-		})
-		if err != nil {
-			for i := len(unsubscribes) - 1; i >= 0; i-- {
-				unsubscribes[i]()
-			}
-			return nil, err
-		}
-		unsubscribes = append(unsubscribes, unsubscribe)
-	}
-	return func() {
-		for i := len(unsubscribes) - 1; i >= 0; i-- {
-			unsubscribes[i]()
-		}
-	}, nil
-}
-
-func (h *CommandHandler) Handle(ctx context.Context, message CommandMessage) error {
-	if h == nil {
-		return fmt.Errorf("connector command handler is not configured")
-	}
-	name := strings.TrimSpace(message.Name)
-	if !supportedCommand(name) {
-		if name == "" {
-			return fmt.Errorf("connector command name is required")
-		}
-		return fmt.Errorf("unknown connector command: %s", name)
-	}
-	envelope, err := decodeEnvelope(message.Data)
-	if err != nil {
-		return err
-	}
-	accountRecord, err := h.authorizeAccount(ctx, message.ClientID)
-	if err != nil {
-		return err
-	}
-	actorID := envelope.ActorID
-	if name != CommandActorCreate {
-		actor, err := h.authorizeActor(ctx, accountRecord.ID, envelope.ActorID, name == CommandActorDelete)
-		if err != nil {
-			return err
-		}
-		actorID = actor.ID
-	}
-
-	receipt := CommandReceipt{
-		AccountID: accountRecord.ID,
-		ClientID:  message.ClientID,
-		RequestID: envelope.RequestID,
-		Command:   name,
-		ActorID:   actorID,
-		Status:    CommandReceiptPending,
-		CreatedAt: h.now(),
-		UpdatedAt: h.now(),
-		ExpiresAt: h.now().Add(h.receiptTTL),
-	}
-	if h.receipts != nil {
-		existing, claimed, err := h.receipts.Claim(ctx, receipt)
-		if err != nil {
-			return fmt.Errorf("claim connector command receipt: %w", err)
-		}
-		if !claimed {
-			return h.republishReceipt(ctx, existing)
-		}
-	}
-
-	result, resultActorID, err := h.execute(ctx, name, accountRecord.ID, actorID, envelope.Data)
-	if err != nil {
-		code := "command_failed"
-		if h.logger != nil {
-			h.logger.Printf("connector: command execution failed account_id=%s client_id=%s actor_id=%s name=%s request_id=%s message_id=%s err=%v", accountRecord.ID, message.ClientID, actorID, name, envelope.RequestID, message.ID, err)
-		}
-		if h.receipts != nil {
-			if receiptErr := h.receipts.Fail(ctx, accountRecord.ID, envelope.RequestID, code, h.now()); receiptErr != nil {
-				return fmt.Errorf("record connector command failure after %v: %w", err, receiptErr)
-			}
-		}
-		if publishErr := h.publishFailed(ctx, accountRecord.ID, envelope.RequestID, actorID, name, code); publishErr != nil {
-			return fmt.Errorf("publish connector command failure after %v: %w", err, publishErr)
-		}
-		return err
-	}
-	if h.receipts != nil {
-		if err := h.receipts.Complete(ctx, accountRecord.ID, envelope.RequestID, resultActorID, result, h.now()); err != nil {
-			return fmt.Errorf("complete connector command receipt: %w", err)
-		}
-	}
-	if h.publisher != nil {
-		if name == CommandActorCreate {
-			created, ok := result.(ActorCreated)
-			if !ok {
-				return fmt.Errorf("actor.create returned unexpected result type %T", result)
-			}
-			if err := h.publisher.PublishActorCreated(ctx, accountRecord.ID, envelope.RequestID, created); err != nil {
-				return fmt.Errorf("publish actor.created event: %w", err)
-			}
-		}
-		if name == CommandActorUpdate {
-			updated, ok := result.(ActorUpdated)
-			if !ok {
-				return fmt.Errorf("actor.update returned unexpected result type %T", result)
-			}
-			if err := h.publisher.PublishActorUpdated(ctx, accountRecord.ID, envelope.RequestID, updated); err != nil {
-				return fmt.Errorf("publish actor.updated event: %w", err)
-			}
-		}
-		if name == CommandActorDelete {
-			deleted, ok := result.(ActorDeleted)
-			if !ok {
-				return fmt.Errorf("actor.delete returned unexpected result type %T", result)
-			}
-			if err := h.publisher.PublishActorDeleted(ctx, accountRecord.ID, envelope.RequestID, deleted); err != nil {
-				return fmt.Errorf("publish actor.deleted event: %w", err)
-			}
-		}
-		if err := h.publisher.PublishCommandSucceeded(ctx, accountRecord.ID, envelope.RequestID, resultActorID, name, result); err != nil {
-			return fmt.Errorf("publish connector command result: %w", err)
-		}
-	}
-	return nil
-}
-
-func (h *CommandHandler) authorizeAccount(ctx context.Context, clientID string) (*account.Account, error) {
-	clientID = strings.TrimSpace(clientID)
-	if clientID == "" {
-		return nil, fmt.Errorf("connector command clientId is required")
-	}
-	if h.accounts == nil {
-		return nil, fmt.Errorf("Salvia account lookup is not configured")
-	}
-	accountRecord, err := h.accounts.FindActiveByAblyClientID(ctx, clientID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve connector account: %w", err)
-	}
-	if !accountRecord.IsActive() {
-		return nil, fmt.Errorf("connector account is not active")
-	}
-	return accountRecord, nil
-}
-
-func (h *CommandHandler) authorizeActor(ctx context.Context, accountID, actorID string, includeDeleted bool) (*actors.Actor, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, fmt.Errorf("connector command actor_id is required")
-	}
-	if h.actors == nil {
-		return nil, fmt.Errorf("actor ownership lookup is not configured")
-	}
-	var actor *actors.Actor
-	var err error
-	if includeDeleted {
-		actor, err = h.actors.FindOwnedLocalByIDIncludingDeleted(ctx, accountID, actorID)
-	} else {
-		actor, err = h.actors.FindOwnedLocalByID(ctx, accountID, actorID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("authorize connector actor: %w", err)
-	}
-	if actor == nil {
-		return nil, fmt.Errorf("connector actor is not owned by account")
-	}
-	return actor, nil
-}
-
-func (h *CommandHandler) execute(ctx context.Context, name, accountID, actorID string, data any) (any, string, error) {
-	return ExecuteCommand(ctx, h.executor, name, accountID, actorID, data)
-}
-
 // ExecuteCommand validates and executes a user-facing operation independently
-// of its transport. Account and Actor authorization must be completed before
-// calling it; keeping those checks outside this function lets the legacy Ably
-// adapter and the REST API use their own authenticated identities.
+// of HTTP. Account and Actor authorization must be completed before calling it.
 func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, accountID, actorID string, data any) (any, string, error) {
 	if executor == nil {
 		return nil, actorID, fmt.Errorf("command executor is not configured")
@@ -910,42 +669,7 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 		result, err := executor.DeleteActor(ctx, accountID, ActorDeleteCommand{ActorID: actorID})
 		return result, actorID, err
 	default:
-		return nil, actorID, fmt.Errorf("unknown connector command: %s", name)
-	}
-}
-
-func (h *CommandHandler) republishReceipt(ctx context.Context, receipt *CommandReceipt) error {
-	if receipt == nil {
-		return fmt.Errorf("connector command receipt conflict without existing receipt")
-	}
-	switch receipt.Status {
-	case CommandReceiptCompleted:
-		if h.publisher == nil {
-			return nil
-		}
-		return h.publisher.PublishCommandSucceeded(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, receipt.Result)
-	case CommandReceiptFailed:
-		return h.publishFailed(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, receipt.ErrorCode)
-	case CommandReceiptPending:
-		return h.publishFailed(ctx, receipt.AccountID, receipt.RequestID, receipt.ActorID, receipt.Command, "command_in_progress")
-	default:
-		return fmt.Errorf("unsupported connector command receipt status: %s", receipt.Status)
-	}
-}
-
-func (h *CommandHandler) publishFailed(ctx context.Context, accountID, requestID, actorID, command, code string) error {
-	if h.publisher == nil {
-		return nil
-	}
-	return h.publisher.PublishCommandFailed(ctx, accountID, requestID, actorID, command, code)
-}
-
-func supportedCommand(name string) bool {
-	switch name {
-	case CommandFollowCreate, CommandFollowDelete, CommandFollowApprove, CommandFollowReject, CommandPostCreate, CommandPostDelete, CommandPollVote, CommandReactionCreate, CommandReactionDelete, CommandBlockCreate, CommandBlockDelete, CommandActorCreate, CommandActorUpdate, CommandActorDelete, CommandNotificationMarkRead:
-		return true
-	default:
-		return false
+		return nil, actorID, fmt.Errorf("unknown operation: %s", name)
 	}
 }
 
@@ -955,11 +679,11 @@ func requireEmptyCommandData(data any) error {
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("encode connector command data: %w", err)
+		return fmt.Errorf("encode command data: %w", err)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return fmt.Errorf("connector command data must be an object: %w", err)
+		return fmt.Errorf("command data must be an object: %w", err)
 	}
 	if len(fields) != 0 {
 		return fmt.Errorf("actor.delete data must be empty")
@@ -967,29 +691,13 @@ func requireEmptyCommandData(data any) error {
 	return nil
 }
 
-func decodeEnvelope(data any) (CommandEnvelope, error) {
-	var envelope CommandEnvelope
-	if err := decodeCommandData(data, &envelope); err != nil {
-		return CommandEnvelope{}, err
-	}
-	if envelope.Version != 1 {
-		return CommandEnvelope{}, fmt.Errorf("unsupported connector command version: %d", envelope.Version)
-	}
-	envelope.RequestID = strings.TrimSpace(envelope.RequestID)
-	envelope.ActorID = strings.TrimSpace(envelope.ActorID)
-	if envelope.RequestID == "" {
-		return CommandEnvelope{}, fmt.Errorf("connector command request_id is required")
-	}
-	return envelope, nil
-}
-
 func decodeCommandData(data any, out any) error {
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return fmt.Errorf("marshal connector command data: %w", err)
+		return fmt.Errorf("marshal command data: %w", err)
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("decode connector command data: %w", err)
+		return fmt.Errorf("decode command data: %w", err)
 	}
 	return nil
 }

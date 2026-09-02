@@ -71,6 +71,13 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
+	_, err = db.Collection("actor_settings").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "accountId", Value: 1}, {Key: "_id", Value: 1}},
+		Options: options.Index().SetName("uniq_actor_settings_account_actor").SetUnique(true),
+	})
+	if err != nil {
+		return err
+	}
 	_, err = db.Collection("actors").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{{Key: "uri", Value: 1}},
@@ -127,6 +134,14 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Keys:    bson.D{{Key: "quoteId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}},
 			Options: options.Index().SetName("idx_notes_quote_active_created_at"),
 		},
+		{
+			Keys:    bson.D{{Key: "visibility", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notes_visibility_active_cursor"),
+		},
+		{
+			Keys:    bson.D{{Key: "visibleUserUris", Value: 1}, {Key: "visibility", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notes_visible_users_cursor"),
+		},
 	})
 	if err != nil {
 		return err
@@ -152,6 +167,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		{
 			Keys:    bson.D{{Key: "actorId", Value: 1}, {Key: "createdAt", Value: -1}},
 			Options: options.Index().SetName("idx_poll_votes_actor_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "noteId", Value: 1}, {Key: "actorId", Value: 1}, {Key: "choice", Value: 1}},
+			Options: options.Index().SetName("idx_poll_votes_note_actor_choice"),
 		},
 	})
 	if err != nil {
@@ -272,6 +291,14 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 				SetName("idx_follows_followee_status_created_at"),
 		},
 		{
+			Keys:    bson.D{{Key: "followerId", Value: 1}, {Key: "status", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "_id", Value: 1}},
+			Options: options.Index().SetName("idx_follows_follower_status_active_cursor"),
+		},
+		{
+			Keys:    bson.D{{Key: "followeeId", Value: 1}, {Key: "status", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "_id", Value: 1}},
+			Options: options.Index().SetName("idx_follows_followee_status_active_cursor"),
+		},
+		{
 			Keys: bson.D{{Key: "followerHost", Value: 1}, {Key: "status", Value: 1}, {Key: "deletedAt", Value: 1}},
 			Options: options.Index().
 				SetName("idx_follows_follower_host_status_active"),
@@ -285,17 +312,17 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Collection("connector_command_receipts").Indexes().CreateMany(ctx, []mongo.IndexModel{
+	_, err = db.Collection("api_idempotency_receipts").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			Keys: bson.D{{Key: "accountId", Value: 1}, {Key: "requestId", Value: 1}},
+			Keys: bson.D{{Key: "accountId", Value: 1}, {Key: "key", Value: 1}},
 			Options: options.Index().
-				SetName("uniq_connector_receipts_account_request").
+				SetName("uniq_api_idempotency_account_key").
 				SetUnique(true),
 		},
 		{
 			Keys: bson.D{{Key: "expiresAt", Value: 1}},
 			Options: options.Index().
-				SetName("ttl_connector_receipts_expires_at").
+				SetName("ttl_api_idempotency_expires_at").
 				SetExpireAfterSeconds(0),
 		},
 	})
@@ -319,6 +346,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		{
 			Keys:    bson.D{{Key: "recipientAccountId", Value: 1}, {Key: "isRead", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
 			Options: options.Index().SetName("idx_notifications_account_read_created_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "recipientAccountId", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notifications_account_created_at"),
 		},
 		{
 			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "kind", Value: 1}, {Key: "remoteActivityId", Value: 1}},

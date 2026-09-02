@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -31,6 +32,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	"github.com/nexryai/rosmarinus/internal/queue"
+	"github.com/nexryai/rosmarinus/internal/realtime"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
 
@@ -1050,6 +1052,43 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}, nil)
 		return status == http.StatusNotFound
 	})
+
+	// Phase 24: subscribe through one Rosmarinus Redis broker and publish through
+	// another, verifying multi-process SSE fan-out reaches only the intended
+	// account and never crosses the per-account isolation boundary.
+	redisA := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer redisA.Close()
+	redisB := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer redisB.Close()
+	brokerA := realtime.NewRedisBroker(redisA)
+	brokerB := realtime.NewRedisBroker(redisB)
+	accountA, err := brokerA.Subscribe(ctx, "sse-account-a")
+	if err != nil {
+		t.Fatalf("subscribe first SSE account: %v", err)
+	}
+	defer accountA.Close()
+	accountB, err := brokerA.Subscribe(ctx, "sse-account-b")
+	if err != nil {
+		t.Fatalf("subscribe second SSE account: %v", err)
+	}
+	defer accountB.Close()
+	if err := brokerB.Publish(ctx, "sse-account-a", "projection.invalidated", ownedActor.ID, map[string]string{"resource": "timeline"}); err != nil {
+		t.Fatalf("publish cross-process SSE invalidation: %v", err)
+	}
+	select {
+	case payload := <-accountA.Channel():
+		var event realtime.Event
+		if err := json.Unmarshal(payload, &event); err != nil || event.Type != "projection.invalidated" || event.ActorID != ownedActor.ID {
+			t.Fatalf("unexpected SSE invalidation: event=%+v err=%v payload=%s", event, err, payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for cross-process SSE invalidation")
+	}
+	select {
+	case payload := <-accountB.Channel():
+		t.Fatalf("SSE event crossed account boundary: %s", payload)
+	case <-time.After(250 * time.Millisecond):
+	}
 }
 
 type misskeyClient struct {

@@ -96,16 +96,23 @@ Account
 
 - Use the versioned Rosmarinus REST API for all reads and mutations.
   Do not write federation or UI state directly to MongoDB.
+- Read routes that depend on visibility use an `actor_id` query parameter.
+  Supply the selected owned Actor and expect Rosmarinus to reject a missing,
+  suspended, deleted, or foreign Actor. Never use it as local authorization
+  evidence.
+- Expect top-level `version: 1` JSON envelopes. Follow opaque `next` cursors
+  without parsing or constructing them in the SPA.
 - Validate API responses at the client boundary and render structured error
   codes without exposing internal backend details.
 - Supply an idempotency key for retryable mutations when the endpoint requires
   it. A network timeout is ambiguous; reconcile canonical state before creating
   a new logical operation.
-- Connect only to authenticated Rosmarinus SSE. Events are scoped
-  to the current account and may name an Actor for efficient invalidation.
+- Connect only to `GET /api/v1/events`, Rosmarinus's authenticated SSE route.
+  Events are scoped to the current account and may name an Actor for efficient
+  invalidation.
 - Treat realtime events as refresh hints. They may be duplicated or missed;
-  reconnect by re-reading the relevant API views while preserving useful UI
-  state such as timeline position.
+  no durable event replay is available. Reconnect by re-reading the relevant
+  API views while preserving useful UI state such as timeline position.
 - Redis Pub/Sub is internal to Rosmarinus. Do not install a Redis client in the
   SPA or encode Redis channel names into browser code.
 

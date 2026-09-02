@@ -115,6 +115,11 @@ and every Actor mutation is authorized again by Rosmarinus.
 
 ## Phase 4: Add REST Client And SSE Reconciliation
 
+Backend checkpoint: Rosmarinus now exposes the versioned passkey/session,
+Actor, timeline, Note, social mutation, notification, profile, emoji, instance,
+settings, and `GET /api/v1/events` contracts documented in
+`docs/salvia-integration.md`. The unchecked work below is SPA implementation.
+
 - [ ] Centralize versioned REST calls, runtime response validation, structured
       error handling, cancellation, and session-loss handling.
 - [ ] Generate stable idempotency keys for retryable mutations. Reuse a key for

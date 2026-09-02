@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - "internal/activitypub/**"
+      - "internal/api/**"
+      - "internal/auth/**"
+      - "internal/idempotency/**"
+      - "internal/realtime/**"
       - "internal/domain/**"
       - "internal/http/**"
       - "internal/queue/**"
@@ -17,6 +21,10 @@ on:
   pull_request:
     paths:
       - "internal/activitypub/**"
+      - "internal/api/**"
+      - "internal/auth/**"
+      - "internal/idempotency/**"
+      - "internal/realtime/**"
       - "internal/domain/**"
       - "internal/http/**"
       - "internal/queue/**"

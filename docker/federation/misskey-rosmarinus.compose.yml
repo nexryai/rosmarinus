@@ -78,8 +78,6 @@ services:
       ROSMARINUS_MONGO_DATABASE: rosmarinus_federation
       ROSMARINUS_MONGO_USERNAME: rosmarinus
       ROSMARINUS_MONGO_PASSWORD: rosmarinus-fixture-only
-      SALVIA_MONGO_USERNAME: salvia
-      SALVIA_MONGO_PASSWORD: salvia-fixture-only
     volumes:
       - type: bind
         source: ../../../../docker/mongo/init-users.js

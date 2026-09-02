@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log"
 	"mime"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	appauth "github.com/nexryai/rosmarinus/internal/auth"
 )
@@ -30,15 +33,29 @@ type InstallationStore interface {
 	HasActive(context.Context) (bool, error)
 }
 
+type AuthRateLimiter interface {
+	Allow(context.Context, string, string, int, time.Duration) (bool, time.Duration, error)
+}
+
 type AuthHandler struct {
 	passkeys     PasskeyFlow
 	sessions     SessionController
 	installation InstallationStore
 	logger       *log.Logger
+	limiter      AuthRateLimiter
+	rateLimit    int
+	rateWindow   time.Duration
 }
 
 func NewAuthHandler(passkeys PasskeyFlow, sessions SessionController, installation InstallationStore, logger *log.Logger) http.Handler {
-	return &AuthHandler{passkeys: passkeys, sessions: sessions, installation: installation, logger: logger}
+	return NewAuthHandlerWithRateLimit(passkeys, sessions, installation, nil, 0, 0, logger)
+}
+
+func NewAuthHandlerWithRateLimit(passkeys PasskeyFlow, sessions SessionController, installation InstallationStore, limiter AuthRateLimiter, limit int, window time.Duration, logger *log.Logger) http.Handler {
+	return &AuthHandler{
+		passkeys: passkeys, sessions: sessions, installation: installation,
+		limiter: limiter, rateLimit: limit, rateWindow: window, logger: logger,
+	}
 }
 
 func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -49,18 +66,58 @@ func (h *AuthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/api/v1/auth/setup" && r.Method == http.MethodGet:
 		h.setupStatus(w, r)
 	case path == "/api/v1/auth/setup/start" && r.Method == http.MethodPost:
+		if !h.allowAuthenticationAttempt(w, r, "setup.start") {
+			return
+		}
 		h.beginSetup(w, r)
 	case path == "/api/v1/auth/setup/finish" && r.Method == http.MethodPost:
+		if !h.allowAuthenticationAttempt(w, r, "setup.finish") {
+			return
+		}
 		h.finishSetup(w, r)
 	case path == "/api/v1/auth/login/start" && r.Method == http.MethodPost:
+		if !h.allowAuthenticationAttempt(w, r, "login.start") {
+			return
+		}
 		h.beginLogin(w, r)
 	case path == "/api/v1/auth/login/finish" && r.Method == http.MethodPost:
+		if !h.allowAuthenticationAttempt(w, r, "login.finish") {
+			return
+		}
 		h.finishLogin(w, r)
 	case path == "/api/v1/auth/logout" && r.Method == http.MethodPost:
 		h.logout(w, r)
 	default:
 		writeAPIError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
+}
+
+func (h *AuthHandler) allowAuthenticationAttempt(w http.ResponseWriter, r *http.Request, scope string) bool {
+	if h.limiter == nil {
+		return true
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil || host == "" {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	if host == "" {
+		host = "unknown"
+	}
+	allowed, retryAfter, err := h.limiter.Allow(r.Context(), scope, host, h.rateLimit, h.rateWindow)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("check authentication rate limit: %w", err))
+		return false
+	}
+	if allowed {
+		return true
+	}
+	seconds := int64((retryAfter + time.Second - 1) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+	writeAPIError(w, http.StatusTooManyRequests, "rate_limited", "too many authentication attempts")
+	return false
 }
 
 func (h *AuthHandler) setupStatus(w http.ResponseWriter, r *http.Request) {

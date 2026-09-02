@@ -5,25 +5,26 @@
 `MONGO_URI` and `MONGO_DATABASE` select Rosmarinus's durable federation store.
 Startup requires a writable primary and bootstraps indexes only for
 Rosmarinus-owned collections. Use the collection-scoped `rosmarinusService`
-role documented in `salvia-integration.md`; do not grant Rosmarinus index or
-write privileges on `salvia_accounts`. Back up the database consistently with
-the deployment's normal MongoDB snapshot or replica-set procedure because
-Actors, signing keys, command receipts, and federation relationships are not
-reconstructible from Redis.
+role documented in `salvia-integration.md`; Salvia has no MongoDB role. Back up
+the database consistently with the deployment's normal MongoDB snapshot or
+replica-set procedure because Actors, signing keys, API idempotency receipts,
+and federation relationships are not reconstructible from Redis.
 
 `REDIS_ADDR`, `REDIS_PASSWORD`, and `REDIS_DB` select the Asynq queue, AP locks,
-rate-limit buckets, and bounded caches. Use a dedicated Redis database or
-instance and enable persistence suitable for queued federation work. Losing
-Redis may discard pending deliveries, but MongoDB receipts and unique indexes
-still prevent replayed inbound activities from duplicating completed domain
-side effects. Never use broad key deletion or database flushes as routine queue
-maintenance; use the inspection and promotion commands below.
+rate-limit buckets, bounded caches, and local SSE Pub/Sub fan-out. Use a
+dedicated Redis database or instance and enable persistence suitable for queued
+federation work. Pub/Sub is deliberately best-effort: losing a browser event
+requires REST reconciliation, not event replay. Losing Redis may also discard
+pending deliveries, but MongoDB receipts and unique indexes still prevent
+replayed inbound activities from duplicating completed domain side effects.
+Never use broad key deletion or database flushes as routine queue maintenance;
+use the inspection and promotion commands below.
 
 Rosmarinus verifies MongoDB and Redis connectivity before serving traffic.
 Shutdown allows up to 30 seconds for workers and network servers to stop. The
-TTL indexes on inbox and command receipts are intentional bounded retention;
-Actor, Note, relationship, and signing-key data require normal deployment
-backups rather than TTL cleanup.
+TTL indexes on inbox and API idempotency receipts provide intentional bounded
+retention. Actor, Note, relationship, and signing-key data require normal
+deployment backups rather than TTL cleanup.
 
 ## Queue capacity
 
@@ -58,7 +59,28 @@ Handler mutations still use their own unique keys because a crash can happen
 after a mutation but before its receipt is completed. If processing fails, the
 worker releases only its token-matched lease so an Asynq retry can safely
 resume. This receipt collection is internal to Rosmarinus and does not change
-the Salvia shared-data or Ably contracts.
+the Salvia REST or SSE contract.
+
+## Salvia authentication, REST, and SSE
+
+Passkey and session policy is configured with `SESSION_COOKIE_NAME`,
+`SESSION_TTL`, `SESSION_COOKIE_SECURE`, `WEBAUTHN_RP_ID`,
+`WEBAUTHN_RP_NAME`, `WEBAUTHN_ALLOWED_ORIGINS`, and
+`WEBAUTHN_CEREMONY_TTL`. `AUTH_RATE_LIMIT` and `AUTH_RATE_WINDOW` apply a
+Redis-backed fixed-window limit to setup and login ceremonies.
+`API_IDEMPOTENCY_TTL` controls completed REST mutation receipt retention.
+
+Serve Salvia under the same HTTPS origin as Rosmarinus. Browsers use `/api/v1`
+for REST and `GET /api/v1/events` for authenticated SSE; they never receive
+Redis credentials or channel names. The SSE stream is an invalidation channel,
+not a durable log. Clients re-read REST views after reconnect or an ambiguous
+mutation result.
+
+The real-Misskey federation workflow includes Phase 24, which publishes an
+account-scoped event through one Redis broker instance and verifies delivery to
+the matching subscription on another while a different account receives
+nothing. Run that workflow when changing Redis configuration, realtime event
+fan-out, or the MongoDB role bootstrap.
 
 ## Outbound network safety
 

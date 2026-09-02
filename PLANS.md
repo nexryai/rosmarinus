@@ -540,79 +540,74 @@ Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
   +-----------------------> Redis (queues, locks, rate limits, local Pub/Sub)
 ```
 
-- [ ] Remove Ably dependencies, credentials, channels, subscribers, publishers,
+- [x] Remove Ably dependencies, credentials, channels, subscribers, publishers,
       and deployment configuration.
-- [ ] Replace Connector commands with versioned authenticated REST endpoints.
+- [x] Replace Connector commands with versioned authenticated REST endpoints.
       Preserve the existing domain services and idempotency guarantees where a
       retry can duplicate a federation side effect.
-- [ ] Add an authenticated server-to-browser SSE stream. Publish only opaque
+- [x] Add an authenticated server-to-browser SSE stream. Publish only opaque
       account/Actor-scoped invalidation events through Redis Pub/Sub; each
       Rosmarinus instance re-authorizes its connected clients and reads durable
       state from MongoDB.
-- [ ] Never expose Redis credentials, channel access, or raw MongoDB documents
+- [x] Never expose Redis credentials, channel access, or raw MongoDB documents
       to the SPA. Redis Pub/Sub is best-effort and local to the deployment;
       reconnect always reconciles through the REST API.
-- [ ] Delete `connector_command_receipts` after equivalent HTTP idempotency has
+- [x] Delete `connector_command_receipts` after equivalent HTTP idempotency has
       migrated to a transport-neutral receipt collection or endpoint-specific
       idempotency mechanism.
 
 ### Passkey Authentication And Sessions
 
-- [ ] Implement one-time initial administrator setup when no account exists;
+- [x] Implement one-time initial administrator setup when no account exists;
       close public registration after the first account is created.
-- [ ] Support WebAuthn/passkeys only. Store credentials, short-lived single-use
+- [x] Support WebAuthn/passkeys only. Store credentials, short-lived single-use
       challenges, and revocable sessions in Rosmarinus-owned MongoDB
       collections.
-- [ ] Validate RP ID, expected origins, ceremony type, challenge expiry and
+- [x] Validate RP ID, expected origins, ceremony type, challenge expiry and
       consumption, user verification, signatures, and credential counters in
       the Go backend.
-- [ ] Use secure, HTTP-only, same-site session cookies; rotate sessions after
+- [x] Use secure, HTTP-only, same-site session cookies; rotate sessions after
       authentication and reject suspended or deleted accounts on every
       state-changing REST request and SSE connection.
-- [ ] Protect cookie-authenticated mutations against CSRF and apply endpoint-
+- [x] Protect cookie-authenticated mutations against CSRF and apply endpoint-
       appropriate rate limits through Redis.
 
 ### REST API And Multiple Actors
 
-- [ ] Keep accounts and ActivityPub Actors distinct. One active account may own
+- [x] Keep accounts and ActivityPub Actors distinct. One active account may own
       any number of local Actors; each user-managed local Actor has exactly one
       `ownerAccountId`.
 - [x] Retain `FindOwnedLocalByID(ctx, accountID, actorID)` as the authorization
       boundary for Actor-scoped domain operations. The SPA-selected Actor is
       input, never proof of ownership.
-- [ ] Provide browser-safe REST representations and stable pagination for
+- [x] Provide browser-safe REST representations and stable pagination for
       Actors, timelines, notes, notifications, follows, reactions, polls,
       instances, and settings. Do not expose unrestricted collection-query
       endpoints.
-- [ ] Add REST endpoints for the already implemented Actor, post, follow,
+- [x] Add REST endpoints for the already implemented Actor, post, follow,
       reaction, block, poll, and notification domain operations.
-- [ ] Return structured, versioned errors and use conventional HTTP status
+- [x] Return structured, versioned errors and use conventional HTTP status
       codes. Accept an idempotency key for mutations that may be retried after
       an ambiguous network result.
-- [ ] Scope SSE events and payloads to the authenticated account and,
+- [x] Scope SSE events and payloads to the authenticated account and,
       where applicable, include `actor_id` so one session supports multiple
       Actors.
 
-### Legacy Ably Connector Migration Inventory
+### Completed Ably Connector Migration
 
-The implemented Connector already provides valuable transport-independent
-domain behavior: multiple Actors per account, ownership-aware Actor lookup,
-Actor/profile/post/follow/reaction/block/poll/notification operations,
-idempotent receipt claiming, account lifecycle handling, and durable
-notifications. Preserve those services and tests while replacing the Ably
-adapters and Salvia-owned account projection.
-
-Do not implement any remaining Ably token, channel, credential-splitting, or
-browser-subscription work. Remove the SDK and configuration only after the HTTP
-REST API and SSE have feature parity and migration tests pass.
+The transport-independent operation DTOs and domain behavior remain in
+`internal/connector` for compatibility with the federation worker. Ably
+publishers/subscribers, channel code, SDKs, environment variables, legacy
+command receipts, and the Salvia-owned account projection have been removed.
+HTTP idempotency now uses `api_idempotency_receipts`.
 
 ## Legacy Shared MongoDB Boundary
 
 This section records the former two-backend ownership model for migration.
 Under the target architecture Rosmarinus is the only backend and owns every
-runtime collection. Salvia has no MongoDB credentials. Existing `salvia_*`
-documents must be migrated or adopted by Rosmarinus before the legacy database
-roles and cross-service projections are removed.
+runtime collection. Salvia has no MongoDB credentials. The current deployment
+bootstrap no longer creates legacy roles or cross-service projections, so
+existing `salvia_*` documents must be migrated offline before deploying it.
 
 The former split ownership used `salvia_*` collections, separate MongoDB roles,
 and a read-only cross-service account projection. The migration must preserve
@@ -625,13 +620,12 @@ collection should be added.
 
 ### Core Collections
 
-- [ ] `accounts`
-- [ ] `passkey_credentials`
-- [ ] `webauthn_challenges`
-- [ ] `sessions`
-- [ ] `ui_settings`
-- [ ] `actor_settings`
-- [ ] `actors`
+- [x] `accounts` (passkey credentials are embedded)
+- [x] `webauthn_challenges`
+- [x] `sessions`
+- [x] `ui_settings`
+- [x] `actor_settings`
+- [x] `actors`
 - [ ] `actor_profiles`
 - [ ] `actor_public_keys`
 - [x] `notes`
@@ -645,18 +639,18 @@ collection should be added.
 - [x] `instances`
 - [x] `abuse_reports`
 - [x] `notifications`
-- [x] `connector_command_receipts` (legacy; migrate or remove with Ably)
+- [x] `api_idempotency_receipts`
 - [x] No account-reconciliation checkpoint collection is required by the
       current periodic full-scan implementation.
 
 ### Required Indexes
 
-- [ ] `accounts`: unique normalized username and lifecycle lookup indexes
-- [ ] `passkey_credentials`: unique credential ID and account lookup
-- [ ] `webauthn_challenges`: unique challenge ID and TTL `expiresAt`
-- [ ] `sessions`: unique opaque session-token digest, account lookup, and TTL
+- [x] `accounts`: unique normalized username, WebAuthn ID, bootstrap slot, and
+      embedded credential ID indexes
+- [x] `webauthn_challenges`: TTL `expiresAt`
+- [x] `sessions`: unique opaque session-token digest, account lookup, and TTL
       `expiresAt`
-- [ ] `actor_settings`: unique `{ accountId, actorId }`
+- [x] `actor_settings`: unique `{ accountId, actorId }`
 - [x] `actors`: unique `uri`
 - [x] `actors`: unique sparse `{ usernameLower, host }`
 - [x] `actors`: basic `{ ownerAccountId, isSuspended }` for listing and
@@ -688,8 +682,8 @@ collection should be added.
 - [x] `emojis`: unique `{ host, name }` and sparse `uri`
 - [x] `instances`: unique `host`, suspension/update lookup, and sparse metadata
       refresh timestamp
-- [x] `connector_command_receipts`: unique `{ accountId, requestId }`
-- [x] `connector_command_receipts`: TTL `expiresAt`
+- [x] `api_idempotency_receipts`: unique `{ accountId, requestId }`
+- [x] `api_idempotency_receipts`: TTL `expiresAt`
 
 ## Go Package Plan
 
@@ -697,11 +691,11 @@ collection should be added.
 - [ ] `internal/config`: config loading and validation.
 - [ ] `internal/app`: dependency wiring.
 - [ ] `internal/http`: server setup, middleware, route registration.
-- [ ] `internal/auth`: passkey ceremonies, session lifecycle, CSRF protection,
+- [x] `internal/auth`: passkey ceremonies, session lifecycle, CSRF protection,
       and authenticated-account middleware.
-- [ ] `internal/api`: versioned Salvia REST endpoints, browser-safe
+- [x] `internal/api`: versioned Salvia REST endpoints, browser-safe
       projections, pagination, and structured errors.
-- [ ] `internal/realtime`: authenticated SSE streams plus injectable Redis
+- [x] `internal/realtime`: authenticated SSE streams plus injectable Redis
       Pub/Sub fan-out.
 - [ ] `internal/activitypub/types`: AP object structs and helpers.
 - [x] `internal/activitypub/signature`: HTTP signatures, digest, signed GET/POST.
@@ -716,10 +710,9 @@ collection should be added.
 - [ ] `internal/domain`: actor, note, follow, reaction, emoji, media, instance
       domain services.
 - [ ] `internal/store/mongo`: MongoDB repositories and index setup.
-- [x] `internal/account`: legacy read-only Salvia account projection; replace
-      it with Rosmarinus-owned account, passkey, and session services.
-- [x] `internal/connector`: legacy Ably adapter; remove it after its domain
-      operations and idempotency behavior are available through `internal/api`.
+- [x] `internal/account`: Rosmarinus-owned account model.
+- [x] `internal/connector`: transport-neutral operation/event DTOs retained by
+      the API and federation worker; all Ably adapters are removed.
 - [x] `internal/queue`: Redis queue interfaces and implementation.
 - [ ] `internal/cache`: Redis-backed caches and locks.
 - [x] `internal/mfm`: current-Misskey-compatible HTML-to-MFM conversion layer.
@@ -915,15 +908,15 @@ by Phase 8.
       listing and the existing Actor/post/follow/reaction/block/poll/
       notification mutations, with CSRF, idempotency, ownership checks, and
       browser-safe Actor projections.
-- [ ] Add versioned authenticated REST endpoints for queries and all
+- [x] Add versioned authenticated REST endpoints for queries and all
       existing user-facing domain mutations, with ownership checks and focused
       authorization tests.
-- [ ] Add authenticated SSE and Redis Pub/Sub fan-out;
+- [x] Add authenticated SSE and Redis Pub/Sub fan-out;
       verify account isolation, reconnect reconciliation, and multi-instance
       delivery without treating Pub/Sub as durable storage.
-- [ ] Remove Ably and the Connector transport after endpoint parity is tested.
-      Remove obsolete service-specific MongoDB roles and configuration only
-      after data migration is complete.
+- [x] Remove Ably and the Connector transport after endpoint parity is tested.
+      The obsolete service-specific MongoDB role and configuration are removed;
+      any legacy Salvia data requires an offline migration before cutover.
 - [ ] Build `./salvia` as a React SPA, carrying forward the passkey-only,
       multi-Actor, simplified Misskey-inspired product design from
       `./salvia/salvia-old` without carrying forward Next.js or server code.
@@ -933,7 +926,7 @@ by Phase 8.
 - [ ] Add integration tests for initial setup, passkey login, session expiry,
       cross-account Actor denial, multi-Actor switching, mutation idempotency,
       event isolation, and state recovery after a missed Pub/Sub message.
-- [ ] Update operations, container, environment-variable, and CI documentation;
+- [x] Update operations, container, environment-variable, and CI documentation;
       ensure no Ably configuration or frontend secret remains.
 
 ## Federation Compatibility Test Adoption Status

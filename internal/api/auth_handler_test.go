@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	appauth "github.com/nexryai/rosmarinus/internal/auth"
 )
@@ -63,13 +64,25 @@ type fakeInstallation struct {
 	err    error
 }
 
+type fakeAuthLimiter struct {
+	allowed    bool
+	scope      string
+	identity   string
+	retryAfter time.Duration
+}
+
+func (l *fakeAuthLimiter) Allow(_ context.Context, scope, identity string, _ int, _ time.Duration) (bool, time.Duration, error) {
+	l.scope, l.identity = scope, identity
+	return l.allowed, l.retryAfter, nil
+}
+
 func (s fakeInstallation) HasActive(context.Context) (bool, error) { return s.active, s.err }
 
 func TestAuthHandlerReportsSetupStatus(t *testing.T) {
 	handler := NewAuthHandler(&fakePasskeyFlow{}, &fakeSessionController{}, fakeInstallation{}, nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/auth/setup", nil))
-	if recorder.Code != http.StatusOK || recorder.Body.String() != "{\"data\":{\"setup_required\":true}}\n" {
+	if recorder.Code != http.StatusOK || recorder.Body.String() != "{\"data\":{\"setup_required\":true},\"version\":1}\n" {
 		t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -136,6 +149,22 @@ func TestAuthHandlerHidesPasskeyErrors(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusUnauthorized || bytesContains(recorder.Body.String(), "private credential") {
 		t.Fatalf("response=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAuthHandlerRateLimitsByEndpointAndRemoteAddress(t *testing.T) {
+	limiter := &fakeAuthLimiter{retryAfter: 1500 * time.Millisecond}
+	handler := NewAuthHandlerWithRateLimit(&fakePasskeyFlow{}, &fakeSessionController{}, fakeInstallation{}, limiter, 20, time.Minute, nil)
+	recorder := httptest.NewRecorder()
+	request := jsonRequest(http.MethodPost, "/api/v1/auth/login/start", `{}`)
+	request.RemoteAddr = "192.0.2.10:12345"
+	handler.ServeHTTP(recorder, request)
+	assertError(t, recorder, http.StatusTooManyRequests, "rate_limited")
+	if limiter.scope != "login.start" || limiter.identity != "192.0.2.10" {
+		t.Fatalf("rate-limit scope=%q identity=%q", limiter.scope, limiter.identity)
+	}
+	if recorder.Header().Get("Retry-After") != "2" {
+		t.Fatalf("Retry-After = %q", recorder.Header().Get("Retry-After"))
 	}
 }
 

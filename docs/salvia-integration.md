@@ -45,17 +45,16 @@ Salvia has no MongoDB user and no Redis credentials. It receives only
 browser-safe projections through Rosmarinus APIs and must not depend on BSON
 shapes as a frontend contract.
 
-During the legacy-role transition, the `rosmarinusService` MongoDB role already
-has read/write/index privileges for `accounts`, `sessions`, and
-`webauthn_challenges`. The legacy `salviaService` role receives no access to
-those collections.
+The deployment bootstrap grants only the `rosmarinusService` MongoDB role.
+Rosmarinus owns `accounts` with embedded passkey credentials,
+`webauthn_challenges`, `sessions`, `ui_settings`, `actor_settings`, and
+`api_idempotency_receipts`; no Salvia database role is created.
 
-The legacy `salvia_accounts`, `salvia_sessions`, `salvia_ui_settings`,
-`salvia_actor_settings`, and `connector_command_receipts` collections require
-an explicit migration decision before removal. Preserve stable account IDs
-during migration so existing Actor `ownerAccountId` values do not change.
-Retire the old cross-service MongoDB roles only after migration has been
-verified and rolled out.
+Rosmarinus does not read legacy `salvia_*` collections at runtime. A deployment
+that contains legacy account or settings data must migrate it offline before
+cutover. Preserve stable account IDs so existing Actor `ownerAccountId` values
+do not change. Legacy sessions are not accepted by the integrated backend and
+users authenticate again with a migrated passkey credential.
 
 ## Passkey-Only Authentication
 
@@ -116,10 +115,11 @@ SPA never edits Actor state directly.
 
 ## REST API
 
-The REST API is versioned independently of ActivityPub. Its concrete
-route and schema inventory must be finalized before implementation, using
-`/api/v1` as the default namespace. It returns JSON projections designed for
-the SPA, not raw MongoDB documents or a public Misskey-compatible API.
+The REST API is versioned independently of ActivityPub under `/api/v1`. It
+returns JSON projections designed for the SPA, not raw MongoDB documents or a
+public Misskey-compatible API. JSON responses contain top-level `version: 1`;
+successful resource responses use `data`, and paginated responses also use an
+opaque `next` cursor.
 
 The first REST milestone must cover:
 
@@ -143,7 +143,7 @@ The first REST milestone must cover:
 | `POST` | `/api/v1/auth/login/start` | Create discoverable passkey assertion options |
 | `POST` | `/api/v1/auth/login/finish` | Consume and verify the assertion and create a session |
 | `POST` | `/api/v1/auth/logout` | Revoke the current session and expire its cookie |
-| `GET` | `/api/v1/session` | Return the authenticated account ID and CSRF token |
+| `GET` | `/api/v1/session` | Return the authenticated account projection and CSRF token |
 
 The two finish endpoints receive the standard WebAuthn credential JSON body
 and require `X-WebAuthn-Ceremony-ID` from their matching start response.
@@ -174,6 +174,41 @@ authenticated account; reusing one for a different operation or Actor returns
 supply account ownership. Actor responses explicitly omit owner IDs, public
 key material, private keys, inboxes, and internal delivery state.
 
+### Implemented read and settings endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/timelines/public?actor_id={viewer}` | Public timeline filtered for the selected owned Actor |
+| `GET` | `/api/v1/timelines/home?actor_id={viewer}` | Home timeline for the selected owned Actor |
+| `GET` | `/api/v1/notes/{noteId}?actor_id={viewer}` | Visibility-checked Note detail with reply/quote/renote projections |
+| `GET` | `/api/v1/notes/{noteId}/thread?actor_id={viewer}` | Visibility-checked direct replies |
+| `GET` | `/api/v1/profiles/{actorId}?actor_id={viewer}` | Safe local or remote Actor profile |
+| `GET` | `/api/v1/profiles/{actorId}/followers?actor_id={viewer}` | Block-filtered followers |
+| `GET` | `/api/v1/profiles/{actorId}/following?actor_id={viewer}` | Block-filtered following list |
+| `GET` | `/api/v1/actors/{actorId}/followers` | Followers of an owned Actor |
+| `GET` | `/api/v1/actors/{actorId}/following` | Actors followed by an owned Actor |
+| `GET` | `/api/v1/actors/{actorId}/follow-requests` | Pending requests for an owned Actor |
+| `GET` | `/api/v1/actors/{actorId}/notifications` | Actor-scoped notifications |
+| `GET` | `/api/v1/notifications` | Account-scoped notifications |
+| `GET` | `/api/v1/emojis` | Local custom emoji catalog |
+| `GET` | `/api/v1/instance` | Browser-safe instance metadata |
+| `GET`, `PATCH` | `/api/v1/settings` | Account UI settings |
+| `GET`, `PATCH` | `/api/v1/actors/{actorId}/settings` | Per-Actor UI and compose defaults |
+
+`actor_id` on read routes is the viewing identity. It is required and must be
+an active local Actor owned by the authenticated account; it is never accepted
+as proof of ownership. Note queries enforce visibility and bilateral blocks
+before projection. The public and home timelines, Note threads, and
+notifications use opaque created-time/ID cursors. Connection and emoji cursors
+are likewise opaque to the SPA even where their current representation is a
+stable record ID or name.
+
+Account settings expose `theme`, `reduce_motion`, `compact_mode`, and
+`selected_actor_id`. Supported themes are `yellow`, `light`, `dark`, and
+`system`; yellow is the default. Actor settings expose `default_visibility`,
+`show_content_warning`, `display_order`, `color`, and `pinned`. A selected
+Actor and every Actor settings request are ownership-checked server-side.
+
 Use stable cursor pagination with deterministic tie-breakers. Enforce Note
 visibility, block state, account ownership, and Actor ownership in backend
 queries before projection. In particular, `specified` Note visibility is based
@@ -199,9 +234,11 @@ and versioned when compatibility cannot be preserved.
 
 ## Authenticated SSE
 
-Rosmarinus exposes a same-origin, session-authenticated Server-Sent Events
-(SSE) stream for server-to-browser updates. Browser requests and mutations use
-REST; WebSocket is not part of this integration contract.
+Rosmarinus exposes `GET /api/v1/events` as a same-origin,
+session-authenticated Server-Sent Events (SSE) stream for server-to-browser
+updates. Browser requests and mutations use REST; WebSocket is not part of
+this integration contract. The stream does not provide durable replay and
+ignores `Last-Event-ID`; reconnecting clients reload canonical REST views.
 
 Events use a small versioned envelope:
 
@@ -255,33 +292,34 @@ URLs as untrusted.
 
 ## Runtime Configuration
 
-The integrated target removes all `ABLY_*` and legacy Connector channel
-variables. Rosmarinus configuration must add environment-backed values for:
+The integrated backend has no `ABLY_*` or legacy Connector channel variables.
+Authentication and API behavior use these environment-backed values:
 
-- WebAuthn RP ID, RP display name, and allowed origins;
-- session cookie name, lifetime, signing/encryption material if required, and
-  secure-cookie policy;
-- challenge/session retention and authentication rate limits;
-- REST API and SSE timeouts/limits; and
-- internal Redis Pub/Sub namespace and subscriber buffer limits.
+- `SESSION_COOKIE_NAME`, `SESSION_TTL`, and `SESSION_COOKIE_SECURE`;
+- `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`,
+  `WEBAUTHN_ALLOWED_ORIGINS`, and `WEBAUTHN_CEREMONY_TTL`;
+- `AUTH_RATE_LIMIT` and `AUTH_RATE_WINDOW`; and
+- `API_IDEMPOTENCY_TTL`.
 
-Exact variable names are finalized with implementation. Defaults must be safe,
-secrets must fail closed when missing, and no secret may enter the SPA bundle.
+`REDIS_ADDR`, `REDIS_PASSWORD`, and `REDIS_DB` configure queues, locks, rate
+limits, caches, and internal Pub/Sub. Pub/Sub channel derivation and subscriber
+buffer sizes are backend implementation details, not deployment or browser
+contracts. Defaults must be safe, secrets must fail closed when missing, and
+no secret may enter the SPA bundle.
 
 ## Migration And Verification
 
-1. Add Rosmarinus-owned account/passkey/session schemas and indexes.
-2. Migrate stable account identity and Actor ownership references from legacy
-   Salvia collections, with rollback-safe validation before cutover.
-3. Implement and test passkey/session REST endpoints, application REST
-   endpoints, and authenticated SSE while legacy Connector traffic is still
-   isolated.
+1. Rosmarinus-owned account/passkey/session/settings/idempotency schemas and
+   indexes are implemented for fresh deployments.
+2. The versioned REST API, passkey/session endpoints, authenticated SSE, and
+   Redis Pub/Sub fan-out are implemented; Ably code, SDKs, configuration, and
+   cross-service MongoDB roles have been removed.
+3. Deployments with legacy Salvia data must migrate stable account IDs,
+   passkeys, settings, and Actor ownership references offline before cutover.
 4. Move the React SPA to the HTTP/event contracts and verify feature parity for
-   every existing domain command.
-5. Disable and remove Ably subscribers/publishers, SDKs, environment variables,
-   command receipts that are no longer needed, and cross-service MongoDB roles.
-6. Remove the Next.js deployment after the static SPA and integrated backend
-   pass end-to-end, security, and federation tests.
+   every user-facing workflow.
+5. Remove the old Next.js deployment only after the static SPA and integrated
+   backend pass end-to-end, security, and federation tests.
 
 Required negative tests include concurrent initial setup, expired/replayed
 WebAuthn challenges, invalid origin/RP ID, stolen/expired sessions, CSRF,

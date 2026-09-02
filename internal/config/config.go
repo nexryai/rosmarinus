@@ -41,18 +41,11 @@ type Config struct {
 	WebAuthnRPName      string
 	WebAuthnOrigins     []string
 	WebAuthnCeremonyTTL time.Duration
+	AuthRateLimit       int
+	AuthRateWindow      time.Duration
 
-	AblyServiceAPIKey                 string
-	AblyCommandSubscribeAPIKey        string
-	AblyAccountEventPublishAPIKey     string
-	AblyAccountControlSubscribeAPIKey string
-	ConnectorCommandChannel           string
-	ConnectorAccountEventNamespace    string
-	ConnectorAccountControlChannel    string
-	SalviaAccountCollection           string
-	ConnectorReceiptTTL               time.Duration
-	ConnectorAccountReconcileInterval time.Duration
-	InboxActivityReceiptTTL           time.Duration
+	APIIdempotencyTTL       time.Duration
+	InboxActivityReceiptTTL time.Duration
 
 	RunHTTP      bool
 	RunWorkers   bool
@@ -83,37 +76,30 @@ func LoadFromEnv() (Config, error) {
 
 func Load(lookup LookupFunc) (Config, error) {
 	cfg := Config{
-		Host:                              get(lookup, "HOST", "localhost:3000"),
-		PublicURL:                         get(lookup, "PUBLIC_URL", "http://localhost:3000"),
-		HTTPAddr:                          get(lookup, "HTTP_ADDR", ":3000"),
-		LocalActorUsername:                get(lookup, "LOCAL_ACTOR_USERNAME", ""),
-		LocalActorID:                      get(lookup, "LOCAL_ACTOR_ID", ""),
-		LocalActorDisplayName:             get(lookup, "LOCAL_ACTOR_DISPLAY_NAME", ""),
-		LocalActorType:                    get(lookup, "LOCAL_ACTOR_TYPE", "Service"),
-		MongoURI:                          get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
-		MongoDatabase:                     get(lookup, "MONGO_DATABASE", "rosmarinus"),
-		RedisAddr:                         get(lookup, "REDIS_ADDR", "localhost:6379"),
-		RedisPassword:                     get(lookup, "REDIS_PASSWORD", ""),
-		SessionCookieName:                 get(lookup, "SESSION_COOKIE_NAME", "rosmarinus_session"),
-		SessionTTL:                        getDuration(lookup, "SESSION_TTL", 30*24*time.Hour),
-		WebAuthnRPID:                      get(lookup, "WEBAUTHN_RP_ID", ""),
-		WebAuthnRPName:                    get(lookup, "WEBAUTHN_RP_NAME", "Rosmarinus"),
-		WebAuthnOrigins:                   splitCSV(get(lookup, "WEBAUTHN_ALLOWED_ORIGINS", "")),
-		WebAuthnCeremonyTTL:               getDuration(lookup, "WEBAUTHN_CEREMONY_TTL", 5*time.Minute),
-		AblyServiceAPIKey:                 get(lookup, "ABLY_ROSMARINUS_API_KEY", ""),
-		AblyCommandSubscribeAPIKey:        get(lookup, "ABLY_COMMAND_SUBSCRIBE_API_KEY", ""),
-		AblyAccountEventPublishAPIKey:     get(lookup, "ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY", ""),
-		AblyAccountControlSubscribeAPIKey: get(lookup, "ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY", ""),
-		ConnectorCommandChannel:           get(lookup, "CONNECTOR_COMMAND_CHANNEL", "rosmarinus:commands"),
-		ConnectorAccountEventNamespace:    get(lookup, "CONNECTOR_ACCOUNT_EVENT_NAMESPACE", "rosmarinus:accounts"),
-		ConnectorAccountControlChannel:    get(lookup, "CONNECTOR_ACCOUNT_CONTROL_CHANNEL", "rosmarinus:control:accounts"),
-		SalviaAccountCollection:           get(lookup, "SALVIA_ACCOUNT_COLLECTION", "salvia_accounts"),
-		ConnectorReceiptTTL:               getDuration(lookup, "CONNECTOR_RECEIPT_TTL", 7*24*time.Hour),
-		ConnectorAccountReconcileInterval: getDuration(lookup, "CONNECTOR_ACCOUNT_RECONCILE_INTERVAL", 5*time.Minute),
-		InboxActivityReceiptTTL:           getDuration(lookup, "INBOX_ACTIVITY_RECEIPT_TTL", 7*24*time.Hour),
-		UserAgent:                         get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
-		FederationBlockedHosts:            normalizeHosts(splitCSV(get(lookup, "FEDERATION_BLOCKED_HOSTS", ""))),
-		WorkerQueues:                      splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
+		Host:                    get(lookup, "HOST", "localhost:3000"),
+		PublicURL:               get(lookup, "PUBLIC_URL", "http://localhost:3000"),
+		HTTPAddr:                get(lookup, "HTTP_ADDR", ":3000"),
+		LocalActorUsername:      get(lookup, "LOCAL_ACTOR_USERNAME", ""),
+		LocalActorID:            get(lookup, "LOCAL_ACTOR_ID", ""),
+		LocalActorDisplayName:   get(lookup, "LOCAL_ACTOR_DISPLAY_NAME", ""),
+		LocalActorType:          get(lookup, "LOCAL_ACTOR_TYPE", "Service"),
+		MongoURI:                get(lookup, "MONGO_URI", "mongodb://localhost:27017"),
+		MongoDatabase:           get(lookup, "MONGO_DATABASE", "rosmarinus"),
+		RedisAddr:               get(lookup, "REDIS_ADDR", "localhost:6379"),
+		RedisPassword:           get(lookup, "REDIS_PASSWORD", ""),
+		SessionCookieName:       get(lookup, "SESSION_COOKIE_NAME", "rosmarinus_session"),
+		SessionTTL:              getDuration(lookup, "SESSION_TTL", 30*24*time.Hour),
+		WebAuthnRPID:            get(lookup, "WEBAUTHN_RP_ID", ""),
+		WebAuthnRPName:          get(lookup, "WEBAUTHN_RP_NAME", "Rosmarinus"),
+		WebAuthnOrigins:         splitCSV(get(lookup, "WEBAUTHN_ALLOWED_ORIGINS", "")),
+		WebAuthnCeremonyTTL:     getDuration(lookup, "WEBAUTHN_CEREMONY_TTL", 5*time.Minute),
+		AuthRateLimit:           getInt(lookup, "AUTH_RATE_LIMIT", 20),
+		AuthRateWindow:          getDuration(lookup, "AUTH_RATE_WINDOW", time.Minute),
+		APIIdempotencyTTL:       getDuration(lookup, "API_IDEMPOTENCY_TTL", 7*24*time.Hour),
+		InboxActivityReceiptTTL: getDuration(lookup, "INBOX_ACTIVITY_RECEIPT_TTL", 7*24*time.Hour),
+		UserAgent:               get(lookup, "USER_AGENT", "rosmarinus/0.0.1"),
+		FederationBlockedHosts:  normalizeHosts(splitCSV(get(lookup, "FEDERATION_BLOCKED_HOSTS", ""))),
+		WorkerQueues:            splitCSV(get(lookup, "WORKER_QUEUES", DefaultWorkerQueues)),
 		InboxQueue: QueueConfig{
 			Name:          "inbox",
 			Concurrency:   getInt(lookup, "INBOX_CONCURRENCY", 16),
@@ -165,18 +151,6 @@ func Load(lookup LookupFunc) (Config, error) {
 	return cfg, nil
 }
 
-func (c Config) CommandSubscribeAPIKey() string {
-	return firstNonEmpty(c.AblyCommandSubscribeAPIKey, c.AblyServiceAPIKey)
-}
-
-func (c Config) AccountEventPublishAPIKey() string {
-	return firstNonEmpty(c.AblyAccountEventPublishAPIKey, c.AblyServiceAPIKey)
-}
-
-func (c Config) AccountControlSubscribeAPIKey() string {
-	return firstNonEmpty(c.AblyAccountControlSubscribeAPIKey, c.AblyServiceAPIKey)
-}
-
 func (c Config) IsFederationHostBlocked(host string) bool {
 	host = normalizeHost(host)
 	for _, blocked := range c.FederationBlockedHosts {
@@ -201,15 +175,6 @@ func (c Config) IsSelfFederationURL(raw string) bool {
 		return false
 	}
 	return normalizedAuthority(publicURL) == normalizedAuthority(targetURL)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func (c Config) Validate() error {
@@ -256,23 +221,11 @@ func (c Config) Validate() error {
 	if c.WebAuthnCeremonyTTL <= 0 {
 		return fmt.Errorf("WEBAUTHN_CEREMONY_TTL must be positive")
 	}
-	if strings.TrimSpace(c.ConnectorCommandChannel) == "" {
-		return fmt.Errorf("CONNECTOR_COMMAND_CHANNEL must not be empty")
+	if c.AuthRateLimit <= 0 || c.AuthRateWindow <= 0 {
+		return fmt.Errorf("AUTH_RATE_LIMIT and AUTH_RATE_WINDOW must be positive")
 	}
-	if strings.TrimSpace(c.ConnectorAccountEventNamespace) == "" {
-		return fmt.Errorf("CONNECTOR_ACCOUNT_EVENT_NAMESPACE must not be empty")
-	}
-	if strings.TrimSpace(c.ConnectorAccountControlChannel) == "" {
-		return fmt.Errorf("CONNECTOR_ACCOUNT_CONTROL_CHANNEL must not be empty")
-	}
-	if strings.TrimSpace(c.SalviaAccountCollection) == "" {
-		return fmt.Errorf("SALVIA_ACCOUNT_COLLECTION must not be empty")
-	}
-	if c.ConnectorReceiptTTL <= 0 {
-		return fmt.Errorf("CONNECTOR_RECEIPT_TTL must be positive")
-	}
-	if c.ConnectorAccountReconcileInterval <= 0 {
-		return fmt.Errorf("CONNECTOR_ACCOUNT_RECONCILE_INTERVAL must be positive")
+	if c.APIIdempotencyTTL <= 0 {
+		return fmt.Errorf("API_IDEMPOTENCY_TTL must be positive")
 	}
 	if c.InboxActivityReceiptTTL <= c.InboxQueue.Timeout+time.Minute {
 		return fmt.Errorf("INBOX_ACTIVITY_RECEIPT_TTL must exceed INBOX_TIMEOUT by more than one minute")

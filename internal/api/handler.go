@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -15,8 +16,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/idempotency"
+	"github.com/nexryai/rosmarinus/internal/readmodel"
+	"github.com/nexryai/rosmarinus/internal/realtime"
+	"github.com/nexryai/rosmarinus/internal/settings"
 )
 
 const (
@@ -36,22 +42,47 @@ type ActorStore interface {
 	ListOwnedLocalActorsPage(context.Context, string, string, int, bool) ([]actors.Actor, error)
 }
 
+type AccountLookup interface {
+	FindByID(context.Context, string) (*account.Account, error)
+}
+
 type Handler struct {
 	authenticator Authenticator
 	actors        ActorStore
 	executor      connector.CommandExecutor
-	receipts      connector.CommandReceiptStore
+	receipts      idempotency.Store
+	reader        readmodel.Reader
+	settings      settings.Repository
+	instance      InstanceInfo
+	events        realtime.Broker
+	accounts      AccountLookup
 	authRoutes    http.Handler
 	logger        *log.Logger
 	now           func() time.Time
 	receiptTTL    time.Duration
 }
 
-func NewHandler(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts connector.CommandReceiptStore, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+func NewHandler(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	return NewHandlerWithAuth(authenticator, actorStore, executor, receipts, nil, logger, receiptTTL)
 }
 
-func NewHandlerWithAuth(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts connector.CommandReceiptStore, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+func NewHandlerWithAuth(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerWithAuthAndReader(authenticator, actorStore, executor, receipts, nil, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerWithAuthAndReader(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerWithServices(authenticator, actorStore, executor, receipts, reader, nil, InstanceInfo{}, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerWithServices(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerWithRealtime(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, nil, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerWithRealtime(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerComplete(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, nil, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerComplete(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
@@ -60,6 +91,11 @@ func NewHandlerWithAuth(authenticator Authenticator, actorStore ActorStore, exec
 		actors:        actorStore,
 		executor:      executor,
 		receipts:      receipts,
+		reader:        reader,
+		settings:      settingsStore,
+		instance:      instance,
+		events:        events,
+		accounts:      accounts,
 		authRoutes:    authRoutes,
 		logger:        logger,
 		now:           func() time.Time { return time.Now().UTC() },
@@ -95,11 +131,49 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(segments) == 1 && segments[0] == "session" && r.Method == http.MethodGet {
-		h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]string{"account_id": accountID, "csrf_token": csrfToken}})
+		h.session(w, r, accountID, csrfToken)
 		return
 	}
 	if len(segments) == 1 && segments[0] == "actors" {
 		h.actorsCollection(w, r, accountID)
+		return
+	}
+	if len(segments) == 2 && segments[0] == "timelines" {
+		h.timeline(w, r, accountID, segments[1])
+		return
+	}
+	if len(segments) >= 2 && segments[0] == "notes" {
+		h.noteResource(w, r, accountID, segments[1:])
+		return
+	}
+	if len(segments) == 1 && segments[0] == "emojis" {
+		h.emojis(w, r)
+		return
+	}
+	if len(segments) == 1 && segments[0] == "settings" {
+		h.accountSettings(w, r, accountID)
+		return
+	}
+	if len(segments) == 1 && segments[0] == "notifications" {
+		h.accountNotifications(w, r, accountID)
+		return
+	}
+	if len(segments) == 1 && segments[0] == "events" {
+		h.eventStream(w, r, accountID)
+		return
+	}
+	if len(segments) >= 2 && segments[0] == "profiles" {
+		if len(segments) == 2 {
+			h.profile(w, r, accountID, segments[1])
+		} else if len(segments) == 3 && (segments[2] == "followers" || segments[2] == "following") {
+			h.profileConnections(w, r, accountID, segments[1], segments[2])
+		} else {
+			h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
+		}
+		return
+	}
+	if len(segments) == 1 && segments[0] == "instance" && r.Method == http.MethodGet {
+		h.writeJSON(w, http.StatusOK, map[string]any{"data": h.instance})
 		return
 	}
 	if len(segments) >= 2 && segments[0] == "actors" {
@@ -118,6 +192,24 @@ func (h *Handler) authenticate(r *http.Request) (string, string, error) {
 		return "", "", ErrUnauthenticated
 	}
 	return accountID, csrfToken, nil
+}
+
+func (h *Handler) session(w http.ResponseWriter, r *http.Request, accountID, csrfToken string) {
+	data := map[string]any{"account_id": accountID, "csrf_token": csrfToken}
+	if h.accounts != nil {
+		value, err := h.accounts.FindByID(r.Context(), accountID)
+		if err != nil {
+			h.internalError(w, r, fmt.Errorf("load session account: %w", err))
+			return
+		}
+		if value == nil || !value.IsActive() {
+			h.writeError(w, http.StatusUnauthorized, "unauthenticated", "authentication required")
+			return
+		}
+		data["username"] = value.Username
+		data["display_name"] = value.DisplayName
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 func (h *Handler) actorsCollection(w http.ResponseWriter, r *http.Request, accountID string) {
@@ -198,9 +290,17 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 	case "blocks":
 		h.targetMutation(w, r, accountID, actorID, segments[2:], connector.CommandBlockCreate, connector.CommandBlockDelete)
 	case "follow-requests":
-		h.followRequest(w, r, accountID, actorID, segments[2:])
+		if len(segments) == 2 && r.Method == http.MethodGet {
+			h.connections(w, r, accountID, actorID, "requests", nil)
+		} else {
+			h.followRequest(w, r, accountID, actorID, segments[2:])
+		}
 	case "notifications":
-		h.notification(w, r, accountID, actorID, segments[2:])
+		h.notifications(w, r, accountID, actorID, segments[2:])
+	case "followers", "following":
+		h.connections(w, r, accountID, actorID, segments[1], segments[2:])
+	case "settings":
+		h.actorSettings(w, r, accountID, actorID, segments[2:])
 	default:
 		h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
@@ -289,9 +389,17 @@ func (h *Handler) followRequest(w http.ResponseWriter, r *http.Request, accountI
 	}
 }
 
-func (h *Handler) notification(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
+func (h *Handler) notifications(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
+	if len(segments) == 0 && r.Method == http.MethodGet {
+		h.listNotifications(w, r, accountID, actorID)
+		return
+	}
 	if len(segments) != 1 || r.Method != http.MethodPatch {
-		h.methodOrNotFound(w, r, http.MethodPatch, len(segments) == 1)
+		if len(segments) == 0 {
+			h.methodNotAllowed(w, http.MethodGet)
+		} else {
+			h.methodOrNotFound(w, r, http.MethodPatch, len(segments) == 1)
+		}
 		return
 	}
 	var body struct {
@@ -321,16 +429,22 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request, accountID, com
 		}
 		actorID = actor.ID
 	}
+	intentHash, err := mutationIntentHash(command, actorID, data)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("hash mutation intent: %w", err))
+		return
+	}
 
-	receipt := connector.CommandReceipt{
-		AccountID: accountID,
-		RequestID: requestID,
-		Command:   command,
-		ActorID:   actorID,
-		Status:    connector.CommandReceiptPending,
-		CreatedAt: h.now(),
-		UpdatedAt: h.now(),
-		ExpiresAt: h.now().Add(h.receiptTTL),
+	receipt := idempotency.Receipt{
+		AccountID:  accountID,
+		Key:        requestID,
+		Operation:  command,
+		ActorID:    actorID,
+		IntentHash: intentHash,
+		Status:     idempotency.StatusPending,
+		CreatedAt:  h.now(),
+		UpdatedAt:  h.now(),
+		ExpiresAt:  h.now().Add(h.receiptTTL),
 	}
 	if h.receipts != nil {
 		existing, claimed, err := h.receipts.Claim(r.Context(), receipt)
@@ -339,7 +453,7 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request, accountID, com
 			return
 		}
 		if !claimed {
-			h.writeReceipt(w, existing, command, actorID, successStatus)
+			h.writeReceipt(w, existing, command, actorID, intentHash, successStatus)
 			return
 		}
 	}
@@ -364,20 +478,92 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request, accountID, com
 			return
 		}
 	}
+	eventActorID := actorID
+	if resultActorID != "" {
+		eventActorID = resultActorID
+	}
+	h.publishMutationEvent(r.Context(), accountID, eventActorID, command, result)
 	h.writeJSON(w, successStatus, map[string]any{"data": result})
 }
 
-func (h *Handler) writeReceipt(w http.ResponseWriter, receipt *connector.CommandReceipt, command, actorID string, successStatus int) {
-	if receipt == nil || receipt.Command != command || (command != connector.CommandActorCreate && receipt.ActorID != actorID) {
+func (h *Handler) publishMutationEvent(ctx context.Context, accountID, actorID, command string, result any) {
+	if h.events == nil {
+		return
+	}
+	eventType := "projection.invalidated"
+	switch command {
+	case connector.CommandActorCreate:
+		eventType = "actor.created"
+	case connector.CommandActorUpdate:
+		eventType = "actor.updated"
+	case connector.CommandActorDelete:
+		eventType = "actor.deleted"
+	case connector.CommandPostCreate:
+		eventType = "note.created"
+	case connector.CommandPostDelete:
+		eventType = "note.deleted"
+	case connector.CommandReactionCreate, connector.CommandReactionDelete:
+		eventType = "reaction.changed"
+	case connector.CommandNotificationMarkRead:
+		eventType = "notification.read"
+	case connector.CommandFollowApprove:
+		eventType = "follow.approval.completed"
+	case connector.CommandFollowReject:
+		eventType = "follow.approval.rejected"
+	case connector.CommandFollowCreate, connector.CommandFollowDelete:
+		eventType = "follow.changed"
+	case connector.CommandBlockCreate, connector.CommandBlockDelete:
+		eventType = "block.changed"
+	case connector.CommandPollVote:
+		eventType = "poll.changed"
+	}
+	if err := h.events.Publish(ctx, accountID, eventType, actorID, mutationEventData(command, result)); err != nil && h.logger != nil {
+		h.logger.Printf("api: publish realtime event failed account_id=%s actor_id=%s command=%s err=%v", accountID, actorID, command, err)
+	}
+}
+
+func mutationEventData(command string, result any) map[string]string {
+	data := map[string]string{"operation": command}
+	switch value := result.(type) {
+	case connector.PostCreated:
+		data["note_id"] = value.NoteID
+	case connector.PostDeleted:
+		data["note_id"] = value.NoteID
+	case connector.PollVoted:
+		data["note_id"] = value.NoteID
+	case connector.ReactionCreated:
+		data["note_id"] = value.NoteID
+	case connector.ReactionDeleted:
+		data["note_id"] = value.NoteID
+	case connector.NotificationRead:
+		data["notification_id"] = value.NotificationID
+	case connector.FollowDeleted:
+		data["followee_id"] = value.FolloweeID
+	case connector.BlockCreated:
+		data["blockee_id"] = value.BlockeeID
+	case connector.BlockDeleted:
+		data["blockee_id"] = value.BlockeeID
+	case connector.ActorCreated:
+		data["actor_id"] = value.ActorID
+	case connector.ActorUpdated:
+		data["actor_id"] = value.ActorID
+	case connector.ActorDeleted:
+		data["actor_id"] = value.ActorID
+	}
+	return data
+}
+
+func (h *Handler) writeReceipt(w http.ResponseWriter, receipt *idempotency.Receipt, command, actorID, intentHash string, successStatus int) {
+	if receipt == nil || receipt.Operation != command || receipt.IntentHash != intentHash || (command != connector.CommandActorCreate && receipt.ActorID != actorID) {
 		h.writeError(w, http.StatusConflict, "idempotency_conflict", "Idempotency-Key was already used for another operation")
 		return
 	}
 	switch receipt.Status {
-	case connector.CommandReceiptCompleted:
+	case idempotency.StatusCompleted:
 		h.writeJSON(w, successStatus, map[string]any{"data": receipt.Result, "replayed": true})
-	case connector.CommandReceiptPending:
+	case idempotency.StatusPending:
 		h.writeError(w, http.StatusConflict, "operation_in_progress", "operation is still in progress")
-	case connector.CommandReceiptFailed:
+	case idempotency.StatusFailed:
 		code := receipt.ErrorCode
 		if code == "" {
 			code = "operation_failed"
@@ -386,6 +572,19 @@ func (h *Handler) writeReceipt(w http.ResponseWriter, receipt *connector.Command
 	default:
 		h.writeError(w, http.StatusConflict, "idempotency_conflict", "stored operation has an invalid state")
 	}
+}
+
+func mutationIntentHash(command, actorID string, data any) (string, error) {
+	payload, err := json.Marshal(struct {
+		Operation string `json:"operation"`
+		ActorID   string `json:"actor_id"`
+		Data      any    `json:"data"`
+	}{Operation: command, ActorID: actorID, Data: data})
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", digest[:]), nil
 }
 
 func (h *Handler) authorizeActor(w http.ResponseWriter, r *http.Request, accountID, actorID string, includeDeleted bool) (*actors.Actor, bool) {
@@ -459,6 +658,7 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, code, message st
 }
 
 func (h *Handler) writeJSON(w http.ResponseWriter, status int, value any) {
+	value = withAPIVersion(value)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)

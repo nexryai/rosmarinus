@@ -19,7 +19,6 @@ type Account struct {
 	Username      string
 	DisplayName   string
 	WebAuthnID    []byte
-	AblyClientID  string
 	Status        Status
 	AuthzRevision int64
 	CreatedAt     time.Time
@@ -32,6 +31,5 @@ func (a *Account) IsActive() bool {
 }
 
 type Repository interface {
-	FindActiveByAblyClientID(context.Context, string) (*Account, error)
 	FindByID(context.Context, string) (*Account, error)
 }

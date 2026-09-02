@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/idempotency"
 )
 
 type fakeAuthenticator struct {
@@ -29,6 +31,15 @@ func (a fakeAuthenticator) Authenticate(*http.Request) (string, string, error) {
 type Session struct {
 	AccountID string
 	CSRFToken string
+}
+
+type fakeAccountLookup struct {
+	value *account.Account
+	err   error
+}
+
+func (f fakeAccountLookup) FindByID(context.Context, string) (*account.Account, error) {
+	return f.value, f.err
 }
 
 type fakeActorStore struct {
@@ -161,14 +172,14 @@ func (e *fakeExecutor) MarkNotificationRead(_ context.Context, accountID, actorI
 }
 
 type fakeReceiptStore struct {
-	receipts map[string]connector.CommandReceipt
+	receipts map[string]idempotency.Receipt
 }
 
-func (s *fakeReceiptStore) Claim(_ context.Context, receipt connector.CommandReceipt) (*connector.CommandReceipt, bool, error) {
+func (s *fakeReceiptStore) Claim(_ context.Context, receipt idempotency.Receipt) (*idempotency.Receipt, bool, error) {
 	if s.receipts == nil {
-		s.receipts = make(map[string]connector.CommandReceipt)
+		s.receipts = make(map[string]idempotency.Receipt)
 	}
-	key := receipt.AccountID + ":" + receipt.RequestID
+	key := receipt.AccountID + ":" + receipt.Key
 	if existing, ok := s.receipts[key]; ok {
 		copy := existing
 		return &copy, false, nil
@@ -181,7 +192,7 @@ func (s *fakeReceiptStore) Claim(_ context.Context, receipt connector.CommandRec
 func (s *fakeReceiptStore) Complete(_ context.Context, accountID, requestID, actorID string, result any, now time.Time) error {
 	key := accountID + ":" + requestID
 	receipt := s.receipts[key]
-	receipt.Status, receipt.ActorID, receipt.Result, receipt.UpdatedAt = connector.CommandReceiptCompleted, actorID, result, now
+	receipt.Status, receipt.ActorID, receipt.Result, receipt.UpdatedAt = idempotency.StatusCompleted, actorID, result, now
 	s.receipts[key] = receipt
 	return nil
 }
@@ -189,7 +200,7 @@ func (s *fakeReceiptStore) Complete(_ context.Context, accountID, requestID, act
 func (s *fakeReceiptStore) Fail(_ context.Context, accountID, requestID, code string, now time.Time) error {
 	key := accountID + ":" + requestID
 	receipt := s.receipts[key]
-	receipt.Status, receipt.ErrorCode, receipt.UpdatedAt = connector.CommandReceiptFailed, code, now
+	receipt.Status, receipt.ErrorCode, receipt.UpdatedAt = idempotency.StatusFailed, code, now
 	s.receipts[key] = receipt
 	return nil
 }
@@ -198,6 +209,48 @@ func TestHandlerRequiresAuthentication(t *testing.T) {
 	handler := NewHandler(fakeAuthenticator{err: ErrUnauthenticated}, &fakeActorStore{}, &fakeExecutor{}, nil, nil, 0)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors", nil))
+	assertError(t, recorder, http.StatusUnauthorized, "unauthenticated")
+}
+
+func TestHandlerSessionReturnsActiveAccountProjection(t *testing.T) {
+	handler := NewHandlerComplete(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-1"}},
+		nil, nil, nil, nil, nil, InstanceInfo{}, nil,
+		fakeAccountLookup{value: &account.Account{
+			ID: "account-1", Username: "alice", DisplayName: "Alice", Status: account.StatusActive,
+		}}, nil, nil, 0,
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/session", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Version int `json:"version"`
+		Data    struct {
+			AccountID   string `json:"account_id"`
+			Username    string `json:"username"`
+			DisplayName string `json:"display_name"`
+			CSRFToken   string `json:"csrf_token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Version != 1 || body.Data.AccountID != "account-1" || body.Data.Username != "alice" || body.Data.DisplayName != "Alice" || body.Data.CSRFToken != "csrf-1" {
+		t.Fatalf("session projection = %+v", body)
+	}
+}
+
+func TestHandlerSessionRejectsInactiveAccount(t *testing.T) {
+	handler := NewHandlerComplete(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-1"}},
+		nil, nil, nil, nil, nil, InstanceInfo{}, nil,
+		fakeAccountLookup{value: &account.Account{ID: "account-1", Status: account.StatusSuspended}},
+		nil, nil, 0,
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/session", nil))
 	assertError(t, recorder, http.StatusUnauthorized, "unauthenticated")
 }
 
@@ -273,6 +326,12 @@ func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 	if recorder.Code != http.StatusCreated || executor.command != "" || !bytes.Contains(recorder.Body.Bytes(), []byte(`"replayed":true`)) {
 		t.Fatalf("replay status=%d execution=%q body=%s", recorder.Code, executor.command, recorder.Body.String())
 	}
+
+	differentIntent := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-2","text":"different"}`)
+	differentIntent.Header.Set("Idempotency-Key", "same-request-key")
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, differentIntent)
+	assertError(t, recorder, http.StatusConflict, "idempotency_conflict")
 
 	conflict := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/follows", `{"target":"alice@example.test"}`)
 	conflict.Header.Set("Idempotency-Key", "same-request-key")

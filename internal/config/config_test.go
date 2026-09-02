@@ -28,14 +28,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.InboxQueue.Concurrency != 16 || cfg.DeliverQueue.Concurrency != 128 || cfg.InboxQueue.RatePerSecond != 32 || cfg.DeliverQueue.RatePerSecond != 128 {
 		t.Fatalf("unexpected queue controls: inbox=%+v deliver=%+v", cfg.InboxQueue, cfg.DeliverQueue)
 	}
-	if cfg.ConnectorCommandChannel != "rosmarinus:commands" {
-		t.Fatalf("ConnectorCommandChannel = %q", cfg.ConnectorCommandChannel)
-	}
-	if cfg.ConnectorAccountEventNamespace != "rosmarinus:accounts" || cfg.ConnectorAccountControlChannel != "rosmarinus:control:accounts" {
-		t.Fatalf("unexpected Connector channels: %+v", cfg)
-	}
-	if cfg.SalviaAccountCollection != "salvia_accounts" || cfg.ConnectorReceiptTTL != 7*24*time.Hour || cfg.ConnectorAccountReconcileInterval != 5*time.Minute {
-		t.Fatalf("unexpected Salvia/receipt config: %+v", cfg)
+	if cfg.APIIdempotencyTTL != 7*24*time.Hour {
+		t.Fatalf("APIIdempotencyTTL = %s", cfg.APIIdempotencyTTL)
 	}
 	if cfg.InboxActivityReceiptTTL != 7*24*time.Hour {
 		t.Fatalf("InboxActivityReceiptTTL = %s", cfg.InboxActivityReceiptTTL)
@@ -54,6 +48,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.WebAuthnRPID != "localhost" || cfg.WebAuthnRPName != "Rosmarinus" || len(cfg.WebAuthnOrigins) != 1 || cfg.WebAuthnOrigins[0] != "http://localhost:3000" || cfg.WebAuthnCeremonyTTL != 5*time.Minute {
 		t.Fatalf("unexpected WebAuthn defaults: %+v", cfg)
+	}
+	if cfg.AuthRateLimit != 20 || cfg.AuthRateWindow != time.Minute {
+		t.Fatalf("unexpected auth rate limit: limit=%d window=%s", cfg.AuthRateLimit, cfg.AuthRateWindow)
 	}
 }
 
@@ -227,53 +224,18 @@ func TestLoadLocalActorConfig(t *testing.T) {
 	}
 }
 
-func TestLoadAblyConfig(t *testing.T) {
+func TestLoadAPIIdempotencyTTL(t *testing.T) {
 	cfg, err := Load(func(key string) (string, bool) {
-		switch key {
-		case "ABLY_ROSMARINUS_API_KEY":
-			return "app.key:secret", true
-		case "ABLY_COMMAND_SUBSCRIBE_API_KEY":
-			return "command.key:secret", true
-		case "ABLY_ACCOUNT_EVENT_PUBLISH_API_KEY":
-			return "event.key:secret", true
-		case "ABLY_ACCOUNT_CONTROL_SUBSCRIBE_API_KEY":
-			return "control.key:secret", true
-		case "CONNECTOR_COMMAND_CHANNEL":
-			return "test:commands", true
-		case "CONNECTOR_ACCOUNT_EVENT_NAMESPACE":
-			return "test:accounts", true
-		case "CONNECTOR_ACCOUNT_CONTROL_CHANNEL":
-			return "test:control", true
-		case "SALVIA_ACCOUNT_COLLECTION":
-			return "test_salvia_accounts", true
-		case "CONNECTOR_RECEIPT_TTL":
+		if key == "API_IDEMPOTENCY_TTL" {
 			return "24h", true
-		case "CONNECTOR_ACCOUNT_RECONCILE_INTERVAL":
-			return "10m", true
-		default:
-			return "", false
-		}
-	})
-	if err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if cfg.CommandSubscribeAPIKey() != "command.key:secret" || cfg.AccountEventPublishAPIKey() != "event.key:secret" || cfg.AccountControlSubscribeAPIKey() != "control.key:secret" || cfg.ConnectorCommandChannel != "test:commands" || cfg.ConnectorAccountEventNamespace != "test:accounts" || cfg.ConnectorAccountControlChannel != "test:control" || cfg.SalviaAccountCollection != "test_salvia_accounts" || cfg.ConnectorReceiptTTL != 24*time.Hour || cfg.ConnectorAccountReconcileInterval != 10*time.Minute {
-		t.Fatalf("unexpected Ably config: %+v", cfg)
-	}
-}
-
-func TestLoadAblyConfigFallsBackToLegacyServiceKey(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
-		if key == "ABLY_ROSMARINUS_API_KEY" {
-			return "legacy.key:secret", true
 		}
 		return "", false
 	})
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.CommandSubscribeAPIKey() != "legacy.key:secret" || cfg.AccountEventPublishAPIKey() != "legacy.key:secret" || cfg.AccountControlSubscribeAPIKey() != "legacy.key:secret" {
-		t.Fatalf("legacy key fallback failed: %+v", cfg)
+	if cfg.APIIdempotencyTTL != 24*time.Hour {
+		t.Fatalf("API idempotency TTL = %s", cfg.APIIdempotencyTTL)
 	}
 }
 
