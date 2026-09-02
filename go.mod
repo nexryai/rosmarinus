@@ -8,7 +8,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.22.0
-	go.mongodb.org/mongo-driver/v2 v2.8.1
+	go.mongodb.org/mongo-driver/v2 v2.8.2
 	golang.org/x/net v0.58.0
 	golang.org/x/text v0.41.0
 )
