@@ -19,18 +19,18 @@ describe("Composer", () => {
     it("submits a reply with the canonical target URI", async () => {
         const user = userEvent.setup();
         const submit = vi.fn().mockResolvedValue(undefined);
-        render(<Composer actor={actor} intent={{ kind: "reply", target }} onClose={() => undefined} onSubmit={submit} />);
+        render(<Composer actor={actor} csrf="csrf" intent={{ kind: "reply", target }} onClose={() => undefined} onSubmit={submit} />);
 
         await user.type(screen.getByLabelText("ノート本文"), "返信です");
         await user.click(screen.getByRole("button", { name: "投稿する" }));
 
-        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ in_reply_to_uri: target.uri, text: "返信です", visibility: "public" }));
+        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ in_reply_to_uri: target.uri, text: "返信です", visibility: "public" }), expect.any(String), expect.any(String));
     });
 
     it("requires two populated choices for a poll-only post", async () => {
         const user = userEvent.setup();
         const submit = vi.fn().mockResolvedValue(undefined);
-        render(<Composer actor={actor} intent={{ kind: "post" }} onClose={() => undefined} onSubmit={submit} />);
+        render(<Composer actor={actor} csrf="csrf" intent={{ kind: "post" }} onClose={() => undefined} onSubmit={submit} />);
 
         await user.click(screen.getByRole("button", { name: "投票" }));
         expect(screen.getByRole("button", { name: "投稿する" })).toBeDisabled();
@@ -38,6 +38,6 @@ describe("Composer", () => {
         await user.type(screen.getByLabelText("選択肢 2"), "B");
         await user.click(screen.getByRole("button", { name: "投稿する" }));
 
-        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ poll: { choices: ["A", "B"], multiple: false } }));
+        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ poll: { choices: ["A", "B"], multiple: false } }), expect.any(String), expect.any(String));
     });
 });

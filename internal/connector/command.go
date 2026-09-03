@@ -90,6 +90,7 @@ type PostCreateData struct {
 	MentionURIs    []string        `json:"mention_uris,omitempty"`
 	Hashtags       []string        `json:"hashtags,omitempty"`
 	EmojiNames     []string        `json:"emoji_names,omitempty"`
+	MediaIDs       []string        `json:"media_ids,omitempty"`
 	Poll           *PollCreateData `json:"poll,omitempty"`
 }
 
@@ -106,6 +107,7 @@ type PostCreateCommand struct {
 	MentionURIs    []string
 	Hashtags       []string
 	EmojiNames     []string
+	MediaIDs       []string
 	Poll           *PollCreateCommand
 }
 
@@ -533,7 +535,7 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 		if err := decodeCommandData(data, &command); err != nil {
 			return nil, actorID, err
 		}
-		hasContent := strings.TrimSpace(command.Text) != "" || command.Poll != nil
+		hasContent := strings.TrimSpace(command.Text) != "" || command.Poll != nil || len(command.MediaIDs) > 0
 		hasRenote := strings.TrimSpace(command.RenoteID) != ""
 		if strings.TrimSpace(command.NoteID) == "" || hasContent == hasRenote {
 			return nil, actorID, fmt.Errorf("note_id and exactly one of text or poll, or renote_id are required")
@@ -555,6 +557,7 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 			MentionURIs:    command.MentionURIs,
 			Hashtags:       command.Hashtags,
 			EmojiNames:     command.EmojiNames,
+			MediaIDs:       command.MediaIDs,
 			Poll:           poll,
 		})
 		return result, actorID, err

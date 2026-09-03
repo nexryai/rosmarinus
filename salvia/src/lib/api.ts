@@ -24,6 +24,7 @@ import {
 } from "./schema";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
+const pendingMutationIntents = new Map<string, string>();
 
 const envelope = <T extends z.ZodType>(schema: T) => z.object({ version: z.literal(1), data: schema });
 const pageEnvelope = <T extends z.ZodType>(schema: T) => z.object({ version: z.literal(1), data: z.array(schema), next: z.string().default("") });
@@ -53,23 +54,33 @@ export type CreatePostInput = {
     mention_uris?: string[];
     hashtags?: string[];
     emoji_names?: string[];
+    media_ids?: string[];
     poll?: { choices: string[]; multiple?: boolean; expires_at?: string };
 };
 
 async function request<T>(path: string, schema: z.ZodType<T>, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers(options.headers);
-    if (options.body !== undefined) headers.set("Content-Type", "application/json");
+    const isForm = options.body instanceof FormData;
+    if (options.body !== undefined && !isForm) headers.set("Content-Type", "application/json");
     if (options.csrf) headers.set("X-CSRF-Token", options.csrf);
-    if (options.idempotent) headers.set("Idempotency-Key", crypto.randomUUID());
+    const intentSignature = options.idempotent ? `${options.method || "GET"}:${path}:${JSON.stringify(options.body)}` : "";
+    if (intentSignature) {
+        const key = pendingMutationIntents.get(intentSignature) || crypto.randomUUID();
+        pendingMutationIntents.set(intentSignature, key);
+        headers.set("Idempotency-Key", key);
+    }
+    const body: BodyInit | undefined = options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body);
     const response = await fetch(`${API_BASE}${path}`, {
         ...options,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body,
         credentials: "same-origin",
         headers,
     });
+    if (intentSignature) pendingMutationIntents.delete(intentSignature);
     const payload = response.status === 204 ? undefined : await response.json().catch(() => undefined);
     if (!response.ok) {
         const parsed = z.object({ error: z.object({ code: z.string(), message: z.string() }) }).safeParse(payload);
+        if (response.status === 401) window.dispatchEvent(new Event("salvia:session-lost"));
         throw new ApiError(response.status, parsed.success ? parsed.data.error.code : "request_failed", parsed.success ? parsed.data.error.message : `Request failed (${response.status})`);
     }
     return schema.parse(payload);
@@ -101,12 +112,21 @@ export const api = {
     deleteActor: async (csrf: string, actorID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}`, envelope(z.unknown()), { method: "DELETE", csrf, idempotent: true });
     },
-    timeline: async (kind: "home" | "public", actorID: string, after = ""): Promise<{ data: Note[]; next: string }> => {
-        const result = await request(`/timelines/${kind}${query({ actor_id: actorID, after, limit: "30" })}`, pageEnvelope(noteSchema));
+    timeline: async (kind: "home" | "public", actorID: string, after = "", signal?: AbortSignal): Promise<{ data: Note[]; next: string }> => {
+        const result = await request(`/timelines/${kind}${query({ actor_id: actorID, after, limit: "30" })}`, pageEnvelope(noteSchema), { signal });
         return { data: result.data, next: result.next };
     },
-    createPost: async (csrf: string, actorID: string, input: CreatePostInput): Promise<void> => {
-        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: { note_id: crypto.randomUUID(), ...input }, csrf, idempotent: true });
+    createPost: async (csrf: string, actorID: string, input: CreatePostInput, intentKey: string = crypto.randomUUID(), noteID: string = crypto.randomUUID()): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: { note_id: noteID, ...input }, csrf, headers: { "Idempotency-Key": intentKey } });
+    },
+    uploadImage: async (csrf: string, actorID: string, file: File, thumbnail: { blob: Blob; originalHeight: number; originalWidth: number }, intentKey: string): Promise<{ id: string; url: string; preview_url: string }> => {
+        const form = new FormData();
+        form.set("file", file, file.name);
+        form.set("thumbnail", thumbnail.blob, `${file.name}.thumbnail.webp`);
+        form.set("width", String(thumbnail.originalWidth));
+        form.set("height", String(thumbnail.originalHeight));
+        const result = await request(`/actors/${encodeURIComponent(actorID)}/media`, envelope(z.object({ id: z.string(), url: z.string(), preview_url: z.string() })), { method: "POST", body: form, csrf, headers: { "Idempotency-Key": intentKey } });
+        return result.data;
     },
     deletePost: async (csrf: string, actorID: string, noteID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/posts/${encodeURIComponent(noteID)}`, envelope(z.unknown()), { method: "DELETE", csrf, idempotent: true });
@@ -120,8 +140,8 @@ export const api = {
     vote: async (csrf: string, actorID: string, noteID: string, choice: number): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/poll-votes`, envelope(z.unknown()), { method: "POST", body: { note_id: noteID, choice }, csrf, idempotent: true });
     },
-    notifications: async (actorID: string): Promise<Notification[]> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications?limit=50`, pageEnvelope(notificationSchema))).data,
-    accountNotifications: async (): Promise<Notification[]> => (await request("/notifications?limit=50", pageEnvelope(notificationSchema))).data,
+    notifications: async (actorID: string, signal?: AbortSignal): Promise<Notification[]> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications?limit=50`, pageEnvelope(notificationSchema), { signal })).data,
+    accountNotifications: async (signal?: AbortSignal): Promise<Notification[]> => (await request("/notifications?limit=50", pageEnvelope(notificationSchema), { signal })).data,
     markNotificationRead: async (csrf: string, actorID: string, notificationID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/notifications/${encodeURIComponent(notificationID)}`, envelope(z.unknown()), { method: "PATCH", body: { is_read: true }, csrf, idempotent: true });
     },
@@ -130,7 +150,7 @@ export const api = {
     decideFollowRequest: async (csrf: string, actorID: string, followerID: string, status: "accepted" | "rejected"): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
     },
-    profile: async (viewerID: string, actorID: string): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema))).data,
+    profile: async (viewerID: string, actorID: string, signal?: AbortSignal): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema), { signal })).data,
     profileConnections: async (viewerID: string, actorID: string, kind: "followers" | "following"): Promise<Connection[]> => (await request(`/profiles/${encodeURIComponent(actorID)}/${kind}${query({ actor_id: viewerID, limit: "100" })}`, pageEnvelope(connectionSchema))).data,
     follow: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follows`, envelope(z.unknown()), { method: "POST", body: { target }, csrf, idempotent: true });
@@ -144,8 +164,8 @@ export const api = {
     unblock: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
     },
-    note: async (actorID: string, noteID: string): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema))).data,
-    thread: async (actorID: string, noteID: string): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: "100" })}`, pageEnvelope(noteSchema))).data,
+    note: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema), { signal })).data,
+    thread: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: "100" })}`, pageEnvelope(noteSchema), { signal })).data,
     emojis: async (): Promise<Emoji[]> => (await request("/emojis?limit=100", pageEnvelope(emojiSchema))).data,
     instance: async (): Promise<Instance> => (await request("/instance", envelope(instanceSchema))).data,
     accountSettings: async (): Promise<AccountSettings> => (await request("/settings", envelope(accountSettingsSchema))).data,

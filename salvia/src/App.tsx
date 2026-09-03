@@ -18,6 +18,7 @@ import { TimelinePage } from "./pages/TimelinePage";
 
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };
+const actorCanAct = (actor: Actor) => !actor.is_suspended && !actor.moved_to_uri;
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
     if (path === "/public") return { page: "public" };
@@ -48,8 +49,9 @@ function App() {
         setSession(current);
         setActors(ownedActors);
         setSettings(accountSettings);
-        const preferred = ownedActors.find((actor) => actor.id === accountSettings.selected_actor_id);
-        setSelectedActorID((existing) => (ownedActors.some((actor) => actor.id === existing) ? existing : preferred?.id || ownedActors[0]?.id || ""));
+        const availableActors = ownedActors.filter(actorCanAct);
+        const preferred = availableActors.find((actor) => actor.id === accountSettings.selected_actor_id);
+        setSelectedActorID((existing) => (availableActors.some((actor) => actor.id === existing) ? existing : preferred?.id || availableActors[0]?.id || ""));
         setAuthState("authenticated");
         void api
             .emojis()
@@ -81,6 +83,16 @@ function App() {
     }, []);
 
     useEffect(() => {
+        const sessionLost = () => {
+            setSession(undefined);
+            setActors([]);
+            setAuthState("login");
+        };
+        window.addEventListener("salvia:session-lost", sessionLost);
+        return () => window.removeEventListener("salvia:session-lost", sessionLost);
+    }, []);
+
+    useEffect(() => {
         document.documentElement.dataset.theme = settings.theme;
         document.documentElement.dataset.compact = String(settings.compact_mode);
         document.documentElement.dataset.reduceMotion = String(settings.reduce_motion);
@@ -89,22 +101,47 @@ function App() {
     useEffect(() => {
         if (authState !== "authenticated") return;
         const source = new EventSource(api.eventURL, { withCredentials: true });
-        const refresh = () => setRefreshKey((value) => value + 1);
+        const channel = "BroadcastChannel" in window ? new BroadcastChannel("salvia-projections") : undefined;
+        let refreshTimer = 0;
+        const refresh = () => {
+            window.clearTimeout(refreshTimer);
+            refreshTimer = window.setTimeout(() => setRefreshKey((value) => value + 1), 80);
+        };
+        const refreshForEvent = (event: Event) => {
+            try {
+                const actorID = JSON.parse((event as MessageEvent<string>).data).actor_id as string | undefined;
+                if (!actorID || actorID === selectedActorID) refresh();
+                channel?.postMessage(actorID || "*");
+            } catch {
+                refresh();
+            }
+        };
         const refreshWorkspace = () => void loadWorkspace().catch((reason) => setError(reason instanceof Error ? reason.message : "Actor一覧を更新できませんでした"));
         const actorEventTypes = ["actor.created", "actor.updated", "actor.deleted"];
         const projectionEventTypes = ["note.created", "note.deleted", "reaction.changed", "notification.created", "notification.read", "follow.approval.requested", "follow.approval.completed", "follow.approval.rejected", "follow.changed", "block.changed", "poll.changed", "projection.invalidated"];
         for (const type of actorEventTypes) source.addEventListener(type, refreshWorkspace);
-        for (const type of projectionEventTypes) source.addEventListener(type, refresh);
+        for (const type of projectionEventTypes) source.addEventListener(type, refreshForEvent);
+        if (channel)
+            channel.onmessage = (event: MessageEvent<string>) => {
+                if (event.data === "*" || event.data === selectedActorID) refresh();
+            };
+        const onVisible = () => {
+            if (document.visibilityState === "visible") refresh();
+        };
+        document.addEventListener("visibilitychange", onVisible);
         source.onopen = () => {
             refresh();
             refreshWorkspace();
         };
         return () => {
             for (const type of actorEventTypes) source.removeEventListener(type, refreshWorkspace);
-            for (const type of projectionEventTypes) source.removeEventListener(type, refresh);
+            for (const type of projectionEventTypes) source.removeEventListener(type, refreshForEvent);
+            document.removeEventListener("visibilitychange", onVisible);
+            window.clearTimeout(refreshTimer);
+            channel?.close();
             source.close();
         };
-    }, [authState, loadWorkspace]);
+    }, [authState, loadWorkspace, selectedActorID]);
 
     const selectedActor = useMemo(() => actors.find((actor) => actor.id === selectedActorID), [actors, selectedActorID]);
     const navigate = (path: string) => {
@@ -113,6 +150,10 @@ function App() {
         window.scrollTo({ top: 0, behavior: settings.reduce_motion ? "auto" : "smooth" });
     };
     const chooseActor = async (id: string) => {
+        if (!actors.some((actor) => actor.id === id && actorCanAct(actor))) {
+            setError("停止または移行済みのActorには切り替えられません");
+            return;
+        }
         setSelectedActorID(id);
         setRefreshKey((value) => value + 1);
         try {
@@ -167,7 +208,7 @@ function App() {
     if (!selectedActor) return <NoActor csrf={session.csrf_token} onCreated={loadWorkspace} onLogout={logout} />;
 
     return (
-        <AppShell actors={actors} onActorChange={(id) => void chooseActor(id)} onCompose={() => void openComposer()} onLogout={() => void logout()} onNavigate={navigate} page={route.page} selectedActor={selectedActor} session={session}>
+        <AppShell actors={actors.filter(actorCanAct)} onActorChange={(id) => void chooseActor(id)} onCompose={() => void openComposer()} onLogout={() => void logout()} onNavigate={navigate} page={route.page} selectedActor={selectedActor} session={session}>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {route.page === "home" && (
                 <TimelinePage
@@ -214,10 +255,11 @@ function App() {
                 <Composer
                     actor={selectedActor}
                     actorSettings={composerSettings}
+                    csrf={session.csrf_token}
                     intent={composerIntent}
                     onClose={() => setComposerIntent(undefined)}
-                    onSubmit={async (input) => {
-                        await api.createPost(session.csrf_token, selectedActor.id, input);
+                    onSubmit={async (input, intentKey, noteID) => {
+                        await api.createPost(session.csrf_token, selectedActor.id, input, intentKey, noteID);
                         setRefreshKey((value) => value + 1);
                     }}
                 />

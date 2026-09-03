@@ -13,27 +13,36 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, re
     const [scope, setScope] = useState<"actor" | "account">("actor");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            setItems(scope === "actor" ? await api.notifications(actorID) : await api.accountNotifications());
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "通知を読み込めませんでした");
-        } finally {
-            setLoading(false);
-        }
-    }, [actorID, scope]);
+    const [busyID, setBusyID] = useState("");
+    const load = useCallback(
+        async (signal?: AbortSignal) => {
+            setLoading(true);
+            try {
+                setItems(scope === "actor" ? await api.notifications(actorID, signal) : await api.accountNotifications(signal));
+            } catch (reason) {
+                if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "通知を読み込めませんでした");
+            } finally {
+                if (!signal?.aborted) setLoading(false);
+            }
+        },
+        [actorID, scope],
+    );
     useEffect(() => {
         void refreshKey;
-        void load();
+        const controller = new AbortController();
+        void load(controller.signal);
+        return () => controller.abort();
     }, [load, refreshKey]);
     const markRead = async (item: Notification) => {
         if (item.is_read) return;
+        setBusyID(item.id);
         try {
             await api.markNotificationRead(csrf, actorID, item.id);
             setItems((current) => current.map((value) => (value.id === item.id ? { ...value, is_read: true } : value)));
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "既読にできませんでした");
+        } finally {
+            setBusyID("");
         }
     };
     return (
@@ -80,7 +89,7 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, re
                                 <time>{new Intl.DateTimeFormat("ja", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at))}</time>
                             </div>
                             {!item.is_read && (
-                                <Button onClick={() => void markRead(item)} variant="secondary">
+                                <Button disabled={busyID === item.id} onClick={() => void markRead(item)} variant="secondary">
                                     既読
                                 </Button>
                             )}

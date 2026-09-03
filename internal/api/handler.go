@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
@@ -46,6 +49,10 @@ type AccountLookup interface {
 	FindByID(context.Context, string) (*account.Account, error)
 }
 
+type MediaUploadStore interface {
+	CreateLocal(context.Context, string, string, string, string, string, int64, string, int, int, io.Reader) (*domainmedia.Media, error)
+}
+
 type Handler struct {
 	authenticator Authenticator
 	actors        ActorStore
@@ -56,6 +63,8 @@ type Handler struct {
 	instance      InstanceInfo
 	events        realtime.Broker
 	accounts      AccountLookup
+	mediaUploads  MediaUploadStore
+	mediaMaxBytes int64
 	authRoutes    http.Handler
 	logger        *log.Logger
 	now           func() time.Time
@@ -83,6 +92,10 @@ func NewHandlerWithRealtime(authenticator Authenticator, actorStore ActorStore, 
 }
 
 func NewHandlerComplete(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerCompleteWithMedia(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, nil, 0, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerCompleteWithMedia(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
@@ -96,6 +109,8 @@ func NewHandlerComplete(authenticator Authenticator, actorStore ActorStore, exec
 		instance:      instance,
 		events:        events,
 		accounts:      accounts,
+		mediaUploads:  mediaUploads,
+		mediaMaxBytes: mediaMaxBytes,
 		authRoutes:    authRoutes,
 		logger:        logger,
 		now:           func() time.Time { return time.Now().UTC() },
@@ -274,6 +289,8 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 	switch segments[1] {
 	case "posts":
 		h.posts(w, r, accountID, actorID, segments[2:])
+	case "media":
+		h.uploadMedia(w, r, accountID, actorID, segments[2:])
 	case "poll-votes":
 		if len(segments) == 2 && r.Method == http.MethodPost {
 			var data connector.PollVoteData
@@ -304,6 +321,122 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 	default:
 		h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
 	}
+}
+
+func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
+	if len(segments) != 0 || r.Method != http.MethodPost {
+		h.methodOrNotFound(w, r, http.MethodPost, len(segments) == 0)
+		return
+	}
+	if h.mediaUploads == nil || h.mediaMaxBytes <= 0 || h.instance.URL == "" {
+		h.internalError(w, r, fmt.Errorf("media upload service is not configured"))
+		return
+	}
+	if _, ok := h.authorizeActor(w, r, accountID, actorID, false); !ok {
+		return
+	}
+	requestID := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(requestID) < 16 || len(requestID) > 200 {
+		h.writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key must contain 16 to 200 characters")
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" {
+		h.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be multipart/form-data")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, h.mediaMaxBytes*2+(1<<20))
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid_upload", "multipart upload is malformed or too large")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	width, height, ok := h.uploadDimensions(w, r)
+	if !ok {
+		return
+	}
+	original, ok := h.storeUploadPart(w, r, actorID, requestID, "file", "original", width, height)
+	if !ok {
+		return
+	}
+	thumbnail, ok := h.storeUploadPart(w, r, actorID, requestID, "thumbnail", "thumbnail", 0, 0)
+	if !ok {
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
+		"id": original.ID, "url": original.PublicURL, "preview_url": thumbnail.PublicURL,
+		"name": original.Name, "media_type": original.ContentType, "size": original.Size,
+		"width": width, "height": height,
+	}})
+}
+
+func (h *Handler) uploadDimensions(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	width, widthErr := strconv.Atoi(r.FormValue("width"))
+	height, heightErr := strconv.Atoi(r.FormValue("height"))
+	if widthErr != nil || heightErr != nil || width < 1 || height < 1 || width > 65535 || height > 65535 {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_dimensions", "width and height must be integers from 1 to 65535")
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+func (h *Handler) storeUploadPart(w http.ResponseWriter, r *http.Request, actorID, requestID, field, suffix string, width, height int) (*domainmedia.Media, bool) {
+	file, header, err := r.FormFile(field)
+	if err != nil {
+		h.writeError(w, http.StatusUnprocessableEntity, "missing_upload_part", field+" is required")
+		return nil, false
+	}
+	defer file.Close()
+	hash := sha256.New()
+	size, err := io.Copy(hash, io.LimitReader(file, h.mediaMaxBytes+1))
+	if err != nil || size < 1 || size > h.mediaMaxBytes {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_upload_size", "uploaded image is empty or too large")
+		return nil, false
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		h.internalError(w, r, fmt.Errorf("rewind upload: %w", err))
+		return nil, false
+	}
+	buffer := make([]byte, 512)
+	n, err := io.ReadFull(file, buffer)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_image", "uploaded image cannot be read")
+		return nil, false
+	}
+	contentType := http.DetectContentType(buffer[:n])
+	if !allowedUploadedImage(contentType) || (field == "thumbnail" && contentType != "image/webp") {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_image_type", "only supported image uploads are accepted; thumbnails must be WebP")
+		return nil, false
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		h.internalError(w, r, fmt.Errorf("rewind upload: %w", err))
+		return nil, false
+	}
+	idDigest := sha256.Sum256([]byte(accountScopedMediaKey(actorID, requestID, suffix)))
+	id := "media_" + hex.EncodeToString(idDigest[:])[:32]
+	publicURL := strings.TrimRight(h.instance.URL, "/") + "/media/" + id
+	name := filepath.Base(header.Filename)
+	stored, err := h.mediaUploads.CreateLocal(r.Context(), id, actorID, name, publicURL, contentType, size, hex.EncodeToString(hash.Sum(nil)), width, height, file)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("store %s upload: %w", suffix, err))
+		return nil, false
+	}
+	return stored, true
+}
+
+func allowedUploadedImage(contentType string) bool {
+	switch contentType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func accountScopedMediaKey(actorID, requestID, suffix string) string {
+	return actorID + "\x00" + requestID + "\x00" + suffix
 }
 
 func (h *Handler) posts(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {

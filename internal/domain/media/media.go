@@ -20,16 +20,20 @@ const (
 )
 
 type Media struct {
-	ID          string
-	OriginalURL string
-	PublicURL   string
-	ContentType string
-	Size        int64
-	SHA256      string
-	State       string
-	Error       string
-	CreatedAt   time.Time
-	FetchedAt   *time.Time
+	ID           string
+	OwnerActorID string
+	Name         string
+	Width        int
+	Height       int
+	OriginalURL  string
+	PublicURL    string
+	ContentType  string
+	Size         int64
+	SHA256       string
+	State        string
+	Error        string
+	CreatedAt    time.Time
+	FetchedAt    *time.Time
 }
 
 type Repository interface {

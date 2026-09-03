@@ -10,6 +10,7 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
     const [items, setItems] = useState<Connection[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [busyID, setBusyID] = useState("");
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -25,11 +26,14 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
         void load();
     }, [load, refreshKey]);
     const decide = async (item: Connection, status: "accepted" | "rejected") => {
+        setBusyID(item.id);
         try {
             await api.decideFollowRequest(csrf, actorID, item.actor.id, status);
             setItems((current) => current.filter((value) => value.id !== item.id));
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "操作に失敗しました");
+        } finally {
+            setBusyID("");
         }
     };
     return (
@@ -56,8 +60,10 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
                                 <span>@{item.actor.username}</span>
                             </div>
                             <div className="request__actions">
-                                <Button onClick={() => void decide(item, "accepted")}>承認</Button>
-                                <Button onClick={() => void decide(item, "rejected")} variant="ghost">
+                                <Button disabled={busyID === item.id} onClick={() => void decide(item, "accepted")}>
+                                    承認
+                                </Button>
+                                <Button disabled={busyID === item.id} onClick={() => void decide(item, "rejected")} variant="ghost">
                                     拒否
                                 </Button>
                             </div>

@@ -32,22 +32,27 @@ export function NotePage({
     const [thread, setThread] = useState<Note[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const load = useCallback(async () => {
-        setLoading(true);
-        setError("");
-        try {
-            const [root, replies] = await Promise.all([api.note(actorID, noteID), api.thread(actorID, noteID)]);
-            setNote(root);
-            setThread(replies.filter((item) => item.id !== root.id));
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "ノートを読み込めませんでした");
-        } finally {
-            setLoading(false);
-        }
-    }, [actorID, noteID]);
+    const load = useCallback(
+        async (signal?: AbortSignal) => {
+            setLoading(true);
+            setError("");
+            try {
+                const [root, replies] = await Promise.all([api.note(actorID, noteID, signal), api.thread(actorID, noteID, signal)]);
+                setNote(root);
+                setThread(replies.filter((item) => item.id !== root.id));
+            } catch (reason) {
+                if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "ノートを読み込めませんでした");
+            } finally {
+                if (!signal?.aborted) setLoading(false);
+            }
+        },
+        [actorID, noteID],
+    );
     useEffect(() => {
         void refreshKey;
-        void load();
+        const controller = new AbortController();
+        void load(controller.signal);
+        return () => controller.abort();
     }, [load, refreshKey]);
     const mutate = async (operation: () => Promise<void>) => {
         try {

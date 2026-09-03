@@ -2003,6 +2003,10 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
+	attachments, err := h.resolveLocalAttachments(ctx, actor.ID, command.MediaIDs, command.Sensitive)
+	if err != nil {
+		return connector.PostCreated{}, err
+	}
 	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
 	inReplyToURI, replyID := "", ""
 	if replyTarget != nil {
@@ -2029,6 +2033,7 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		VisibleUserURIs: visibleUserURIs,
 		Hashtags:        command.Hashtags,
 		Emojis:          localEmojis,
+		Attachments:     attachments,
 		CreatedAt:       now,
 		PublishedAt:     &now,
 	})
@@ -2218,6 +2223,45 @@ func (h *Handler) resolveLocalEmojis(ctx context.Context, names []string) ([]dom
 		})
 	}
 	return result, nil
+}
+
+func (h *Handler) resolveLocalAttachments(ctx context.Context, actorID string, mediaIDs []string, sensitive bool) ([]domainnotes.Attachment, error) {
+	if len(mediaIDs) == 0 {
+		return nil, nil
+	}
+	if len(mediaIDs) > 4 {
+		return nil, fmt.Errorf("at most 4 media attachments are allowed")
+	}
+	if h.media == nil {
+		return nil, fmt.Errorf("media repository is not configured")
+	}
+	seen := make(map[string]struct{}, len(mediaIDs))
+	attachments := make([]domainnotes.Attachment, 0, len(mediaIDs))
+	for _, mediaID := range mediaIDs {
+		mediaID = strings.TrimSpace(mediaID)
+		if mediaID == "" {
+			return nil, fmt.Errorf("media id is required")
+		}
+		if _, duplicate := seen[mediaID]; duplicate {
+			return nil, fmt.Errorf("duplicate media id: %s", mediaID)
+		}
+		seen[mediaID] = struct{}{}
+		item, err := h.media.FindByID(ctx, mediaID)
+		if err != nil {
+			return nil, err
+		}
+		if item == nil || item.State != domainmedia.StateReady || item.OwnerActorID != actorID {
+			return nil, fmt.Errorf("media is not an owned ready upload: %s", mediaID)
+		}
+		if !strings.HasPrefix(item.ContentType, "image/") {
+			return nil, fmt.Errorf("media is not an image: %s", mediaID)
+		}
+		attachments = append(attachments, domainnotes.Attachment{
+			Type: "Image", MediaType: item.ContentType, URL: item.PublicURL,
+			Name: item.Name, Width: item.Width, Height: item.Height, Sensitive: sensitive,
+		})
+	}
+	return attachments, nil
 }
 
 func validLocalEmojiName(name string) bool {

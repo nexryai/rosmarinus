@@ -81,6 +81,10 @@ account-scoped event through one Redis broker instance and verifies delivery to
 the matching subscription on another while a different account receives
 nothing. Run that workflow when changing Redis configuration, realtime event
 fan-out, or the MongoDB role bootstrap.
+Phase 15 stores an original Salvia image without server-side transformation,
+attaches its Actor-owned media ID to a local Note, and verifies that current
+Misskey receives the resulting attachment. Run it when changing local upload,
+media ownership, or outbound attachment rendering.
 
 ## Outbound network safety
 

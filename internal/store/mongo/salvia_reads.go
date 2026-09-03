@@ -202,8 +202,12 @@ func (r *SalviaReader) ListNotifications(ctx context.Context, accountID, actorID
 }
 
 func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID string) (*readmodel.Profile, error) {
-	blocked, err := r.actorsBlockEachOther(ctx, viewerActorID, actorID)
-	if err != nil || blocked {
+	blockedViewer, err := r.actorBlocks(ctx, actorID, viewerActorID)
+	if err != nil || blockedViewer {
+		return nil, err
+	}
+	blockedByViewer, err := r.actorBlocks(ctx, viewerActorID, actorID)
+	if err != nil {
 		return nil, err
 	}
 	actor, err := r.findActor(ctx, actorID)
@@ -222,7 +226,18 @@ func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID s
 	if err != nil {
 		return nil, err
 	}
-	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following)}, nil
+	followStatus := ""
+	var follow struct {
+		Status string `bson:"status"`
+	}
+	err = r.db.Collection("follows").FindOne(ctx, bson.M{"followerId": viewerActorID, "followeeId": actorID, "deletedAt": nil}, options.FindOne().SetProjection(bson.M{"status": 1})).Decode(&follow)
+	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, err
+	}
+	if err == nil {
+		followStatus = follow.Status
+	}
+	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following), FollowStatus: followStatus, BlockedByViewer: blockedByViewer}, nil
 }
 
 func (r *SalviaReader) ListLocalEmojis(ctx context.Context, afterName string, limit int) ([]emojis.Emoji, error) {
@@ -443,6 +458,14 @@ func (r *SalviaReader) actorsBlockEachOther(ctx context.Context, first, second s
 	count, err := r.db.Collection("blocks").CountDocuments(ctx, bson.M{"deletedAt": nil, "$or": bson.A{
 		bson.M{"blockerId": first, "blockeeId": second}, bson.M{"blockerId": second, "blockeeId": first},
 	}})
+	return count > 0, err
+}
+
+func (r *SalviaReader) actorBlocks(ctx context.Context, blockerID, blockeeID string) (bool, error) {
+	if blockerID == blockeeID {
+		return false, nil
+	}
+	count, err := r.db.Collection("blocks").CountDocuments(ctx, bson.M{"blockerId": blockerID, "blockeeId": blockeeID, "deletedAt": nil})
 	return count > 0, err
 }
 

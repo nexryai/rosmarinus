@@ -135,6 +135,24 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                                 <input checked={actorSettings.pinned} onChange={(event) => void saveActorSettings({ pinned: event.target.checked })} type="checkbox" />
                                 <span>Actor切替で上に固定</span>
                             </label>
+                            <label className="field">
+                                <span>表示色</span>
+                                <input onBlur={(event) => void saveActorSettings({ color: event.target.value })} type="color" value={actorSettings.color || "#e9a91d"} onChange={(event) => setActorSettings((current) => (current ? { ...current, color: event.target.value } : current))} />
+                            </label>
+                            <label className="field">
+                                <span>表示順</span>
+                                <input
+                                    min={0}
+                                    onBlur={(event) => void saveActorSettings({ display_order: Number(event.target.value) })}
+                                    type="number"
+                                    value={actorSettings.display_order}
+                                    onChange={(event) => setActorSettings((current) => (current ? { ...current, display_order: Number(event.target.value) } : current))}
+                                />
+                            </label>
+                            <label className="toggle">
+                                <input checked={actorSettings.show_content_warning} onChange={(event) => void saveActorSettings({ show_content_warning: event.target.checked })} type="checkbox" />
+                                <span>CW本文を初期表示する</span>
+                            </label>
                         </div>
                     )}
                 </section>

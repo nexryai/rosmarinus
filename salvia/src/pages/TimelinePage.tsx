@@ -31,24 +31,26 @@ export function TimelinePage({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const load = useCallback(
-        async (after = "", append = false) => {
+        async (after = "", append = false, signal?: AbortSignal) => {
             setLoading(true);
             setError("");
             try {
-                const page = await api.timeline(kind, actorID, after);
+                const page = await api.timeline(kind, actorID, after, signal);
                 setNotes((current) => (append ? [...current, ...page.data.filter((note) => !current.some((item) => item.id === note.id))] : page.data));
                 setNext(page.next);
             } catch (reason) {
-                setError(reason instanceof Error ? reason.message : "タイムラインを読み込めませんでした");
+                if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "タイムラインを読み込めませんでした");
             } finally {
-                setLoading(false);
+                if (!signal?.aborted) setLoading(false);
             }
         },
         [actorID, kind],
     );
     useEffect(() => {
         void refreshKey;
-        void load();
+        const controller = new AbortController();
+        void load("", false, controller.signal);
+        return () => controller.abort();
     }, [load, refreshKey]);
     const refresh = () => load();
     const mutate = async (operation: () => Promise<void>) => {

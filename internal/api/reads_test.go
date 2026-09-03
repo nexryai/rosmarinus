@@ -24,6 +24,7 @@ type fakeReader struct {
 	actorID       string
 	targetActorID string
 	notifications []readmodel.Notification
+	profile       *readmodel.Profile
 	unread        *bool
 	calls         int
 }
@@ -66,6 +67,9 @@ func (f *fakeReader) ListLocalEmojis(context.Context, string, int) ([]emojis.Emo
 
 func (f *fakeReader) FindProfile(_ context.Context, viewerActorID, actorID string) (*readmodel.Profile, error) {
 	f.actorID, f.calls = viewerActorID, f.calls+1
+	if f.profile != nil {
+		return f.profile, nil
+	}
 	return &readmodel.Profile{Actor: &actors.Actor{ID: actorID}}, nil
 }
 
@@ -178,6 +182,17 @@ func TestProfileConnectionsUseOwnedViewerForBlockFiltering(t *testing.T) {
 	}
 	if reader.actorID != "actor-1" || reader.targetActorID != "remote-profile" {
 		t.Fatalf("connection scope = viewer %q target %q", reader.actorID, reader.targetActorID)
+	}
+}
+
+func TestProfileReturnsViewerRelationshipState(t *testing.T) {
+	reader := &fakeReader{profile: &readmodel.Profile{Actor: &actors.Actor{ID: "remote-profile"}, FollowStatus: "pending", BlockedByViewer: true}}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/remote-profile?actor_id=actor-1", nil))
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"follow_status":"pending"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"blocked_by_viewer":true`)) {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

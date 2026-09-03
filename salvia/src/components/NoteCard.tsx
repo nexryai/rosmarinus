@@ -73,6 +73,7 @@ export function NoteCard({
                     </button>
                     <span>·</span>
                     <time dateTime={note.created_at}>{relativeTime(note.created_at)}</time>
+                    <span className="note-visibility">{note.visibility === "followers" ? "フォロワー" : note.visibility === "home" ? "ホーム" : note.visibility === "specified" ? "宛先指定" : "公開"}</span>
                     {onOpenNote && (
                         <button className="note-detail-link" onClick={() => onOpenNote(note.id)} type="button">
                             詳細

@@ -29,6 +29,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	"github.com/nexryai/rosmarinus/internal/ratelimit"
 	"github.com/nexryai/rosmarinus/internal/realtime"
@@ -179,6 +180,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetActivityReceiptRepository(activityReceiptRepo)
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
+	apWorker.SetMediaRepository(mediaRepo, mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetInstanceRepository(cachedInstanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetWebFingerResolver(cache.NewCachedWebFinger(apwebfinger.New(nil, cfg.UserAgent), valueCache))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
@@ -203,9 +205,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 	authLimiter := ratelimit.NewRedisLimiter(redisClient)
 	authAPI := api.NewAuthHandlerWithRateLimit(passkeys, sessionManager, accountRepo, authLimiter, cfg.AuthRateLimit, cfg.AuthRateWindow, logger)
-	applicationAPI := api.NewHandlerComplete(
+	applicationAPI := api.NewHandlerCompleteWithMedia(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
-		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo, authAPI, logger, cfg.APIIdempotencyTTL,
+		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
+		mediaRepo, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
 	)
 
 	return &App{

@@ -15,15 +15,21 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     useEffect(() => {
+        const controller = new AbortController();
         setLoading(true);
-        Promise.all([api.profile(actorID, profileID), api.following(actorID)])
-            .then(([value, items]) => {
+        api.profile(actorID, profileID, controller.signal)
+            .then((value) => {
                 setProfile(value);
-                setFollowing(items.some((item) => item.actor.id === profileID));
-                setBlocked(false);
+                setFollowing(value.follow_status === "accepted" || value.follow_status === "pending");
+                setBlocked(value.blocked_by_viewer);
             })
-            .catch((reason) => setError(reason instanceof Error ? reason.message : "プロフィールを読み込めませんでした"))
-            .finally(() => setLoading(false));
+            .catch((reason) => {
+                if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "プロフィールを読み込めませんでした");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
+        return () => controller.abort();
     }, [actorID, profileID]);
     const toggleFollow = async () => {
         if (!profile) return;
@@ -125,6 +131,23 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
                             </a>
                         )}
                     </div>
+                    {actor.profile_fields.length > 0 && (
+                        <dl className="profile-fields">
+                            {actor.profile_fields.map((field) => (
+                                <div key={field.name}>
+                                    <dt>{field.name}</dt>
+                                    <dd>{field.value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    )}
+                    {actor.tags.length > 0 && (
+                        <div className="profile-tags">
+                            {actor.tags.map((tag) => (
+                                <span key={tag}>#{tag}</span>
+                            ))}
+                        </div>
+                    )}
                     <div className="profile-counts">
                         <button disabled={busy} onClick={() => void showConnections("following")} type="button">
                             <strong>{profile.following_count}</strong>フォロー

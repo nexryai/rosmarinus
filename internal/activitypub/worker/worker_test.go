@@ -311,6 +311,24 @@ type fakeMediaFetcher struct {
 	err    error
 }
 
+func TestResolveLocalAttachmentsRequiresOwnedReadyMedia(t *testing.T) {
+	repo := &fakeMediaRepo{record: &domainmedia.Media{
+		ID: "media-1", OwnerActorID: "actor-1", Name: "photo.png", PublicURL: "https://example.test/media/media-1",
+		ContentType: "image/png", Width: 1600, Height: 800, State: domainmedia.StateReady,
+	}}
+	handler := &Handler{media: repo}
+	attachments, err := handler.resolveLocalAttachments(context.Background(), "actor-1", []string{"media-1"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(attachments) != 1 || attachments[0].URL != repo.record.PublicURL || attachments[0].Width != 1600 || !attachments[0].Sensitive {
+		t.Fatalf("attachments = %+v", attachments)
+	}
+	if _, err := handler.resolveLocalAttachments(context.Background(), "actor-2", []string{"media-1"}, false); err == nil {
+		t.Fatal("cross-Actor media attachment was accepted")
+	}
+}
+
 func (f fakeMediaFetcher) Fetch(context.Context, string) (mediafetch.Result, error) {
 	return f.result, f.err
 }

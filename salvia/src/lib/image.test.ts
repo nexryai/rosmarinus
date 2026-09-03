@@ -12,7 +12,8 @@ describe("Canvas image processing", () => {
     it("creates a bounded WebP thumbnail in the browser", async () => {
         const close = vi.fn();
         const drawImage = vi.fn();
-        vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ close, height: 800, width: 1600 }));
+        const createBitmap = vi.fn().mockResolvedValue({ close, height: 800, width: 1600 });
+        vi.stubGlobal("createImageBitmap", createBitmap);
         vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
         vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback, type) => callback(new Blob(["thumbnail"], { type: type || "image/webp" })));
         vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
@@ -20,7 +21,8 @@ describe("Canvas image processing", () => {
 
         const thumbnail = await createCanvasThumbnail(new File(["image"], "photo.jpg", { type: "image/jpeg" }), 512);
 
-        expect(thumbnail).toMatchObject({ height: 256, url: "blob:preview", width: 512 });
+        expect(thumbnail).toMatchObject({ height: 256, originalHeight: 800, originalWidth: 1600, url: "blob:preview", width: 512 });
+        expect(createBitmap).toHaveBeenCalledWith(expect.any(File), { imageOrientation: "from-image" });
         expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 512, 256);
         expect(close).toHaveBeenCalledOnce();
         revokeCanvasThumbnail(thumbnail);

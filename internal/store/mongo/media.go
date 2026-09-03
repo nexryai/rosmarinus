@@ -21,16 +21,51 @@ type MediaRepository struct {
 }
 
 type mediaDocument struct {
-	ID          string     `bson:"_id"`
-	OriginalURL string     `bson:"originalUrl"`
-	PublicURL   string     `bson:"publicUrl"`
-	ContentType string     `bson:"contentType,omitempty"`
-	Size        int64      `bson:"size,omitempty"`
-	SHA256      string     `bson:"sha256,omitempty"`
-	State       string     `bson:"state"`
-	Error       string     `bson:"error,omitempty"`
-	CreatedAt   time.Time  `bson:"createdAt"`
-	FetchedAt   *time.Time `bson:"fetchedAt,omitempty"`
+	ID           string     `bson:"_id"`
+	OwnerActorID string     `bson:"ownerActorId,omitempty"`
+	Name         string     `bson:"name,omitempty"`
+	Width        int        `bson:"width,omitempty"`
+	Height       int        `bson:"height,omitempty"`
+	OriginalURL  string     `bson:"originalUrl"`
+	PublicURL    string     `bson:"publicUrl"`
+	ContentType  string     `bson:"contentType,omitempty"`
+	Size         int64      `bson:"size,omitempty"`
+	SHA256       string     `bson:"sha256,omitempty"`
+	State        string     `bson:"state"`
+	Error        string     `bson:"error,omitempty"`
+	CreatedAt    time.Time  `bson:"createdAt"`
+	FetchedAt    *time.Time `bson:"fetchedAt,omitempty"`
+}
+
+func (r *MediaRepository) CreateLocal(ctx context.Context, id, actorID, name, publicURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
+	if id == "" || actorID == "" || publicURL == "" || size <= 0 || digest == "" {
+		return nil, fmt.Errorf("local media metadata is incomplete")
+	}
+	now := time.Now().UTC()
+	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$setOnInsert": bson.M{
+		"_id": id, "ownerActorId": actorID, "name": name, "width": width, "height": height, "originalUrl": publicURL,
+		"publicUrl": publicURL, "state": domainmedia.StatePending, "createdAt": now,
+	}}, options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		return nil, err
+	}
+	if result.MatchedCount > 0 {
+		existing, findErr := r.FindByID(ctx, id)
+		if findErr != nil {
+			return nil, findErr
+		}
+		if existing == nil || existing.OwnerActorID != actorID || (existing.SHA256 != "" && existing.SHA256 != digest) {
+			return nil, fmt.Errorf("local media id conflicts with an existing upload")
+		}
+		if existing.State == domainmedia.StateReady {
+			return existing, nil
+		}
+	}
+	if err := r.StoreBlob(ctx, id, source, contentType, size, digest); err != nil {
+		_ = r.MarkFailed(ctx, id, "store local upload")
+		return nil, err
+	}
+	return r.MarkReady(ctx, id, contentType, size, digest)
 }
 
 func NewMediaRepository(db *mongo.Database) *MediaRepository {
@@ -111,7 +146,7 @@ func (r *MediaRepository) MarkFailed(ctx context.Context, id, message string) er
 
 func toMedia(doc mediaDocument) *domainmedia.Media {
 	return &domainmedia.Media{
-		ID: doc.ID, OriginalURL: doc.OriginalURL, PublicURL: doc.PublicURL,
+		ID: doc.ID, OwnerActorID: doc.OwnerActorID, Name: doc.Name, Width: doc.Width, Height: doc.Height, OriginalURL: doc.OriginalURL, PublicURL: doc.PublicURL,
 		ContentType: doc.ContentType, Size: doc.Size, SHA256: doc.SHA256,
 		State: doc.State, Error: doc.Error, CreatedAt: doc.CreatedAt, FetchedAt: doc.FetchedAt,
 	}

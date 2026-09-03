@@ -61,12 +61,12 @@ func (e *recordingExecutor) MarkNotificationRead(context.Context, string, string
 func TestExecuteCommandBuildsPostCommand(t *testing.T) {
 	executor := &recordingExecutor{}
 	_, actorID, err := ExecuteCommand(context.Background(), executor, CommandPostCreate, "account-1", "actor-1", PostCreateData{
-		NoteID: "note-1", Text: "hello", EmojiNames: []string{"salvia"},
+		NoteID: "note-1", Text: "hello", EmojiNames: []string{"salvia"}, MediaIDs: []string{"media-1"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actorID != "actor-1" || executor.post.ActorID != "actor-1" || executor.post.NoteID != "note-1" || executor.post.Text != "hello" || len(executor.post.EmojiNames) != 1 {
+	if actorID != "actor-1" || executor.post.ActorID != "actor-1" || executor.post.NoteID != "note-1" || executor.post.Text != "hello" || len(executor.post.EmojiNames) != 1 || len(executor.post.MediaIDs) != 1 {
 		t.Fatalf("post command = %+v actor=%q", executor.post, actorID)
 	}
 }

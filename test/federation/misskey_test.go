@@ -74,6 +74,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	blockRepo := mongostore.NewBlockRepository(db)
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
+	mediaRepo := mongostore.NewMediaRepository(db)
 	emojiRepo := mongostore.NewEmojiRepository(db)
 	instanceRepo := mongostore.NewInstanceRepository(db)
 	activityReceiptRepo := mongostore.NewActivityReceiptRepository(db)
@@ -665,17 +666,25 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return true
 	})
 
-	// Phase 15: publish simple and advanced MFM from Rosmarinus, verify simple
-	// MFM is safe HTML without redundant source metadata, advanced MFM retains
-	// its source, and confirm latest Misskey stores both delivered Create(Note)s.
+	// Phase 15: publish simple MFM with an Actor-owned local image and advanced
+	// MFM from Rosmarinus, verify the first Note keeps safe HTML and attachment
+	// metadata, the second retains its source, and current Misskey stores both
+	// delivered Create(Note)s.
 	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
 	const misskeyLocalNoteText = "Hello from Rosmarinus federation delivery \u200B:party:\u200B"
+	const localMediaID = "media_federation_fixture"
+	localMedia, err := mediaRepo.CreateLocal(ctx, localMediaID, localActor.ID, "salvia.png", cfg.PublicURL+"/media/"+localMediaID, "image/png", int64(len(avatarPNG)), "federation-fixture", 1, 1, bytes.NewReader(avatarPNG))
+	if err != nil || localMedia == nil {
+		t.Fatalf("store local Salvia upload: media=%+v err=%v", localMedia, err)
+	}
+	worker.SetMediaRepository(mediaRepo, nil)
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
 		NoteID:     localNoteID,
 		Text:       localNoteText,
 		EmojiNames: []string{"party"},
+		MediaIDs:   []string{localMedia.ID},
 		Visibility: string(domainnotes.VisibilityPublic),
 		Poll:       &connector.PollCreateCommand{Choices: []string{"cats", "dogs"}},
 	})
@@ -697,11 +706,15 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatalf("simple MFM was not rendered with current Misskey semantics: %#v", publicObject)
 	}
 	var misskeyLocalNoteID, storedLocalNoteText string
+	var storedLocalFiles int
 	waitFor(t, ctx, "Create(Note) stored by Misskey", func() bool {
 		var notes []struct {
-			ID   string `json:"id"`
-			Text string `json:"text"`
-			URI  string `json:"uri"`
+			ID    string `json:"id"`
+			Text  string `json:"text"`
+			URI   string `json:"uri"`
+			Files []struct {
+				Type string `json:"type"`
+			} `json:"files"`
 		}
 		misskey.call(ctx, "users/notes", map[string]any{
 			"i":      admin.Token,
@@ -712,6 +725,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			if note.URI == createdLocal.URI {
 				misskeyLocalNoteID = note.ID
 				storedLocalNoteText = note.Text
+				storedLocalFiles = len(note.Files)
 				return true
 			}
 		}
@@ -719,6 +733,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	})
 	if storedLocalNoteText != misskeyLocalNoteText {
 		t.Fatalf("Misskey stored simple MFM text %q, want %q", storedLocalNoteText, misskeyLocalNoteText)
+	}
+	if storedLocalFiles != 1 {
+		t.Fatalf("Misskey stored %d local attachment files, want 1", storedLocalFiles)
 	}
 	var shownOnMisskeyB struct {
 		Type   string `json:"type"`

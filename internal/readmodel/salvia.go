@@ -51,9 +51,11 @@ type Notification struct {
 }
 
 type Profile struct {
-	Actor          *actors.Actor
-	FollowersCount int
-	FollowingCount int
+	Actor           *actors.Actor
+	FollowersCount  int
+	FollowingCount  int
+	FollowStatus    string
+	BlockedByViewer bool
 }
 
 type Reader interface {

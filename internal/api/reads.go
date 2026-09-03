@@ -246,6 +246,7 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request, accountID, pro
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": profileView{
 		Actor: projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
+		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer,
 	}})
 }
 
@@ -434,9 +435,11 @@ type notificationView struct {
 }
 
 type profileView struct {
-	Actor          actorView `json:"actor"`
-	FollowersCount int       `json:"followers_count"`
-	FollowingCount int       `json:"following_count"`
+	Actor           actorView `json:"actor"`
+	FollowersCount  int       `json:"followers_count"`
+	FollowingCount  int       `json:"following_count"`
+	FollowStatus    string    `json:"follow_status,omitempty"`
+	BlockedByViewer bool      `json:"blocked_by_viewer"`
 }
 
 type emojiView struct {

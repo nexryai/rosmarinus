@@ -259,6 +259,10 @@
     @apply ml-auto rounded-full bg-transparent px-2 py-1 text-xs font-bold;
     color: var(--muted);
 }
+.note-visibility {
+    @apply rounded-full px-1.5 py-0.5 text-[10px];
+    background: var(--panel-muted);
+}
 .note-detail-link:hover {
     color: var(--accent-hover);
     background: var(--accent-soft);
@@ -520,6 +524,26 @@
     border-color: color-mix(in srgb, var(--danger) 20%, var(--border));
     background: color-mix(in srgb, var(--danger) 6%, var(--panel));
 }
+.profile-fields {
+    @apply mt-4 grid gap-px overflow-hidden rounded-2xl border;
+    border-color: var(--border);
+    background: var(--border);
+}
+.profile-fields > div {
+    @apply grid grid-cols-[minmax(6rem,0.35fr)_1fr] gap-3 px-3 py-2 text-sm;
+    background: var(--panel);
+}
+.profile-fields dt {
+    @apply font-bold;
+    color: var(--muted);
+}
+.profile-fields dd {
+    @apply break-words;
+}
+.profile-tags {
+    @apply mt-3 flex flex-wrap gap-2 text-sm;
+    color: var(--accent-hover);
+}
 .connection-list > button {
     @apply flex w-full items-center gap-3 rounded-2xl bg-transparent p-3 text-left;
 }
@@ -644,6 +668,35 @@
     color: var(--muted);
     border-color: var(--border);
     background: var(--panel-muted);
+}
+.upload-previews {
+    @apply mt-3 grid grid-cols-2 gap-2;
+}
+.upload-previews figure {
+    @apply relative overflow-hidden rounded-2xl;
+    background: var(--panel-muted);
+}
+.upload-previews img {
+    @apply aspect-video h-full w-full object-cover;
+}
+.upload-previews button {
+    @apply absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-black/65 text-white;
+}
+.upload-previews button svg {
+    @apply size-4;
+}
+.upload-previews figcaption {
+    @apply absolute bottom-1 right-2 rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white;
+}
+.upload-button {
+    @apply cursor-pointer;
+}
+.upload-button input {
+    @apply sr-only;
+}
+.sensitive-toggle {
+    @apply flex items-center gap-1 text-xs;
+    color: var(--muted);
 }
 .poll-editor {
     @apply mt-3 space-y-2 rounded-2xl border p-3;

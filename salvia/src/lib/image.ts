@@ -1,4 +1,4 @@
-export type CanvasThumbnail = { blob: Blob; height: number; url: string; width: number };
+export type CanvasThumbnail = { blob: Blob; height: number; originalHeight: number; originalWidth: number; url: string; width: number };
 
 export async function createCanvasThumbnail(file: File, maxEdge = 512, quality = 0.86): Promise<CanvasThumbnail> {
     if (!file.type.startsWith("image/")) throw new Error("画像ファイルを選択してください");
@@ -15,7 +15,7 @@ export async function createCanvasThumbnail(file: File, maxEdge = 512, quality =
         if (!context) throw new Error("Canvasを初期化できませんでした");
         context.drawImage(bitmap, 0, 0, width, height);
         const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => (value ? resolve(value) : reject(new Error("サムネイルを生成できませんでした"))), "image/webp", quality));
-        return { blob, height, url: URL.createObjectURL(blob), width };
+        return { blob, height, originalHeight: bitmap.height, originalWidth: bitmap.width, url: URL.createObjectURL(blob), width };
     } finally {
         bitmap.close();
     }

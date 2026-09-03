@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
 )
 
@@ -31,6 +34,19 @@ func (a fakeAuthenticator) Authenticate(*http.Request) (string, string, error) {
 type Session struct {
 	AccountID string
 	CSRFToken string
+}
+
+type fakeMediaUploadStore struct {
+	items []*domainmedia.Media
+}
+
+func (s *fakeMediaUploadStore) CreateLocal(_ context.Context, id, actorID, name, publicURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
+	if _, err := io.Copy(io.Discard, source); err != nil {
+		return nil, err
+	}
+	item := &domainmedia.Media{ID: id, OwnerActorID: actorID, Name: name, PublicURL: publicURL, ContentType: contentType, Size: size, SHA256: digest, Width: width, Height: height, State: domainmedia.StateReady}
+	s.items = append(s.items, item)
+	return item, nil
 }
 
 type fakeAccountLookup struct {
@@ -382,6 +398,49 @@ func TestHandlerDoesNotExposeInternalErrors(t *testing.T) {
 	}
 	if bytes.Contains(recorder.Body.Bytes(), []byte("database password")) {
 		t.Fatalf("internal error leaked: %s", recorder.Body.String())
+	}
+}
+
+func TestHandlerStoresOriginalAndBrowserGeneratedThumbnail(t *testing.T) {
+	_, executor, actorsStore := testHandler()
+	uploads := &fakeMediaUploadStore{}
+	handler := NewHandlerCompleteWithMedia(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}},
+		actorsStore, executor, &fakeReceiptStore{}, nil, nil,
+		NewInstanceInfo("Rosmarinus", "https://example.test", "test"), nil, nil,
+		uploads, 1<<20, nil, nil, time.Hour,
+	)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	original, err := writer.CreateFormFile("file", "photo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = original.Write([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"))
+	thumbnail, err := writer.CreateFormFile("thumbnail", "photo.thumbnail.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = thumbnail.Write([]byte("RIFF\x0c\x00\x00\x00WEBPVP8 "))
+	_ = writer.WriteField("width", "1600")
+	_ = writer.WriteField("height", "800")
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actors/actor-1/media", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("X-CSRF-Token", "csrf-token")
+	req.Header.Set("Idempotency-Key", "upload-request-123456")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if len(uploads.items) != 2 || uploads.items[0].OwnerActorID != "actor-1" || uploads.items[0].Width != 1600 || uploads.items[1].ContentType != "image/webp" {
+		t.Fatalf("uploads = %+v", uploads.items)
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"preview_url":"https://example.test/media/`)) {
+		t.Fatalf("response = %s", recorder.Body.String())
 	}
 }
 

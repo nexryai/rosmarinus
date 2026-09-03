@@ -106,9 +106,9 @@ and subsequent anonymous users see passkey login only.
 - [x] Build Actor creation, selection, profile editing, and deletion flows.
 - [x] Include the selected Actor ID in Actor-scoped API paths or request bodies;
       never send an account ID as authorization evidence.
-- [ ] Recover cleanly when the selected Actor is deleted, suspended, moved, or
+- [x] Recover cleanly when the selected Actor is deleted, suspended, moved, or
       no longer owned by the current account.
-- [ ] Store display order, color, pinning, and last-selected Actor through the
+- [x] Store display order, color, pinning, and last-selected Actor through the
       settings API without duplicating federation-authoritative Actor fields.
 - [ ] Test one account managing multiple Actors and cross-account access being
       rejected even when a foreign Actor ID is supplied manually.
@@ -123,16 +123,16 @@ Actor, timeline, Note, social mutation, notification, profile, emoji, instance,
 settings, and `GET /api/v1/events` contracts documented in
 `docs/salvia-integration.md`. The unchecked work below is SPA implementation.
 
-- [ ] Centralize versioned REST calls, runtime response validation, structured
+- [x] Centralize versioned REST calls, runtime response validation, structured
       error handling, cancellation, and session-loss handling.
-- [ ] Generate stable idempotency keys for retryable mutations. Reuse a key for
+- [x] Generate stable idempotency keys for retryable mutations. Reuse a key for
       the same logical intent; do not invent a new one after an ambiguous
       timeout until canonical state has been checked.
 - [x] Connect to authenticated Rosmarinus SSE and close it on
       logout or account change.
-- [ ] Scope caches and query keys by account and Actor. Invalidate only affected
+- [x] Scope caches and query keys by account and Actor. Invalidate only affected
       projections when an event names an Actor.
-- [ ] Handle duplicates, reconnects, missed events, and multiple tabs by
+- [x] Handle duplicates, reconnects, missed events, and multiple tabs by
       re-reading canonical state while preserving scroll and draft state where
       safe.
 - [ ] Test SSE isolation, reconnect backoff, duplicate invalidations, missed
@@ -153,10 +153,10 @@ Pub/Sub message arriving.
 - [x] Build account- and Actor-scoped notification views and mark-read actions.
 - [x] Build local and remote Actor profiles, follower/following views, moved and
       suspended states, and safe external-link/media behavior.
-- [ ] Generate image upload previews and thumbnails with Canvas, test
+- [x] Generate image upload previews and thumbnails with Canvas, test
       orientation and size handling, and keep the original file available when
       the upload contract requires it.
-- [ ] Add focused accessibility and interaction tests for every mutation and
+- [x] Add focused accessibility and interaction tests for every mutation and
       its loading, retry, empty, and error states.
 
 Exit criteria: core federation workflows are usable without exposing MongoDB,
