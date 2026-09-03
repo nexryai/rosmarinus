@@ -678,6 +678,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if err != nil || localMedia == nil {
 		t.Fatalf("store local Salvia upload: media=%+v err=%v", localMedia, err)
 	}
+	status, localMediaType, localMediaBody := misskey.getRaw(ctx, localMedia.PublicURL)
+	if status != http.StatusOK || localMediaType != "image/png" || !bytes.Equal(localMediaBody, avatarPNG) {
+		t.Fatalf("serve local Salvia upload: status=%d content_type=%q bytes=%d", status, localMediaType, len(localMediaBody))
+	}
 	worker.SetMediaRepository(mediaRepo, nil)
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
@@ -726,7 +730,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 				misskeyLocalNoteID = note.ID
 				storedLocalNoteText = note.Text
 				storedLocalFiles = len(note.Files)
-				return true
+				return len(note.Files) == 1
 			}
 		}
 		return false
