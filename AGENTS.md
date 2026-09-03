@@ -46,6 +46,8 @@
   the yellow default theme, custom emoji reactions, and Tabler Icons.
 - Do not edit `./salvia/salvia-old`; implement the current frontend in
   `./salvia` as a React SPA.
+- Use Tailwind CSS for Salvia styling and keep reusable theme tokens aligned
+  with the yellow-first product direction.
 - Keep authentication secrets, WebAuthn verification, sessions, authorization,
   MongoDB access, Redis access, and ActivityPub key material in Rosmarinus.
 - The SPA must not connect directly to MongoDB or Redis and must not treat its

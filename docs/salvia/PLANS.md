@@ -47,15 +47,15 @@ part of the target architecture.
 
 ## Phase 0: Establish The SPA Baseline
 
-- [ ] Inventory the Vite scaffold in `./salvia`, its scripts, linting,
+- [x] Inventory the Vite scaffold in `./salvia`, its scripts, linting,
       formatting, testing, and browser-support policy.
-- [ ] Inspect `./salvia/salvia-old` for product flows and visual choices only.
+- [x] Inspect `./salvia/salvia-old` for product flows and visual choices only.
       Do not copy Next.js routes, server modules, Ably code, or secrets.
-- [ ] Confirm `pnpm format`, `pnpm lint`, `pnpm test`, and `pnpm build`, adding
+- [x] Confirm `pnpm format`, `pnpm lint`, `pnpm test`, and `pnpm build`, adding
       focused tooling only where missing.
-- [ ] Define typed public configuration for the same-origin REST and SSE
+- [x] Define typed public configuration for the same-origin REST and SSE
       paths, preferably using relative defaults.
-- [ ] Add routing with a production history fallback that cannot shadow API or
+- [x] Add routing with a documented production history fallback that cannot shadow API or
       ActivityPub routes.
 
 Exit criteria: the static SPA builds reproducibly and contains no server or
@@ -63,16 +63,16 @@ secret-bearing dependency.
 
 ## Phase 1: Build The Design System And Shell
 
-- [ ] Define semantic design tokens with a yellow-based default palette and
+- [x] Define semantic design tokens with a yellow-based default palette and
       additional supported themes.
-- [ ] Add Tailwind CSS if retained from the old design direction and Tabler
+- [x] Add Tailwind CSS and Tabler
       Icons through `pnpm`.
 - [ ] Build accessible primitives in `src/components/ui` and reusable domain
       components in `src/components`.
-- [ ] Build responsive navigation, timeline layout, forms, menus, dialogs,
+- [x] Build responsive navigation, timeline layout, forms, menus, dialogs,
       avatars, loading states, empty states, and error boundaries.
-- [ ] Keep account identity and active Actor visibly separate in the shell.
-- [ ] Persist theme and non-authoritative display preferences through the
+- [x] Keep account identity and active Actor visibly separate in the shell.
+- [x] Persist theme and non-authoritative display preferences through the
       Rosmarinus settings API; use local storage only as a non-sensitive render
       optimization.
 - [ ] Add component, keyboard, contrast, and responsive behavior tests.
@@ -84,13 +84,13 @@ shell without Next.js assumptions.
 
 - [x] Add an unauthenticated bootstrap-status call. Render first-administrator
       setup only when Rosmarinus reports an empty installation.
-- [ ] Implement the SPA WebAuthn registration and login UI using the now
+- [x] Implement the SPA WebAuthn registration and login UI using the now
       available Rosmarinus challenge and verification endpoints.
-- [ ] Do not complete setup or show an authenticated shell until the server has
+- [x] Do not complete setup or show an authenticated shell until the server has
       accepted the passkey ceremony and established its HTTP-only session.
 - [ ] Implement login, logout, session refresh, expired-session handling, and
       account suspension/deletion states.
-- [ ] Send CSRF proof on cookie-authenticated mutations according to the API
+- [x] Send CSRF proof on cookie-authenticated mutations according to the API
       contract. Do not store session bearer tokens or credential material in
       local storage.
 - [ ] Test unsupported browsers, canceled ceremonies, expired/replayed
@@ -101,10 +101,10 @@ and subsequent anonymous users see passkey login only.
 
 ## Phase 3: Implement Multi-Actor Workflows
 
-- [ ] Load owned Actors from the implemented session-scoped API and handle
+- [x] Load owned Actors from the implemented session-scoped API and handle
       zero, one, and multiple Actor states.
-- [ ] Build Actor creation, selection, profile editing, and deletion flows.
-- [ ] Include the selected Actor ID in Actor-scoped API paths or request bodies;
+- [x] Build Actor creation, selection, profile editing, and deletion flows.
+- [x] Include the selected Actor ID in Actor-scoped API paths or request bodies;
       never send an account ID as authorization evidence.
 - [ ] Recover cleanly when the selected Actor is deleted, suspended, moved, or
       no longer owned by the current account.
@@ -128,7 +128,7 @@ settings, and `GET /api/v1/events` contracts documented in
 - [ ] Generate stable idempotency keys for retryable mutations. Reuse a key for
       the same logical intent; do not invent a new one after an ambiguous
       timeout until canonical state has been checked.
-- [ ] Connect to authenticated Rosmarinus SSE and close it on
+- [x] Connect to authenticated Rosmarinus SSE and close it on
       logout or account change.
 - [ ] Scope caches and query keys by account and Actor. Invalidate only affected
       projections when an event names an Actor.
@@ -143,7 +143,7 @@ Pub/Sub message arriving.
 
 ## Phase 5: Build Core Social Features
 
-- [ ] Build home/public timelines with stable pagination and deterministic
+- [x] Build home/public timelines with stable pagination and deterministic
       deduplication.
 - [ ] Render notes, replies, quotes, renotes, content warnings, visibility,
       polls, attachments, mentions, and custom emoji reactions from sanitized

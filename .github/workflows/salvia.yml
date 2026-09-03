@@ -1,0 +1,43 @@
+name: Salvia SPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "salvia/**"
+      - "docs/salvia/**"
+      - ".github/workflows/salvia.yml"
+  pull_request:
+    paths:
+      - "salvia/**"
+      - "docs/salvia/**"
+      - ".github/workflows/salvia.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: salvia
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          package_json_file: salvia/package.json
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: salvia/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build

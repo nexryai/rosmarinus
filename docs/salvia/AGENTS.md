@@ -8,6 +8,8 @@ edit it or carry its Next.js and Ably architecture into the current app.
 
 - Build Salvia as a React and TypeScript single-page application. Do not add
   Next.js, server components, server routes, API keys, or a frontend backend.
+- Use Tailwind CSS for styling. Keep reusable theme tokens and shared UI
+  primitives aligned with the yellow-first product direction.
 - Use `pnpm` for dependencies and commit the lockfile with dependency changes.
 - Keep runtime configuration environment-backed at build or deployment time.
   No value shipped to the browser may be a secret.
