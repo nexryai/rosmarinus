@@ -722,6 +722,7 @@ type actorView struct {
 	IsDiscoverable bool                  `json:"is_discoverable"`
 	Type           string                `json:"type"`
 	URI            string                `json:"uri"`
+	MovedToURI     string                `json:"moved_to_uri,omitempty"`
 	IsSuspended    bool                  `json:"is_suspended"`
 }
 
@@ -732,6 +733,6 @@ func projectActor(actor *actors.Actor) actorView {
 		Location: actor.Location, AvatarURL: actor.AvatarURL, BannerURL: actor.BannerURL,
 		Tags: actor.Tags, EmojiNames: actor.EmojiNames, IsBot: actor.IsBot,
 		IsCat: actor.IsCat, IsLocked: actor.IsLocked, IsDiscoverable: actor.IsDiscoverable,
-		Type: actor.Type, URI: actor.URI, IsSuspended: actor.IsSuspended,
+		Type: actor.Type, URI: actor.URI, MovedToURI: actor.MovedToURI, IsSuspended: actor.IsSuspended,
 	}
 }

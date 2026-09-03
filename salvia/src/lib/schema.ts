@@ -27,6 +27,7 @@ export const actorSchema = z.object({
     is_discoverable: z.boolean().default(false),
     type: z.string().default("Person"),
     uri: z.string(),
+    moved_to_uri: z.string().default(""),
     is_suspended: z.boolean().default(false),
 });
 

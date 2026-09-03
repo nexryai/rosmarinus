@@ -5,11 +5,12 @@ import { IconLeaf2, IconPlus } from "@tabler/icons-react";
 import "./App.css";
 import { AppShell } from "./components/AppShell";
 import { AuthScreen } from "./components/AuthScreen";
-import { Composer } from "./components/Composer";
+import { Composer, type ComposerIntent } from "./components/Composer";
 import { Button, ErrorBanner, Loading } from "./components/ui";
 import { ApiError, api, type Page } from "./lib/api";
-import type { AccountSettings, Actor, ActorSettings, Session } from "./lib/schema";
+import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "./lib/schema";
 import { FollowRequestsPage } from "./pages/FollowRequestsPage";
+import { NotePage } from "./pages/NotePage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -18,12 +19,13 @@ import { TimelinePage } from "./pages/TimelinePage";
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };
 
-const routeFromPath = (path: string): { page: Page; profileID?: string } => {
+const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
     if (path === "/public") return { page: "public" };
     if (path === "/notifications") return { page: "notifications" };
     if (path === "/follow-requests") return { page: "follow-requests" };
     if (path === "/settings") return { page: "settings" };
     if (path.startsWith("/profiles/")) return { page: "profile", profileID: decodeURIComponent(path.slice(10)) };
+    if (path.startsWith("/notes/")) return { page: "note", noteID: decodeURIComponent(path.slice(7)) };
     return { page: "home" };
 };
 
@@ -33,8 +35,9 @@ function App() {
     const [actors, setActors] = useState<Actor[]>([]);
     const [selectedActorID, setSelectedActorID] = useState("");
     const [settings, setSettings] = useState<AccountSettings>(defaultSettings);
+    const [emojis, setEmojis] = useState<Emoji[]>([]);
     const [route, setRoute] = useState(() => routeFromPath(window.location.pathname));
-    const [composerOpen, setComposerOpen] = useState(false);
+    const [composerIntent, setComposerIntent] = useState<ComposerIntent>();
     const [composerSettings, setComposerSettings] = useState<ActorSettings>();
     const [refreshKey, setRefreshKey] = useState(0);
     const [error, setError] = useState("");
@@ -48,6 +51,10 @@ function App() {
         const preferred = ownedActors.find((actor) => actor.id === accountSettings.selected_actor_id);
         setSelectedActorID((existing) => (ownedActors.some((actor) => actor.id === existing) ? existing : preferred?.id || ownedActors[0]?.id || ""));
         setAuthState("authenticated");
+        void api
+            .emojis()
+            .then(setEmojis)
+            .catch(() => setEmojis([]));
     }, []);
 
     useEffect(() => {
@@ -114,9 +121,9 @@ function App() {
             setError(reason instanceof Error ? reason.message : "Actorを切り替えられませんでした");
         }
     };
-    const openComposer = async () => {
+    const openComposer = async (intent: ComposerIntent = { kind: "post" }) => {
         if (!selectedActor) return;
-        setComposerOpen(true);
+        setComposerIntent(intent);
         try {
             setComposerSettings(await api.actorSettings(selectedActor.id));
         } catch {
@@ -162,19 +169,55 @@ function App() {
     return (
         <AppShell actors={actors} onActorChange={(id) => void chooseActor(id)} onCompose={() => void openComposer()} onLogout={() => void logout()} onNavigate={navigate} page={route.page} selectedActor={selectedActor} session={session}>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
-            {route.page === "home" && <TimelinePage actorID={selectedActor.id} csrf={session.csrf_token} kind="home" onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
-            {route.page === "public" && <TimelinePage actorID={selectedActor.id} csrf={session.csrf_token} kind="public" onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
-            {route.page === "notifications" && <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} refreshKey={refreshKey} />}
+            {route.page === "home" && (
+                <TimelinePage
+                    actorID={selectedActor.id}
+                    csrf={session.csrf_token}
+                    emojis={emojis}
+                    kind="home"
+                    onCompose={(kind, note) => void openComposer({ kind, target: note })}
+                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
+                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
+                    refreshKey={refreshKey}
+                />
+            )}
+            {route.page === "public" && (
+                <TimelinePage
+                    actorID={selectedActor.id}
+                    csrf={session.csrf_token}
+                    emojis={emojis}
+                    kind="public"
+                    onCompose={(kind, note) => void openComposer({ kind, target: note })}
+                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
+                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
+                    refreshKey={refreshKey}
+                />
+            )}
+            {route.page === "notifications" && <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} onActorChange={(id) => void chooseActor(id)} onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
             {route.page === "follow-requests" && <FollowRequestsPage actorID={selectedActor.id} csrf={session.csrf_token} refreshKey={refreshKey} />}
             {route.page === "settings" && <SettingsPage accountSettings={settings} actors={actors} csrf={session.csrf_token} onActorsChanged={loadWorkspace} onSettingsChanged={setSettings} selectedActor={selectedActor} />}
-            {route.page === "profile" && route.profileID && <ProfilePage actorID={selectedActor.id} csrf={session.csrf_token} profileID={route.profileID} />}
-            {composerOpen && (
+            {route.page === "profile" && route.profileID && <ProfilePage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} profileID={route.profileID} />}
+            {route.page === "note" && route.noteID && (
+                <NotePage
+                    actorID={selectedActor.id}
+                    csrf={session.csrf_token}
+                    emojis={emojis}
+                    noteID={route.noteID}
+                    onBack={() => window.history.back()}
+                    onCompose={(kind, note) => void openComposer({ kind, target: note })}
+                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
+                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
+                    refreshKey={refreshKey}
+                />
+            )}
+            {composerIntent && (
                 <Composer
                     actor={selectedActor}
                     actorSettings={composerSettings}
-                    onClose={() => setComposerOpen(false)}
-                    onSubmit={async (text, visibility, contentWarning) => {
-                        await api.createPost(session.csrf_token, selectedActor.id, text, visibility, contentWarning);
+                    intent={composerIntent}
+                    onClose={() => setComposerIntent(undefined)}
+                    onSubmit={async (input) => {
+                        await api.createPost(session.csrf_token, selectedActor.id, input);
                         setRefreshKey((value) => value + 1);
                     }}
                 />

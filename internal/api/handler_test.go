@@ -265,6 +265,7 @@ func TestHandlerRequiresCSRFForMutation(t *testing.T) {
 
 func TestHandlerListsOnlyOwnedActorsWithoutPrivateKeys(t *testing.T) {
 	handler, _, store := testHandler()
+	store.actors[0].MovedToURI = "https://example.test/users/alice-next"
 	store.actors = append(store.actors,
 		actors.Actor{ID: "actor-2", OwnerAccountID: "account-2", Username: "mallory"},
 	)
@@ -282,7 +283,7 @@ func TestHandlerListsOnlyOwnedActorsWithoutPrivateKeys(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Data) != 1 || body.Data[0].ID != "actor-1" {
+	if len(body.Data) != 1 || body.Data[0].ID != "actor-1" || body.Data[0].MovedToURI != store.actors[0].MovedToURI {
 		t.Fatalf("actors = %+v", body.Data)
 	}
 }

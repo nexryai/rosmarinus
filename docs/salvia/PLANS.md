@@ -145,13 +145,13 @@ Pub/Sub message arriving.
 
 - [x] Build home/public timelines with stable pagination and deterministic
       deduplication.
-- [ ] Render notes, replies, quotes, renotes, content warnings, visibility,
+- [x] Render notes, replies, quotes, renotes, content warnings, visibility,
       polls, attachments, mentions, and custom emoji reactions from sanitized
       API projections.
-- [ ] Implement compose, delete, reaction, poll vote, follow/unfollow,
+- [x] Implement compose, delete, reaction, poll vote, follow/unfollow,
       block/unblock, and mandatory follow approve/reject flows.
-- [ ] Build account- and Actor-scoped notification views and mark-read actions.
-- [ ] Build local and remote Actor profiles, follower/following views, moved and
+- [x] Build account- and Actor-scoped notification views and mark-read actions.
+- [x] Build local and remote Actor profiles, follower/following views, moved and
       suspended states, and safe external-link/media behavior.
 - [ ] Generate image upload previews and thumbnails with Canvas, test
       orientation and size handling, and keep the original file available when

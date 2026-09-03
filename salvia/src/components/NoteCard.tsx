@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import { IconDots, IconMessageCircle, IconRepeat, IconTrash } from "@tabler/icons-react";
+import { IconMessageCircle, IconQuote, IconRepeat, IconTrash } from "@tabler/icons-react";
 
-import type { Note } from "../lib/schema";
+import type { Emoji, Note } from "../lib/schema";
 import { Avatar, Button } from "./ui";
 
 const relativeTime = (value: string) => {
@@ -13,23 +13,45 @@ const relativeTime = (value: string) => {
     return new Intl.DateTimeFormat("ja", { month: "short", day: "numeric" }).format(new Date(value));
 };
 
+const renderText = (text: string, note: Note) => {
+    const byName = new Map(note.emojis.map((emoji) => [emoji.name, emoji]));
+    let offset = 0;
+    return text.split(/(:[A-Za-z0-9_+-]+:)/g).map((part) => {
+        const tokenOffset = offset;
+        offset += part.length;
+        const emoji = part.startsWith(":") && part.endsWith(":") ? byName.get(part.slice(1, -1)) : undefined;
+        return emoji ? <img alt={part} className="inline-emoji" key={tokenOffset} loading="lazy" src={emoji.url} /> : part;
+    });
+};
+
 export function NoteCard({
     note,
     ownActorID,
     onDelete,
+    onOpenNote,
     onOpenProfile,
+    onQuote,
     onReact,
+    onRenote,
+    onReply,
     onVote,
+    emojis = [],
 }: {
     note: Note;
     ownActorID: string;
     onDelete: (noteID: string) => Promise<void>;
+    onOpenNote?: (noteID: string) => void;
     onOpenProfile: (actorID: string) => void;
+    onQuote: (note: Note) => void;
     onReact: (noteID: string, reaction: string, reacted: boolean) => Promise<void>;
+    onRenote: (note: Note) => Promise<void>;
+    onReply: (note: Note) => void;
     onVote: (noteID: string, choice: number) => Promise<void>;
+    emojis?: Emoji[];
 }) {
     const [revealed, setRevealed] = useState(!note.content_warning);
     const [busy, setBusy] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
     const author = note.author;
     const maxPollVotes = Math.max(...(note.poll?.choices ?? []).map((item) => item.votes), 1);
     const act = async (operation: () => Promise<void>) => {
@@ -51,9 +73,11 @@ export function NoteCard({
                     </button>
                     <span>·</span>
                     <time dateTime={note.created_at}>{relativeTime(note.created_at)}</time>
-                    <button aria-label="その他の操作" className="note-menu" type="button">
-                        <IconDots />
-                    </button>
+                    {onOpenNote && (
+                        <button className="note-detail-link" onClick={() => onOpenNote(note.id)} type="button">
+                            詳細
+                        </button>
+                    )}
                 </header>
                 {note.renote && (
                     <div className="reference">
@@ -70,7 +94,7 @@ export function NoteCard({
                         </Button>
                     </div>
                 )}
-                {revealed && note.text && <p className="note-text">{note.text}</p>}
+                {revealed && note.text && <p className="note-text">{renderText(note.text, note)}</p>}
                 {revealed && note.attachments.length > 0 && (
                     <div className={`attachments attachments--${Math.min(note.attachments.length, 4)}`}>
                         {note.attachments.map((attachment) =>
@@ -104,11 +128,14 @@ export function NoteCard({
                     </div>
                 )}
                 <footer className="note-actions">
-                    <button aria-label="返信" type="button">
+                    <button aria-label="返信" onClick={() => onReply(note)} type="button">
                         <IconMessageCircle />
                     </button>
-                    <button aria-label="リノート" type="button">
+                    <button aria-label="リノート" disabled={busy} onClick={() => void act(() => onRenote(note))} type="button">
                         <IconRepeat />
+                    </button>
+                    <button aria-label="引用" onClick={() => onQuote(note)} type="button">
+                        <IconQuote />
                     </button>
                     {note.reactions.map((reaction) => (
                         <button aria-pressed={reaction.reacted} className={reaction.reacted ? "reaction reaction--active" : "reaction"} disabled={busy} key={reaction.reaction} onClick={() => act(() => onReact(note.id, reaction.reaction, reaction.reacted))} type="button">
@@ -116,16 +143,7 @@ export function NoteCard({
                             <b>{reaction.count}</b>
                         </button>
                     ))}
-                    <button
-                        aria-label="リアクションを追加"
-                        className="reaction-add"
-                        disabled={busy}
-                        onClick={() => {
-                            const reaction = window.prompt("リアクション（絵文字または :name:）");
-                            if (reaction?.trim()) void act(() => onReact(note.id, reaction.trim(), false));
-                        }}
-                        type="button"
-                    >
+                    <button aria-label="リアクションを追加" className="reaction-add" disabled={busy} onClick={() => setPickerOpen((value) => !value)} type="button">
                         ＋
                     </button>
                     {author?.id === ownActorID && (
@@ -142,6 +160,24 @@ export function NoteCard({
                         </button>
                     )}
                 </footer>
+                {pickerOpen && (
+                    <div className="reaction-picker">
+                        <button onClick={() => void act(() => onReact(note.id, "👍", false)).then(() => setPickerOpen(false))} type="button">
+                            👍
+                        </button>
+                        <button onClick={() => void act(() => onReact(note.id, "❤️", false)).then(() => setPickerOpen(false))} type="button">
+                            ❤️
+                        </button>
+                        <button onClick={() => void act(() => onReact(note.id, "😂", false)).then(() => setPickerOpen(false))} type="button">
+                            😂
+                        </button>
+                        {emojis.map((emoji) => (
+                            <button aria-label={`:${emoji.name}:`} key={emoji.name} onClick={() => void act(() => onReact(note.id, `:${emoji.name}:`, false)).then(() => setPickerOpen(false))} title={`:${emoji.name}:`} type="button">
+                                <img alt="" src={emoji.url} />
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </article>
     );

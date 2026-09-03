@@ -5,9 +5,27 @@ import { IconRefresh } from "@tabler/icons-react";
 import { NoteCard } from "../components/NoteCard";
 import { Button, Empty, ErrorBanner, Loading } from "../components/ui";
 import { api } from "../lib/api";
-import type { Note } from "../lib/schema";
+import type { Emoji, Note } from "../lib/schema";
 
-export function TimelinePage({ actorID, csrf, kind, onOpenProfile, refreshKey }: { actorID: string; csrf: string; kind: "home" | "public"; onOpenProfile: (actorID: string) => void; refreshKey: number }) {
+export function TimelinePage({
+    actorID,
+    csrf,
+    emojis,
+    kind,
+    onCompose,
+    onOpenNote,
+    onOpenProfile,
+    refreshKey,
+}: {
+    actorID: string;
+    csrf: string;
+    emojis: Emoji[];
+    kind: "home" | "public";
+    onCompose: (kind: "reply" | "quote", note: Note) => void;
+    onOpenNote: (noteID: string) => void;
+    onOpenProfile: (actorID: string) => void;
+    refreshKey: number;
+}) {
     const [notes, setNotes] = useState<Note[]>([]);
     const [next, setNext] = useState("");
     const [loading, setLoading] = useState(true);
@@ -61,11 +79,16 @@ export function TimelinePage({ actorID, csrf, kind, onOpenProfile, refreshKey }:
                 <section aria-label="ノート一覧" className="feed">
                     {notes.map((note) => (
                         <NoteCard
+                            emojis={emojis}
                             key={note.id}
                             note={note}
                             onDelete={(noteID) => mutate(() => api.deletePost(csrf, actorID, noteID))}
+                            onOpenNote={onOpenNote}
                             onOpenProfile={onOpenProfile}
+                            onQuote={(target) => onCompose("quote", target)}
                             onReact={(noteID, reaction, reacted) => mutate(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
+                            onRenote={(target) => mutate(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
+                            onReply={(target) => onCompose("reply", target)}
                             onVote={(noteID, choice) => mutate(() => api.vote(csrf, actorID, noteID, choice))}
                             ownActorID={actorID}
                         />

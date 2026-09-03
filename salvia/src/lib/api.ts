@@ -42,6 +42,20 @@ export class ApiError extends Error {
 
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown; csrf?: string; idempotent?: boolean };
 
+export type CreatePostInput = {
+    text?: string;
+    visibility: string;
+    content_warning?: string;
+    sensitive?: boolean;
+    in_reply_to_uri?: string;
+    quote_uri?: string;
+    renote_id?: string;
+    mention_uris?: string[];
+    hashtags?: string[];
+    emoji_names?: string[];
+    poll?: { choices: string[]; multiple?: boolean; expires_at?: string };
+};
+
 async function request<T>(path: string, schema: z.ZodType<T>, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers(options.headers);
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
@@ -91,8 +105,8 @@ export const api = {
         const result = await request(`/timelines/${kind}${query({ actor_id: actorID, after, limit: "30" })}`, pageEnvelope(noteSchema));
         return { data: result.data, next: result.next };
     },
-    createPost: async (csrf: string, actorID: string, text: string, visibility: string, contentWarning?: string): Promise<void> => {
-        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: { note_id: crypto.randomUUID(), text, visibility, ...(contentWarning ? { content_warning: contentWarning } : {}) }, csrf, idempotent: true });
+    createPost: async (csrf: string, actorID: string, input: CreatePostInput): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: { note_id: crypto.randomUUID(), ...input }, csrf, idempotent: true });
     },
     deletePost: async (csrf: string, actorID: string, noteID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/posts/${encodeURIComponent(noteID)}`, envelope(z.unknown()), { method: "DELETE", csrf, idempotent: true });
@@ -107,6 +121,7 @@ export const api = {
         await request(`/actors/${encodeURIComponent(actorID)}/poll-votes`, envelope(z.unknown()), { method: "POST", body: { note_id: noteID, choice }, csrf, idempotent: true });
     },
     notifications: async (actorID: string): Promise<Notification[]> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications?limit=50`, pageEnvelope(notificationSchema))).data,
+    accountNotifications: async (): Promise<Notification[]> => (await request("/notifications?limit=50", pageEnvelope(notificationSchema))).data,
     markNotificationRead: async (csrf: string, actorID: string, notificationID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/notifications/${encodeURIComponent(notificationID)}`, envelope(z.unknown()), { method: "PATCH", body: { is_read: true }, csrf, idempotent: true });
     },
@@ -116,12 +131,21 @@ export const api = {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
     },
     profile: async (viewerID: string, actorID: string): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema))).data,
+    profileConnections: async (viewerID: string, actorID: string, kind: "followers" | "following"): Promise<Connection[]> => (await request(`/profiles/${encodeURIComponent(actorID)}/${kind}${query({ actor_id: viewerID, limit: "100" })}`, pageEnvelope(connectionSchema))).data,
     follow: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follows`, envelope(z.unknown()), { method: "POST", body: { target }, csrf, idempotent: true });
     },
     unfollow: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follows`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
     },
+    block: async (csrf: string, actorID: string, target: string): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "POST", body: { target }, csrf, idempotent: true });
+    },
+    unblock: async (csrf: string, actorID: string, target: string): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
+    },
+    note: async (actorID: string, noteID: string): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema))).data,
+    thread: async (actorID: string, noteID: string): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: "100" })}`, pageEnvelope(noteSchema))).data,
     emojis: async (): Promise<Emoji[]> => (await request("/emojis?limit=100", pageEnvelope(emojiSchema))).data,
     instance: async (): Promise<Instance> => (await request("/instance", envelope(instanceSchema))).data,
     accountSettings: async (): Promise<AccountSettings> => (await request("/settings", envelope(accountSettingsSchema))).data,
@@ -130,4 +154,4 @@ export const api = {
     updateActorSettings: async (csrf: string, actorID: string, patch: Partial<ActorSettings>): Promise<ActorSettings> => (await request(`/actors/${encodeURIComponent(actorID)}/settings`, envelope(actorSettingsSchema), { method: "PATCH", body: patch, csrf })).data,
 };
 
-export type Page = "home" | "public" | "notifications" | "follow-requests" | "settings" | "profile";
+export type Page = "home" | "public" | "notifications" | "follow-requests" | "settings" | "profile" | "note";

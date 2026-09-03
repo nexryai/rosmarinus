@@ -178,6 +178,9 @@ authenticated account; reusing one for a different operation or Actor returns
 `409`. Request JSON is limited to 1 MiB, rejects unknown fields, and cannot
 supply account ownership. Actor responses explicitly omit owner IDs, public
 key material, private keys, inboxes, and internal delivery state.
+The safe Actor projection includes `moved_to_uri` and `is_suspended` so Salvia
+can show migration and moderation state without reading federation or database
+records directly.
 
 ### Implemented read and settings endpoints
 

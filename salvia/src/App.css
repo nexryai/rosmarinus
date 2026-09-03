@@ -255,8 +255,19 @@
 .note-menu svg {
     @apply size-5;
 }
+.note-detail-link {
+    @apply ml-auto rounded-full bg-transparent px-2 py-1 text-xs font-bold;
+    color: var(--muted);
+}
+.note-detail-link:hover {
+    color: var(--accent-hover);
+    background: var(--accent-soft);
+}
 .note-text {
     @apply mt-2 whitespace-pre-wrap break-words leading-7;
+}
+.inline-emoji {
+    @apply mx-0.5 inline-block size-6 object-contain align-text-bottom;
 }
 .content-warning {
     @apply mt-3 flex items-center gap-3 rounded-xl p-3 text-sm;
@@ -357,6 +368,28 @@
 .note-actions .delete-note:hover {
     color: var(--danger);
 }
+.reaction-picker,
+.emoji-picker {
+    @apply mt-2 flex max-h-32 flex-wrap gap-1 overflow-y-auto rounded-2xl border p-2;
+    border-color: var(--border);
+    background: var(--panel);
+}
+.reaction-picker button,
+.emoji-picker button {
+    @apply grid size-9 place-items-center rounded-xl bg-transparent text-xl;
+}
+.reaction-picker button:hover,
+.emoji-picker button:hover {
+    background: var(--accent-soft);
+}
+.reaction-picker img,
+.emoji-picker img {
+    @apply size-6 object-contain;
+}
+.note-thread > h2 {
+    @apply px-5 py-3 text-sm font-black sm:px-7;
+    background: var(--panel-muted);
+}
 .load-more {
     @apply flex justify-center p-6;
 }
@@ -388,6 +421,22 @@
 }
 .notification .button {
     @apply min-h-8 px-3 text-xs;
+}
+.scope-tabs {
+    @apply flex gap-2 border-b px-5 py-3 sm:px-7;
+    border-color: var(--border);
+}
+.scope-tabs button {
+    @apply rounded-full bg-transparent px-4 py-2 text-sm font-bold;
+    color: var(--muted);
+}
+.scope-tabs button[aria-pressed="true"] {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+}
+.notification__context {
+    @apply mr-3 mt-2 bg-transparent text-xs font-bold underline;
+    color: var(--accent-hover);
 }
 .request {
     @apply flex items-center gap-3 px-5 py-5 sm:px-7;
@@ -427,7 +476,7 @@
     @apply top-4;
 }
 .profile-hero__actions {
-    @apply absolute right-6 top-4 sm:right-8;
+    @apply absolute right-6 top-4 flex gap-2 sm:right-8;
 }
 .profile-hero h1 {
     @apply mt-1 text-2xl font-black;
@@ -457,6 +506,32 @@
 .profile-counts strong {
     @apply mr-1;
     color: var(--text);
+}
+.profile-counts button {
+    @apply bg-transparent;
+    color: inherit;
+}
+.profile-counts button:hover {
+    @apply underline;
+}
+.profile-alert {
+    @apply mt-3 rounded-xl border px-3 py-2 text-sm;
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 20%, var(--border));
+    background: color-mix(in srgb, var(--danger) 6%, var(--panel));
+}
+.connection-list > button {
+    @apply flex w-full items-center gap-3 rounded-2xl bg-transparent p-3 text-left;
+}
+.connection-list > button:hover {
+    background: var(--panel-muted);
+}
+.connection-list span,
+.connection-list small {
+    @apply block;
+}
+.connection-list small {
+    color: var(--muted);
 }
 .settings-stack {
     @apply space-y-4 bg-[var(--page)] p-4 sm:p-6;
@@ -563,6 +638,47 @@
 }
 .composer__cw {
     @apply mt-3;
+}
+.composer__target {
+    @apply mt-3 line-clamp-3 rounded-2xl border p-3 text-sm;
+    color: var(--muted);
+    border-color: var(--border);
+    background: var(--panel-muted);
+}
+.poll-editor {
+    @apply mt-3 space-y-2 rounded-2xl border p-3;
+    border-color: var(--border);
+}
+.poll-editor legend {
+    @apply px-1 text-sm font-bold;
+}
+.poll-editor > div {
+    @apply flex gap-2;
+}
+.poll-editor input[type="text"],
+.poll-editor > div > input {
+    @apply min-w-0 flex-1 rounded-xl border px-3 py-2;
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--panel-muted);
+}
+.poll-editor > div > button {
+    @apply grid size-10 place-items-center rounded-full bg-transparent;
+    color: var(--muted);
+}
+.poll-editor > div > button svg,
+.poll-editor__add svg {
+    @apply size-4;
+}
+.poll-editor__add {
+    @apply flex items-center gap-1 bg-transparent text-sm font-bold;
+    color: var(--accent-hover);
+}
+.poll-editor > label {
+    @apply flex items-center gap-2 text-sm;
+}
+.round-button--leading {
+    @apply ml-0 mr-3;
 }
 .composer footer {
     @apply mt-5 flex items-end gap-3 border-t pt-4;

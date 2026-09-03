@@ -8,20 +8,21 @@ import type { Notification } from "../lib/schema";
 
 const labels: Record<string, string> = { follow: "フォローされました", reaction: "リアクションが届きました", mention: "メンションされました", reply: "返信が届きました", poll_vote: "投票されました" };
 
-export function NotificationsPage({ actorID, csrf, refreshKey }: { actorID: string; csrf: string; refreshKey: number }) {
+export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, refreshKey }: { actorID: string; csrf: string; onActorChange: (actorID: string) => void; onOpenNote: (noteID: string) => void; refreshKey: number }) {
     const [items, setItems] = useState<Notification[]>([]);
+    const [scope, setScope] = useState<"actor" | "account">("actor");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            setItems(await api.notifications(actorID));
+            setItems(scope === "actor" ? await api.notifications(actorID) : await api.accountNotifications());
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "通知を読み込めませんでした");
         } finally {
             setLoading(false);
         }
-    }, [actorID]);
+    }, [actorID, scope]);
     useEffect(() => {
         void refreshKey;
         void load();
@@ -44,6 +45,14 @@ export function NotificationsPage({ actorID, csrf, refreshKey }: { actorID: stri
                 </div>
                 <IconBellCheck className="header-icon" />
             </header>
+            <div className="scope-tabs">
+                <button aria-pressed={scope === "actor"} onClick={() => setScope("actor")} type="button">
+                    このActor
+                </button>
+                <button aria-pressed={scope === "account"} onClick={() => setScope("account")} type="button">
+                    すべてのActor
+                </button>
+            </div>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading ? (
                 <Loading />
@@ -58,6 +67,16 @@ export function NotificationsPage({ actorID, csrf, refreshKey }: { actorID: stri
                                 <strong>{item.source?.name || item.source?.username || "Fediverse"}</strong>
                                 <p>{labels[item.kind] || item.kind}</p>
                                 {item.note?.text && <blockquote>{item.note.text}</blockquote>}
+                                {scope === "account" && item.actor_id !== actorID && (
+                                    <button className="notification__context" onClick={() => onActorChange(item.actor_id)} type="button">
+                                        この通知のActorへ切り替え
+                                    </button>
+                                )}
+                                {item.note_id && (
+                                    <button className="notification__context" onClick={() => onOpenNote(item.note_id || "")} type="button">
+                                        ノートを開く
+                                    </button>
+                                )}
                                 <time>{new Intl.DateTimeFormat("ja", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at))}</time>
                             </div>
                             {!item.is_read && (
