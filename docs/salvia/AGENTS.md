@@ -14,6 +14,9 @@ edit it or carry its Next.js and Ably architecture into the current app.
 - Write focused tests for components, client API behavior, accessibility, and
   security-sensitive browser flows whenever practical.
 - Keep LF line endings and avoid comments that narrate self-evident code.
+- Generate image upload previews, thumbnails, cropping results, and other
+  required derivatives in the browser with Canvas APIs. Preserve the original
+  upload separately when the product flow requires it.
 
 ## Product Direction
 
@@ -47,6 +50,10 @@ Rosmarinus is the only backend. It owns:
 The SPA must never connect directly to MongoDB, Redis, or ActivityPub peers.
 It must not contain database credentials, Redis credentials, private Actor
 keys, WebAuthn server verification, or authorization policy.
+
+Rosmarinus does not process images or generate thumbnails. Do not introduce a
+backend image-transformation assumption into API clients; Canvas output is a
+browser-owned presentation or upload artifact.
 
 Use same-origin HTTPS for passkey ceremonies, the REST API, and SSE. The
 production deployment may serve built SPA assets from

@@ -287,6 +287,10 @@ URLs as untrusted.
   vote projections by the selected owned Actor.
 - Return validated HTTPS media/emoji/avatar/banner URLs as untrusted remote
   resources. Do not forward cookies or authorization headers to them.
+- Rosmarinus does not decode, resize, crop, transcode, optimize, or generate
+  thumbnails for images and remains buildable with `CGO_ENABLED=0`. Salvia
+  generates upload previews, thumbnails, and other required derivatives in the
+  browser with Canvas APIs.
 - Sanitize or convert ActivityPub HTML server-side. The SPA must not introduce
   a raw-HTML escape hatch for remote content.
 

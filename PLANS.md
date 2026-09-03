@@ -868,6 +868,9 @@ by Phase 8.
 - [x] Implement delayed poll-ended jobs and durable local notifications.
 - [x] Preserve validated direct media URLs for note attachments, avatars,
       banners, emoji, and instance metadata without backend image processing.
+- [x] Keep the Rosmarinus build free of CGO and native image-processing
+      dependencies; image decoding, resizing, cropping, transcoding, and
+      thumbnail generation are outside the backend boundary.
 - [x] Add tests for quote, reply, poll, and sensitive media behavior.
 
 ### Phase 7: Federation Hardening
@@ -920,6 +923,8 @@ by Phase 8.
 - [ ] Build `./salvia` as a React SPA, carrying forward the passkey-only,
       multi-Actor, simplified Misskey-inspired product design from
       `./salvia/salvia-old` without carrying forward Next.js or server code.
+      Generate upload previews, thumbnails, and other required image
+      derivatives in the browser with Canvas APIs.
 - [ ] Define a same-origin production deployment for the SPA, REST API, SSE,
       and ActivityPub routes, including SPA history fallback that
       cannot shadow protocol or API endpoints.

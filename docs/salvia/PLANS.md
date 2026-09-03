@@ -41,6 +41,9 @@ part of the target architecture.
   after reconnects or ambiguous mutations.
 - Load all secrets and server policy only in Rosmarinus. Browser-visible build
   configuration may contain public same-origin paths but no credentials.
+- Generate upload previews, thumbnails, crops, and other required image
+  derivatives with browser Canvas APIs. Rosmarinus stores or relays validated
+  originals and metadata without server-side image processing.
 
 ## Phase 0: Establish The SPA Baseline
 
@@ -150,6 +153,9 @@ Pub/Sub message arriving.
 - [ ] Build account- and Actor-scoped notification views and mark-read actions.
 - [ ] Build local and remote Actor profiles, follower/following views, moved and
       suspended states, and safe external-link/media behavior.
+- [ ] Generate image upload previews and thumbnails with Canvas, test
+      orientation and size handling, and keep the original file available when
+      the upload contract requires it.
 - [ ] Add focused accessibility and interaction tests for every mutation and
       its loading, retry, empty, and error states.
 

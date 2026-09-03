@@ -12,6 +12,8 @@
   compatibility exceptions.
 - Keep source files using LF line endings.
 - Load all runtime configuration from environment variables.
+- Keep Rosmarinus buildable with `CGO_ENABLED=0`. Do not add CGO-only
+  dependencies or require system image-processing libraries.
 
 ## Project Scope
 
@@ -33,6 +35,9 @@
   server-side.
 - Authenticate local accounts exclusively with passkeys (WebAuthn). Do not add
   passwords, password reset, or TOTP authentication.
+- Do not decode, resize, crop, transcode, optimize, or generate thumbnails for
+  images in Rosmarinus. Preserve validated original media and metadata without
+  backend image processing.
 
 ## Salvia Frontend
 
@@ -45,6 +50,9 @@
   MongoDB access, Redis access, and ActivityPub key material in Rosmarinus.
 - The SPA must not connect directly to MongoDB or Redis and must not treat its
   selected Actor as authorization evidence.
+- Generate upload previews, thumbnails, and other required image derivatives
+  in the browser with Canvas APIs. Do not depend on Rosmarinus to transform
+  uploaded images.
 
 ## Federation Compatibility
 
