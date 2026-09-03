@@ -1,5 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
+FROM node:24-alpine AS salvia-build
+WORKDIR /src
+
+RUN corepack enable
+COPY salvia/package.json salvia/pnpm-lock.yaml ./salvia/
+RUN cd salvia && pnpm install --frozen-lockfile
+
+COPY salvia ./salvia
+RUN cd salvia && pnpm build
+
 FROM golang:alpine AS build
 WORKDIR /src
 
@@ -7,6 +17,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+COPY --from=salvia-build /src/internal/salvia/dist ./internal/salvia/dist
 
 RUN CGO_ENABLED=0 \
     go build -trimpath -ldflags="-s -w" -o /out/rosmarinus .

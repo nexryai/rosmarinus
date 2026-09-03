@@ -4,6 +4,10 @@
 concorde
 misskey
 node_modules
+salvia/node_modules
+salvia/salvia-old
+salvia/dist
+internal/salvia/dist
 tmp
 volumes
 certificates

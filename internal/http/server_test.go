@@ -276,6 +276,35 @@ func TestApplicationAPIRouteIsMountedBeforeFallback(t *testing.T) {
 	}
 }
 
+func TestSalviaFallbackDoesNotShadowApplicationOrFederationRoutes(t *testing.T) {
+	applicationAPI := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	spaCalls := 0
+	spa := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		spaCalls++
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := NewHandlerWithAllStoresAndAPI(testConfig(), nil, fakeActorLookup{}, nil, nil, nil, nil, nil, nil, nil, applicationAPI, spa)
+
+	for _, test := range []struct {
+		path       string
+		wantStatus int
+		wantCalls  int
+	}{
+		{path: "/settings", wantStatus: http.StatusOK, wantCalls: 1},
+		{path: "/api/v1/session", wantStatus: http.StatusNoContent, wantCalls: 1},
+		{path: "/users/missing", wantStatus: http.StatusNotFound, wantCalls: 1},
+		{path: "/@missing", wantStatus: http.StatusNotFound, wantCalls: 1},
+	} {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if recorder.Code != test.wantStatus || spaCalls != test.wantCalls {
+			t.Fatalf("path=%s status=%d spa_calls=%d", test.path, recorder.Code, spaCalls)
+		}
+	}
+}
+
 func TestHostMeta(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/host-meta", nil)
 	rec := httptest.NewRecorder()

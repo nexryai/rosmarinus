@@ -5,11 +5,19 @@ on:
     branches: [main]
     paths:
       - "salvia/**"
+      - "internal/salvia/**"
+      - "internal/http/**"
+      - "internal/app/**"
+      - "Dockerfile"
       - "docs/salvia/**"
       - ".github/workflows/salvia.yml"
   pull_request:
     paths:
       - "salvia/**"
+      - "internal/salvia/**"
+      - "internal/http/**"
+      - "internal/app/**"
+      - "Dockerfile"
       - "docs/salvia/**"
       - ".github/workflows/salvia.yml"
   workflow_dispatch:
@@ -41,3 +49,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      - name: Verify embedded assets are current
+        run: git diff --exit-code -- ../internal/salvia/dist

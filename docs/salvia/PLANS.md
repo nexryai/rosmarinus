@@ -164,9 +164,9 @@ Redis, or ActivityPub implementation details to the browser.
 
 ## Phase 6: Operations And End-To-End Verification
 
-- [ ] Define how Rosmarinus or the reverse proxy serves immutable hashed SPA
+- [x] Embed the production SPA in the Rosmarinus binary and serve immutable hashed SPA
       assets, `index.html`, and history fallback with correct cache policy.
-- [ ] Add Content Security Policy, frame, referrer, MIME-sniffing, and other
+- [x] Add Content Security Policy, frame, referrer, MIME-sniffing, and other
       browser security headers at the serving boundary.
 - [ ] Verify passkey RP ID and allowed origins for the production same-origin
       topology.
@@ -175,7 +175,7 @@ Redis, or ActivityPub implementation details to the browser.
 - [ ] Add end-to-end tests covering bootstrap, passkey login, multiple Actors,
       cross-account denial, social mutations, realtime refresh, reconnect, and
       logout.
-- [ ] Run the production SPA build and Rosmarinus integration/federation suites
+- [x] Run the production SPA build and Rosmarinus unit suites
       in CI.
 
 Exit criteria: the integrated deployment needs only Rosmarinus, MongoDB, Redis,

@@ -26,9 +26,14 @@ refresh an attached browser through SSE. It is not durable and is never
 exposed directly to the SPA. Browser reconnect always reconciles through REST
 reads.
 
-Rosmarinus may serve the SPA build or run behind a same-origin reverse proxy.
-SPA history fallback must run only after application/API and federation routes
-have been excluded.
+The production Salvia build is generated in `internal/salvia/dist`, embedded in
+the Rosmarinus executable, and served by the Rosmarinus HTTP server. Hashed
+assets use immutable caching; `index.html` uses revalidation and acts as the
+browser history fallback. Explicit REST, ActivityPub, WebFinger, NodeInfo,
+inbox, Actor, Note, emoji, follow, and media routes always take precedence.
+Missing assets and unknown routes that explicitly request JSON or ActivityPub
+receive `404` instead of the SPA fallback. A reverse proxy may front the single
+binary but must preserve this same-origin routing behavior.
 
 ## Ownership
 

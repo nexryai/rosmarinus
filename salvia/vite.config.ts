@@ -4,6 +4,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
     plugins: [react(), tailwindcss()],
+    build: {
+        emptyOutDir: true,
+        outDir: "../internal/salvia/dist",
+    },
     server: {
         proxy: {
             "/api": "http://127.0.0.1:3000",

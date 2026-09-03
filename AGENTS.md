@@ -23,7 +23,8 @@
   authenticated REST API. It does not expose a public Misskey-compatible
   API.
 - Salvia is a React single-page application in `./salvia`. It is built as
-  static assets and contains no Next.js or other server-side backend.
+  static assets, embedded into the Rosmarinus executable, and served by the
+  Rosmarinus HTTP server. It contains no Next.js or other server-side backend.
 - Do not introduce Ably. Browser commands and queries use the Rosmarinus REST
   API; live server-to-browser updates use authenticated Server-Sent Events
   (SSE).

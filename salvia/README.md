@@ -27,10 +27,23 @@ pnpm test
 pnpm build
 ```
 
-The production assets are written to `dist/`. Serve `index.html` without a
-long-lived cache and hashed assets with an immutable cache. Routes such as
-`/settings` and `/profiles/*` need an `index.html` history fallback; `/api/*`
-and ActivityPub routes must reach Rosmarinus instead of that fallback.
+The production assets are written to `../internal/salvia/dist/` and embedded
+in the Rosmarinus executable by Go's `embed` package. Commit rebuilt assets
+whenever the SPA changes so a normal `go build` always produces the complete
+single binary. Rosmarinus serves `index.html` without a long-lived cache,
+serves hashed assets with an immutable cache, and applies the SPA history
+fallback only after its REST and ActivityPub routes have been considered.
+
+From the repository root, rebuild the SPA and then create the self-contained
+executable with:
+
+```sh
+pnpm --dir salvia build
+CGO_ENABLED=0 go build -trimpath -o rosmarinus .
+```
+
+The Dockerfile performs both stages automatically and copies only the resulting
+Rosmarinus executable into the runtime image.
 
 Tailwind CSS provides the styling utilities and theme tokens. Tabler Icons is
 the icon set. The yellow visual direction, passkey-only flow, and multiple-Actor

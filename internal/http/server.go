@@ -87,8 +87,12 @@ func NewHandlerWithAllStores(cfg config.Config, logger *log.Logger, actorLookup 
 	return NewHandlerWithAllStoresAndAPI(cfg, logger, actorLookup, noteLookup, followLookup, reactionLookup, queueClient, pollLookup, mediaLookup, emojiLookup, nil)
 }
 
-func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup, emojiLookup EmojiLookup, applicationAPI http.Handler) http.Handler {
+func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorLookup ActorLookup, noteLookup NoteLookup, followLookup FollowLookup, reactionLookup ReactionLookup, queueClient QueueClient, pollLookup PollLookup, mediaLookup MediaLookup, emojiLookup EmojiLookup, applicationAPI http.Handler, spaHandlers ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	var spaHandler http.Handler
+	if len(spaHandlers) > 0 {
+		spaHandler = spaHandlers[0]
+	}
 	if applicationAPI != nil {
 		mux.Handle("/api/v1/", applicationAPI)
 	}
@@ -102,7 +106,7 @@ func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorL
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
 	mux.HandleFunc("/.well-known/", wellKnown(cfg, actorLookup))
 	mux.HandleFunc("/nodeinfo/", nodeInfo(cfg))
-	mux.HandleFunc("/", fallback(cfg, actorLookup, emojiLookup, logger))
+	mux.HandleFunc("/", fallback(cfg, actorLookup, emojiLookup, logger, spaHandler))
 	return mux
 }
 
@@ -557,11 +561,15 @@ func renderLocalActor(ctx context.Context, cfg config.Config, actor *actors.Acto
 	return apactors.RenderLocalActorWithEmojis(cfg, actor, localEmojis), nil
 }
 
-func fallback(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLookup, logger *log.Logger) http.HandlerFunc {
+func fallback(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLookup, logger *log.Logger, spaHandler http.Handler) http.HandlerFunc {
 	actorHandler := actorByUsername(cfg, actorLookup, emojiLookup, logger)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/@") {
 			actorHandler(w, r)
+			return
+		}
+		if spaHandler != nil {
+			spaHandler.ServeHTTP(w, r)
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)

@@ -57,11 +57,11 @@ Rosmarinus does not process images or generate thumbnails. Do not introduce a
 backend image-transformation assumption into API clients; Canvas output is a
 browser-owned presentation or upload artifact.
 
-Use same-origin HTTPS for passkey ceremonies, the REST API, and SSE. The
-production deployment may serve built SPA assets from
-Rosmarinus or route them through the same origin. Client-side history fallback
-must not intercept `/api`, ActivityPub, WebFinger, NodeInfo, inbox, Actor, Note,
-or media routes.
+Use same-origin HTTPS for passkey ceremonies, the REST API, and SSE. Build the
+SPA into `internal/salvia/dist`, embed those assets in the Rosmarinus
+executable, and serve them from the Rosmarinus HTTP server. Client-side history
+fallback must not intercept `/api`, ActivityPub, WebFinger, NodeInfo, inbox,
+Actor, Note, or media routes.
 
 ## Authentication And Sessions
 
