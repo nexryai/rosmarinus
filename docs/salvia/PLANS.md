@@ -69,8 +69,8 @@ secret-bearing dependency.
 
 - [x] Define semantic design tokens with a yellow-based default palette and
       additional supported themes.
-- [x] Add Tailwind CSS and Tabler
-      Icons through `pnpm`.
+- [x] Keep all styling in TSX with CSS-in-JSX and no CSS framework dependency;
+      retain Tabler Icons and the product-reference button ripple.
 - [ ] Build accessible primitives in `src/components/ui` and reusable domain
       components in `src/components`.
 - [x] Build responsive navigation, timeline layout, forms, menus, dialogs,

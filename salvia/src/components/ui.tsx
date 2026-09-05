@@ -1,4 +1,4 @@
-import { type ButtonHTMLAttributes, Component, type ErrorInfo, type PropsWithChildren, type ReactNode } from "react";
+import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type MouseEvent, type PropsWithChildren, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 
@@ -27,8 +27,45 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     }
 }
 
-export function Button({ className = "", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "danger" }) {
-    return <button className={`button button--${variant} ${className}`} type="button" {...props} />;
+type Ripple = { id: number; x: number; y: number; radius: number };
+
+export function Button({ children, className = "", disableRipple = false, onMouseDown, type = "button", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { disableRipple?: boolean; variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+    const [ripples, setRipples] = useState<Ripple[]>([]);
+    const nextRippleID = useRef(0);
+    const timers = useRef<number[]>([]);
+
+    useEffect(
+        () => () => {
+            for (const timer of timers.current) window.clearTimeout(timer);
+        },
+        [],
+    );
+
+    const handleMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
+        if (!disableRipple && document.documentElement.dataset.reduceMotion !== "true") {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            const radius = Math.max(Math.hypot(x, y), Math.hypot(rect.width - x, y), Math.hypot(x, rect.height - y), Math.hypot(rect.width - x, rect.height - y));
+            const id = nextRippleID.current++;
+            setRipples((current) => [...current, { id, x, y, radius }]);
+            timers.current.push(
+                window.setTimeout(() => {
+                    setRipples((current) => current.filter((ripple) => ripple.id !== id));
+                }, 500),
+            );
+        }
+        onMouseDown?.(event);
+    };
+
+    return (
+        <button className={`button button--${variant} ${className}`} onMouseDown={handleMouseDown} type={type} {...props}>
+            {ripples.map((ripple) => (
+                <span aria-hidden="true" className="button__ripple" data-testid="button-ripple" key={ripple.id} style={{ left: ripple.x - 1, top: ripple.y - 1, "--ripple-radius": `${ripple.radius}px` } as CSSProperties} />
+            ))}
+            <span className="button__content">{children}</span>
+        </button>
+    );
 }
 
 export function Avatar({ actor, size = "medium" }: { actor?: Pick<Actor, "avatar_url" | "name" | "username">; size?: "small" | "medium" | "large" }) {

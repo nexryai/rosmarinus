@@ -45,9 +45,10 @@ CGO_ENABLED=0 go build -trimpath -o rosmarinus .
 The Dockerfile performs both stages automatically and copies only the resulting
 Rosmarinus executable into the runtime image.
 
-Tailwind CSS provides the styling utilities and theme tokens. Tabler Icons is
-the icon set. The yellow visual direction, passkey-only flow, and multiple-Actor
-workflow follow the read-only `salvia-old` product reference.
+The design is embedded in TSX through CSS-in-JSX, including global theme tokens
+and responsive rules. The SPA has no CSS files or CSS framework dependency.
+Tabler Icons remains the icon set, and shared buttons use the pointer-position
+ripple interaction from the read-only `salvia-old` product reference.
 
 ## Images
 

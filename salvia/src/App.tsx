@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { IconLeaf2, IconPlus } from "@tabler/icons-react";
 
-import "./App.css";
 import { AppShell } from "./components/AppShell";
 import { AuthScreen } from "./components/AuthScreen";
 import { Composer, type ComposerIntent } from "./components/Composer";
