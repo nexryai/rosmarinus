@@ -45,10 +45,17 @@ CGO_ENABLED=0 go build -trimpath -o rosmarinus .
 The Dockerfile performs both stages automatically and copies only the resulting
 Rosmarinus executable into the runtime image.
 
-The design is embedded in TSX through CSS-in-JSX, including global theme tokens
-and responsive rules. The SPA has no CSS files or CSS framework dependency.
+The design is embedded in TSX through CSS-in-JSX. Normal declarations use React
+style objects; generated CSS is reserved for selectors and rules that inline
+styles cannot express. The SPA has no CSS files or CSS framework dependency.
 Tabler Icons remains the icon set, and shared buttons use the pointer-position
 ripple interaction from the read-only `salvia-old` product reference.
+
+The component-local styling rules, proposed internal `css()` API, safety
+boundaries, tests, and migration order are documented in
+[`docs/styling.md`](docs/styling.md). The document is the implementation contract
+for replacing the current centralized style string; it does not mean that the
+migration has already been completed.
 
 ## Images
 
