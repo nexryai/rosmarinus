@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconArrowLeft } from "@tabler/icons-react";
 
 import { NoteCard } from "../components/NoteCard";
-import { ErrorBanner, Loading } from "../components/ui";
+import { DividedList, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
 import { api } from "../lib/api";
+import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
+
+const styles = {
+    back: { marginRight: "0.75rem", marginLeft: 0 },
+} satisfies Record<string, CSSProperties>;
+
+const rules = {
+    thread: css({ "& > h2": { padding: "0.75rem 1.25rem", fontSize: "0.875rem", fontWeight: 900, background: "var(--panel-muted)" }, "@media (width >= 40rem)": { "& > h2": { paddingInline: "1.75rem" } } }),
+};
 
 export function NotePage({
     actorID,
@@ -80,25 +89,25 @@ export function NotePage({
     );
     return (
         <>
-            <header className="page-header">
-                <button aria-label="戻る" className="round-button round-button--leading" onClick={onBack} type="button">
-                    <IconArrowLeft />
-                </button>
-                <div>
-                    <p className="eyebrow">会話</p>
-                    <h1>ノート</h1>
-                </div>
-            </header>
+            <PageHeader
+                eyebrow="会話"
+                leading={
+                    <RoundButton aria-label="戻る" onClick={onBack} style={styles.back}>
+                        <IconArrowLeft />
+                    </RoundButton>
+                }
+                title="ノート"
+            />
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading && !note ? (
                 <Loading label="ノートを読み込み中" />
             ) : (
                 note && (
-                    <section aria-label="スレッド" className="feed note-thread">
+                    <DividedList aria-label="スレッド" className={rules.thread}>
                         {card(note)}
                         {thread.length > 0 && <h2>返信</h2>}
                         {thread.map(card)}
-                    </section>
+                    </DividedList>
                 )
             )}
         </>

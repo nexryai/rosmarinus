@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 
 import { IconLeaf2, IconPlus } from "@tabler/icons-react";
 
@@ -7,6 +7,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { Composer, type ComposerIntent } from "./components/Composer";
 import { Button, ErrorBanner, Loading } from "./components/ui";
 import { ApiError, api, type Page } from "./lib/api";
+import { css } from "./lib/css";
 import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "./lib/schema";
 import { FollowRequestsPage } from "./pages/FollowRequestsPage";
 import { NotePage } from "./pages/NotePage";
@@ -18,6 +19,25 @@ import { TimelinePage } from "./pages/TimelinePage";
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };
 const actorCanAct = (actor: Actor) => !actor.is_suspended && !actor.moved_to_uri;
+
+const styles = {
+    fullPage: { minHeight: "100dvh", padding: "2.5rem 1.25rem", display: "grid", placeItems: "center", background: "radial-gradient(circle at 50% 0, var(--accent-soft), transparent 38%), var(--page)" },
+    fatalPage: { maxWidth: "28rem", marginInline: "auto", display: "flex", flexDirection: "column", justifyContent: "center", gap: "1rem", textAlign: "center" },
+    splash: { alignContent: "center", gap: "1rem" },
+    mark: { width: "2.75rem", height: "2.75rem", display: "grid", placeItems: "center", borderRadius: "1rem", color: "var(--accent-ink)", background: "linear-gradient(135deg, #f8d56a, var(--accent))", boxShadow: "0 8px 22px #e9a91d3d" },
+    fatalTitle: { fontSize: "1.5rem", lineHeight: 1.333, fontWeight: 900 },
+    noActor: { width: "100%", maxWidth: "28rem", padding: "1.5rem", border: "1px solid var(--border)", borderRadius: "1.5rem", textAlign: "center", background: "var(--panel)", boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a" },
+    noActorMark: { marginInline: "auto", marginBottom: "1rem" },
+    noActorText: { margin: "0.5rem 0 1.5rem", color: "var(--muted)", fontSize: "0.875rem" },
+    field: { display: "block", marginBottom: "1rem", textAlign: "left" },
+    fieldLabel: { display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 700 },
+    input: { width: "100%", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
+} satisfies Record<string, CSSProperties>;
+
+const rules = {
+    mark: css({ "& svg": { width: "1.5rem", height: "1.5rem" } }),
+    input: css({ borderColor: "var(--border)", background: "var(--panel-muted)", "&:focus": { borderColor: "var(--accent-hover)", background: "var(--panel)" } }),
+};
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
     if (path === "/public") return { page: "public" };
@@ -184,19 +204,19 @@ function App() {
 
     if (error && authState === "loading")
         return (
-            <main className="fatal-page">
-                <span className="brand-mark">
+            <main style={{ ...styles.fullPage, ...styles.fatalPage }}>
+                <span className={rules.mark} style={styles.mark}>
                     <IconLeaf2 />
                 </span>
-                <h1>Rosmarinusに接続できません</h1>
+                <h1 style={styles.fatalTitle}>Rosmarinusに接続できません</h1>
                 <ErrorBanner message={error} />
                 <Button onClick={() => window.location.reload()}>再読み込み</Button>
             </main>
         );
     if (authState === "loading")
         return (
-            <main className="splash">
-                <span className="brand-mark">
+            <main style={{ ...styles.fullPage, ...styles.splash }}>
+                <span className={rules.mark} style={styles.mark}>
                     <IconLeaf2 />
                 </span>
                 <Loading label="Salviaを起動中" />
@@ -272,31 +292,31 @@ function NoActor({ csrf, onCreated, onLogout }: { csrf: string; onCreated: () =>
     const [name, setName] = useState("");
     const [error, setError] = useState("");
     return (
-        <main className="auth-page">
+        <main style={styles.fullPage}>
             <form
-                className="auth-card no-actor"
                 onSubmit={(event) => {
                     event.preventDefault();
                     api.createActor(csrf, username.trim(), name.trim())
                         .then(onCreated)
                         .catch((reason) => setError(reason instanceof Error ? reason.message : "Actorを作成できませんでした"));
                 }}
+                style={styles.noActor}
             >
-                <span className="brand-mark">
+                <span className={rules.mark} style={{ ...styles.mark, ...styles.noActorMark }}>
                     <IconLeaf2 />
                 </span>
-                <h1>最初のActorを作成</h1>
-                <p>投稿やフォローに使う公開アイデンティティです。</p>
+                <h1 style={styles.fatalTitle}>最初のActorを作成</h1>
+                <p style={styles.noActorText}>投稿やフォローに使う公開アイデンティティです。</p>
                 {error && <ErrorBanner message={error} />}
-                <label className="field">
-                    <span>ユーザー名</span>
-                    <input maxLength={64} onChange={(event) => setUsername(event.target.value)} required value={username} />
+                <label style={styles.field}>
+                    <span style={styles.fieldLabel}>ユーザー名</span>
+                    <input className={rules.input} maxLength={64} onChange={(event) => setUsername(event.target.value)} required style={styles.input} value={username} />
                 </label>
-                <label className="field">
-                    <span>表示名</span>
-                    <input maxLength={128} onChange={(event) => setName(event.target.value)} value={name} />
+                <label style={styles.field}>
+                    <span style={styles.fieldLabel}>表示名</span>
+                    <input className={rules.input} maxLength={128} onChange={(event) => setName(event.target.value)} style={styles.input} value={name} />
                 </label>
-                <Button className="button--wide" type="submit">
+                <Button style={{ width: "100%" }} type="submit">
                     <IconPlus />
                     Actorを作成
                 </Button>

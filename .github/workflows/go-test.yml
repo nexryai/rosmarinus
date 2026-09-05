@@ -16,6 +16,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v6.0.9
+        with:
+          package_json_file: salvia/package.json
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: salvia/pnpm-lock.yaml
+
+      - name: Build Salvia assets
+        run: pnpm --dir salvia install --frozen-lockfile && pnpm --dir salvia build
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

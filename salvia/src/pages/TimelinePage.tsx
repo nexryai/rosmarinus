@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconRefresh } from "@tabler/icons-react";
 
 import { NoteCard } from "../components/NoteCard";
-import { Button, Empty, ErrorBanner, Loading } from "../components/ui";
+import { Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
 import { api } from "../lib/api";
 import type { Emoji, Note } from "../lib/schema";
+
+const styles = {
+    loadMore: { padding: "1.5rem", display: "flex", justifyContent: "center" },
+} satisfies Record<string, CSSProperties>;
 
 export function TimelinePage({
     actorID,
@@ -63,22 +67,22 @@ export function TimelinePage({
     };
     return (
         <>
-            <header className="page-header">
-                <div>
-                    <p className="eyebrow">{kind === "home" ? "あなたのつながり" : "ローカルと連合"}</p>
-                    <h1>{kind === "home" ? "ホーム" : "みつける"}</h1>
-                </div>
-                <button aria-label="更新" className="round-button" disabled={loading} onClick={() => void refresh()} type="button">
-                    <IconRefresh />
-                </button>
-            </header>
+            <PageHeader
+                eyebrow={kind === "home" ? "あなたのつながり" : "ローカルと連合"}
+                title={kind === "home" ? "ホーム" : "みつける"}
+                trailing={
+                    <RoundButton aria-label="更新" disabled={loading} onClick={() => void refresh()}>
+                        <IconRefresh />
+                    </RoundButton>
+                }
+            />
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading && notes.length === 0 ? (
                 <Loading label="タイムラインを読み込み中" />
             ) : notes.length === 0 ? (
                 <Empty>まだ表示できるノートがありません。</Empty>
             ) : (
-                <section aria-label="ノート一覧" className="feed">
+                <DividedList aria-label="ノート一覧">
                     {notes.map((note) => (
                         <NoteCard
                             emojis={emojis}
@@ -96,13 +100,13 @@ export function TimelinePage({
                         />
                     ))}
                     {next && (
-                        <div className="load-more">
+                        <div style={styles.loadMore}>
                             <Button disabled={loading} onClick={() => void load(next, true)} variant="secondary">
                                 もっと見る
                             </Button>
                         </div>
                     )}
-                </section>
+                </DividedList>
             )}
         </>
     );

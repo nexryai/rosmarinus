@@ -36,3 +36,4 @@ go.work.sum
 /mfm.js
 
 /.gocache
+/internal/salvia/dist/

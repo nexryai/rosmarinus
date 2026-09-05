@@ -36,7 +36,7 @@ describe("NoteCard social actions", () => {
         render(<NoteCard note={emojiNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
         expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "/media/salvia");
-        expect(screen.getByText((_, element) => element?.classList.contains("note-text") === true && element.textContent?.includes("<script>") === true)).toBeInTheDocument();
+        expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.includes("<script>") === true)).toBeInTheDocument();
         expect(document.querySelector("script")).toBeNull();
     });
 
@@ -61,7 +61,10 @@ describe("NoteCard social actions", () => {
         const user = userEvent.setup();
         render(<NoteCard note={reacted} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={onReact} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
-        await user.click(screen.getByRole("button", { name: "❤️2" }));
+        const reaction = screen.getByRole("button", { name: "❤️2" });
+        expect(reaction).toHaveStyle({ background: "var(--accent-soft)", color: "var(--accent-ink)" });
+        expect(reaction.style.borderColor).toBe("var(--accent)");
+        await user.click(reaction);
 
         expect(onReact).toHaveBeenCalledWith("note-1", "❤️", true);
     });

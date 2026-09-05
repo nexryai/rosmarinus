@@ -1,8 +1,9 @@
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
 
 import { IconAlertTriangle, IconChartBar, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
 
 import { api, type CreatePostInput } from "../lib/api";
+import { css } from "../lib/css";
 import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
 import { Button, ErrorBanner, Modal } from "./ui";
@@ -10,6 +11,47 @@ import { Button, ErrorBanner, Modal } from "./ui";
 export type ComposerIntent = { kind: "post" } | { kind: "reply" | "quote"; target: Note };
 
 type PendingImage = { file: File; id: string; intentKey: string; thumbnail: CanvasThumbnail };
+
+const styles = {
+    eyebrow: { marginBottom: "0.125rem", color: "var(--muted)", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" },
+    title: { fontSize: "1.25rem", lineHeight: 1.4, fontWeight: 900 },
+    target: { marginTop: "0.75rem", padding: "0.75rem", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, border: "1px solid var(--border)", borderRadius: "1rem", color: "var(--muted)", background: "var(--panel-muted)", fontSize: "0.875rem" },
+    textarea: { width: "100%", marginTop: "1.25rem", padding: 0, resize: "vertical", border: 0, outline: "none", color: "var(--text)", background: "transparent", fontSize: "1.125rem", lineHeight: "1.75rem" },
+    previews: { marginTop: "0.75rem", display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.5rem" },
+    preview: { position: "relative", overflow: "hidden", borderRadius: "1rem", background: "var(--panel-muted)" },
+    previewImage: { width: "100%", height: "100%", aspectRatio: "16 / 9", objectFit: "cover" },
+    previewRemove: { position: "absolute", top: "0.5rem", right: "0.5rem", width: "2rem", height: "2rem", display: "grid", placeItems: "center", borderRadius: "9999px", color: "#fff", backgroundColor: "rgb(0 0 0 / 65%)" },
+    previewCaption: { position: "absolute", right: "0.5rem", bottom: "0.25rem", padding: "0.125rem 0.375rem", borderRadius: "0.25rem", color: "#fff", backgroundColor: "rgb(0 0 0 / 55%)", fontSize: "10px" },
+    emojiPicker: { maxHeight: "8rem", marginTop: "0.5rem", padding: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.25rem", overflowY: "auto", border: "1px solid var(--border)", borderRadius: "1rem", background: "var(--panel)" },
+    emojiButton: { width: "2.25rem", height: "2.25rem", display: "grid", placeItems: "center", borderRadius: "0.75rem", fontSize: "1.25rem" },
+    emojiImage: { width: "1.5rem", height: "1.5rem", objectFit: "contain" },
+    input: { width: "100%", marginTop: "0.75rem", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
+    poll: { marginTop: "0.75rem", padding: "0.75rem", border: "1px solid var(--border)", borderRadius: "1rem" },
+    pollLegend: { paddingInline: "0.25rem", fontSize: "0.875rem", fontWeight: 700 },
+    choiceRow: { display: "flex", gap: "0.5rem", marginBottom: "0.5rem" },
+    choiceInput: { minWidth: 0, padding: "0.5rem 0.75rem", border: "1px solid var(--border)", borderRadius: "0.75rem", color: "var(--text)", background: "var(--panel-muted)", flex: 1 },
+    choiceRemove: { width: "2.5rem", height: "2.5rem", display: "grid", placeItems: "center", borderRadius: "9999px", color: "var(--muted)" },
+    addChoice: { display: "flex", alignItems: "center", gap: "0.25rem", color: "var(--accent-hover)", fontSize: "0.875rem", fontWeight: 700 },
+    pollToggle: { marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem" },
+    footer: { marginTop: "1.25rem", paddingTop: "1rem", alignItems: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" },
+    options: { display: "flex", alignItems: "flex-end", gap: "0.5rem", flex: 1 },
+    optionLabel: { display: "block", color: "var(--muted)", fontSize: "10px", fontWeight: 700, textTransform: "uppercase" },
+    visibility: { border: 0, outline: "none", background: "transparent", fontSize: "0.875rem", fontWeight: 700 },
+    iconToggle: { minHeight: "2.25rem", paddingInline: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem", border: "1px solid var(--border)", borderRadius: "9999px", color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700 },
+    iconToggleActive: { color: "var(--accent-ink)", borderColor: "var(--accent)", background: "var(--accent-soft)" },
+    upload: { position: "relative", cursor: "pointer" },
+    fileInput: { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap" },
+    sensitive: { display: "flex", alignItems: "center", gap: "0.25rem", color: "var(--muted)", fontSize: "0.75rem" },
+} satisfies Record<string, CSSProperties>;
+
+const rules = {
+    input: css({ borderColor: "var(--border)", background: "var(--panel-muted)", "&:focus": { borderColor: "var(--accent-hover)", background: "var(--panel)" } }),
+    previewRemove: css({ "& svg": { width: "1rem", height: "1rem" } }),
+    emojiButton: css({ "&:hover": { background: "var(--accent-soft)" } }),
+    choiceIcon: css({ "& svg": { width: "1rem", height: "1rem" } }),
+    footer: css({ display: "flex", "@media (width <= 639px)": { flexDirection: "column", alignItems: "stretch" } }),
+    iconToggle: css({ "& svg": { width: "1rem", height: "1rem" } }),
+};
 
 export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit }: { actor: Actor; actorSettings?: ActorSettings; csrf: string; intent: ComposerIntent; onClose: () => void; onSubmit: (input: CreatePostInput, intentKey: string, noteID: string) => Promise<void> }) {
     const [text, setText] = useState("");
@@ -87,34 +129,36 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
     const title = intent.kind === "reply" ? "返信する" : intent.kind === "quote" ? "引用する" : "新しいノート";
     return (
         <Modal label={title} onClose={onClose}>
-            <form className="composer" onSubmit={submit}>
+            <form onSubmit={submit}>
                 <header>
-                    <p className="eyebrow">@{actor.username}として</p>
-                    <h2>{title}</h2>
+                    <p style={styles.eyebrow}>@{actor.username}として</p>
+                    <h2 style={styles.title}>{title}</h2>
                 </header>
                 {intent.kind !== "post" && (
-                    <p className="composer__target">
+                    <p style={styles.target}>
                         {intent.target.author?.name || intent.target.author?.username}: {intent.target.text || "（本文なし）"}
                     </p>
                 )}
                 {error && <ErrorBanner message={error} />}
-                <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} value={text} />
+                <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} style={styles.textarea} value={text} />
                 {images.length > 0 && (
-                    <div className="upload-previews">
+                    <div style={styles.previews}>
                         {images.map((image) => (
-                            <figure key={image.id}>
-                                <img alt={image.file.name} src={image.thumbnail.url} />
+                            <figure key={image.id} style={styles.preview}>
+                                <img alt={image.file.name} src={image.thumbnail.url} style={styles.previewImage} />
                                 <button
                                     aria-label={`${image.file.name}を削除`}
                                     onClick={() => {
                                         revokeCanvasThumbnail(image.thumbnail);
                                         setImages((current) => current.filter((item) => item.id !== image.id));
                                     }}
+                                    className={rules.previewRemove}
+                                    style={styles.previewRemove}
                                     type="button"
                                 >
                                     <IconX />
                                 </button>
-                                <figcaption>
+                                <figcaption style={styles.previewCaption}>
                                     {image.thumbnail.originalWidth} × {image.thumbnail.originalHeight}
                                 </figcaption>
                             </figure>
@@ -122,66 +166,66 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                     </div>
                 )}
                 {emojis.length > 0 && (
-                    <div aria-label="カスタム絵文字" className="emoji-picker">
+                    <div aria-label="カスタム絵文字" style={styles.emojiPicker}>
                         {emojis.map((emoji) => (
-                            <button aria-label={`:${emoji.name}:`} key={emoji.name} onClick={() => setText((value) => `${value}:${emoji.name}:`)} title={`:${emoji.name}:`} type="button">
-                                <img alt="" src={emoji.url} />
+                            <button aria-label={`:${emoji.name}:`} className={rules.emojiButton} key={emoji.name} onClick={() => setText((value) => `${value}:${emoji.name}:`)} style={styles.emojiButton} title={`:${emoji.name}:`} type="button">
+                                <img alt="" src={emoji.url} style={styles.emojiImage} />
                             </button>
                         ))}
                     </div>
                 )}
-                {useCW && <input aria-label="内容の注記" className="composer__cw" maxLength={500} onChange={(event) => setCW(event.target.value)} placeholder="内容の注記" value={cw} />}
+                {useCW && <input aria-label="内容の注記" className={rules.input} maxLength={500} onChange={(event) => setCW(event.target.value)} placeholder="内容の注記" style={styles.input} value={cw} />}
                 {usePoll && (
-                    <fieldset className="poll-editor">
-                        <legend>アンケート</legend>
+                    <fieldset style={styles.poll}>
+                        <legend style={styles.pollLegend}>アンケート</legend>
                         {choices.map((choice, index) => (
-                            <div key={choice.id}>
-                                <input aria-label={`選択肢 ${index + 1}`} maxLength={200} onChange={(event) => setChoices((current) => current.map((value) => (value.id === choice.id ? { ...value, text: event.target.value } : value)))} placeholder={`選択肢 ${index + 1}`} value={choice.text} />
+                            <div key={choice.id} style={styles.choiceRow}>
+                                <input aria-label={`選択肢 ${index + 1}`} maxLength={200} onChange={(event) => setChoices((current) => current.map((value) => (value.id === choice.id ? { ...value, text: event.target.value } : value)))} placeholder={`選択肢 ${index + 1}`} style={styles.choiceInput} value={choice.text} />
                                 {choices.length > 2 && (
-                                    <button aria-label={`選択肢 ${index + 1}を削除`} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} type="button">
+                                    <button aria-label={`選択肢 ${index + 1}を削除`} className={rules.choiceIcon} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} style={styles.choiceRemove} type="button">
                                         <IconX />
                                     </button>
                                 )}
                             </div>
                         ))}
                         {choices.length < 10 && (
-                            <button className="poll-editor__add" onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} type="button">
+                            <button className={rules.choiceIcon} onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} style={styles.addChoice} type="button">
                                 <IconPlus />
                                 選択肢を追加
                             </button>
                         )}
-                        <label>
+                        <label style={styles.pollToggle}>
                             <input checked={multiple} onChange={(event) => setMultiple(event.target.checked)} type="checkbox" />
                             複数回答を許可
                         </label>
                     </fieldset>
                 )}
-                <footer>
-                    <div className="composer__options">
+                <footer className={rules.footer} style={styles.footer}>
+                    <div style={styles.options}>
                         <label>
-                            <span>公開範囲</span>
-                            <select onChange={(event) => setVisibility(event.target.value as typeof visibility)} value={visibility}>
+                            <span style={styles.optionLabel}>公開範囲</span>
+                            <select onChange={(event) => setVisibility(event.target.value as typeof visibility)} style={styles.visibility} value={visibility}>
                                 <option value="public">公開</option>
                                 <option value="home">ホーム</option>
                                 <option value="followers">フォロワー</option>
                             </select>
                         </label>
-                        <button aria-pressed={useCW} className={useCW ? "icon-toggle icon-toggle--active" : "icon-toggle"} onClick={() => setUseCW((value) => !value)} type="button">
+                        <button aria-pressed={useCW} className={rules.iconToggle} onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
                             <IconAlertTriangle />
                             CW
                         </button>
-                        <button aria-pressed={usePoll} className={usePoll ? "icon-toggle icon-toggle--active" : "icon-toggle"} disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} type="button">
+                        <button aria-pressed={usePoll} className={rules.iconToggle} disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
                             <IconChartBar />
                             投票
                         </button>
-                        <label className="icon-toggle upload-button">
+                        <label className={rules.iconToggle} style={{ ...styles.iconToggle, ...styles.upload }}>
                             <IconPhoto />
                             画像
-                            <input accept="image/jpeg,image/png,image/gif,image/webp" disabled={images.length >= 4} multiple onChange={(event) => void selectImages(event)} type="file" />
+                            <input accept="image/jpeg,image/png,image/gif,image/webp" disabled={images.length >= 4} multiple onChange={(event) => void selectImages(event)} style={styles.fileInput} type="file" />
                         </label>
                     </div>
                     {images.length > 0 && (
-                        <label className="sensitive-toggle">
+                        <label style={styles.sensitive}>
                             <input checked={sensitive} onChange={(event) => setSensitive(event.target.checked)} type="checkbox" />
                             センシティブ
                         </label>

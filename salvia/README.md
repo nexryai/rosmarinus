@@ -27,12 +27,12 @@ pnpm test
 pnpm build
 ```
 
-The production assets are written to `../internal/salvia/dist/` and embedded
-in the Rosmarinus executable by Go's `embed` package. Commit rebuilt assets
-whenever the SPA changes so a normal `go build` always produces the complete
-single binary. Rosmarinus serves `index.html` without a long-lived cache,
-serves hashed assets with an immutable cache, and applies the SPA history
-fallback only after its REST and ActivityPub routes have been considered.
+The production assets are written to the ignored `../internal/salvia/dist/`
+directory and embedded in the Rosmarinus executable by Go's `embed` package.
+Run the Salvia build before any Go build from a clean checkout. Rosmarinus
+serves `index.html` without a long-lived cache, serves hashed assets with an
+immutable cache, and applies the SPA history fallback only after its REST and
+ActivityPub routes have been considered.
 
 From the repository root, rebuild the SPA and then create the self-contained
 executable with:
@@ -51,11 +51,9 @@ styles cannot express. The SPA has no CSS files or CSS framework dependency.
 Tabler Icons remains the icon set, and shared buttons use the pointer-position
 ripple interaction from the read-only `salvia-old` product reference.
 
-The component-local styling rules, proposed internal `css()` API, safety
+The component-local styling rules, internal `css()` API, safety
 boundaries, tests, and migration order are documented in
-[`docs/styling.md`](docs/styling.md). The document is the implementation contract
-for replacing the current centralized style string; it does not mean that the
-migration has already been completed.
+[`docs/styling.md`](docs/styling.md).
 
 ## Images
 

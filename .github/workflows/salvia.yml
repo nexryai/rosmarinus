@@ -49,5 +49,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - name: Verify embedded assets are current
-        run: git diff --exit-code -- ../internal/salvia/dist
+      - name: Verify the embedded build has no CSS assets
+        run: |
+          test -f ../internal/salvia/dist/index.html
+          if find ../internal/salvia/dist -type f -name '*.css' -print -quit | grep -q .; then
+            echo 'Salvia emitted a CSS file' >&2
+            exit 1
+          fi
