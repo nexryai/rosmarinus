@@ -58,7 +58,8 @@ applicationDB.createRole({
     })),
     ...rosmarinusInternalCollections.map((collection) => ({
       resource: { db: databaseName, collection },
-      actions: writeActions,
+      // GridFS checks existing indexes before the first upload in each process.
+      actions: collection.startsWith("media_fs.") ? [...writeActions, "listIndexes"] : writeActions,
     })),
   ],
   roles: [],

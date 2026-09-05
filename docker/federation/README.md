@@ -71,6 +71,10 @@ ActivityPub, media, and metadata endpoints through Rosmarinus's shared
 private-network SSRF boundary. Production deployments should leave it empty.
 Override the metadata timeout with `INSTANCE_METADATA_TIMEOUT` when necessary.
 
+The fixture MongoDB service role grants `listIndexes` on `media_fs.files` and
+`media_fs.chunks`: the Go GridFS driver checks the bucket indexes on its first
+local upload. The local Salvia upload phase exercises this restricted role.
+
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.
 
