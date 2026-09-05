@@ -32,6 +32,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	"github.com/nexryai/rosmarinus/internal/queue"
+	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -162,11 +163,13 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	avatar := misskey.uploadFile(ctx, admin.Token, "avatar.png", avatarPNG)
 	misskey.call(ctx, "i/update", map[string]any{
 		"i": admin.Token, "name": updatedRemoteActorName, "avatarId": avatar.ID,
+		"fields": []map[string]string{{"name": "Website", "value": "https://a.test"}},
 	}, nil)
 	waitFor(t, ctx, "Update(Person) stored by Rosmarinus", func() bool {
 		var findErr error
 		remoteActor, findErr = actorRepo.FindByURI(ctx, remoteActorURI)
-		return findErr == nil && remoteActor != nil && remoteActor.Name == updatedRemoteActorName && remoteActor.AvatarURL != ""
+		return findErr == nil && remoteActor != nil && remoteActor.Name == updatedRemoteActorName && remoteActor.AvatarURL != "" &&
+			len(remoteActor.ProfileFields) == 1 && remoteActor.ProfileFields[0].Name == "Website" && remoteActor.ProfileFields[0].Value == "https://a.test"
 	})
 
 	// Phase 4: verify Rosmarinus preserves Misskey's validated direct avatar URL
@@ -190,7 +193,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 5: publish a public Misskey note with an image and verify Rosmarinus
 	// accepts, verifies, and persists the delivered Create(Note), including the
-	// validated attachment URL and current-Misskey width/height metadata.
+	// validated attachment URL and current-Misskey width/height metadata. Verify
+	// the home timeline includes the followed remote author with profile fields.
 	var created struct {
 		CreatedNote struct {
 			ID string `json:"id"`
@@ -215,6 +219,22 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			len(remoteNote.Attachments) == 1 && remoteNote.Attachments[0].URL != "" &&
 			remoteNote.Attachments[0].Width == 1 && remoteNote.Attachments[0].Height == 1
 	})
+	home, err := mongostore.NewSalviaReader(db).ListHomeTimeline(ctx, localActor.ID, readmodel.Cursor{}, 30)
+	if err != nil {
+		t.Fatalf("read home timeline after Misskey Create: %v", err)
+	}
+	foundRemoteNote := false
+	for _, item := range home {
+		if item.Note.ID == remoteNote.ID {
+			foundRemoteNote = true
+			if item.Author == nil || item.Author.ID != remoteActor.ID || len(item.Author.ProfileFields) != 1 || item.Author.ProfileFields[0].Name != "Website" {
+				t.Fatalf("home timeline lost remote author profile fields: %+v", item.Author)
+			}
+		}
+	}
+	if !foundRemoteNote {
+		t.Fatal("home timeline omitted the followed Misskey user's note")
+	}
 
 	// Phase 6: pin and unpin the Misskey Note, verifying Rosmarinus applies the
 	// delivered Add/Remove pair to the remote Actor's featured Note IDs.

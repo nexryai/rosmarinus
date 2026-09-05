@@ -26,6 +26,10 @@ part of the target architecture.
 
 ## Fixed Product And Architecture Decisions
 
+- Completed: normalize legacy Actor profile field keys at the API boundary
+  and verify home timeline rendering with nonempty remote profile fields.
+  The backend now emits lowercase `name`/`value` keys consistently.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

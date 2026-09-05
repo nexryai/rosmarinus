@@ -5,6 +5,9 @@ const strings = z
     .nullish()
     .transform((value) => value ?? []);
 
+// Older Rosmarinus responses exposed Go field names for nonempty profile fields.
+const profileFieldSchema = z.union([z.object({ name: z.string(), value: z.string() }), z.object({ Name: z.string(), Value: z.string() }).transform((field) => ({ name: field.Name, value: field.Value }))]);
+
 export const actorSchema = z.object({
     id: z.string(),
     username: z.string(),
@@ -12,7 +15,7 @@ export const actorSchema = z.object({
     summary: z.string().default(""),
     url: z.string().default(""),
     profile_fields: z
-        .array(z.object({ name: z.string(), value: z.string() }))
+        .array(profileFieldSchema)
         .nullish()
         .transform((value) => value ?? []),
     birthday: z.string().default(""),

@@ -837,32 +837,41 @@ func pathSegments(path string) ([]string, error) {
 }
 
 type actorView struct {
-	ID             string                `json:"id"`
-	Username       string                `json:"username"`
-	Name           string                `json:"name"`
-	Summary        string                `json:"summary"`
-	URL            string                `json:"url"`
-	ProfileFields  []actors.ProfileField `json:"profile_fields"`
-	Birthday       string                `json:"birthday"`
-	Location       string                `json:"location"`
-	AvatarURL      string                `json:"avatar_url"`
-	BannerURL      string                `json:"banner_url"`
-	Tags           []string              `json:"tags"`
-	EmojiNames     []string              `json:"emoji_names"`
-	IsBot          bool                  `json:"is_bot"`
-	IsCat          bool                  `json:"is_cat"`
-	IsLocked       bool                  `json:"is_locked"`
-	IsDiscoverable bool                  `json:"is_discoverable"`
-	Type           string                `json:"type"`
-	URI            string                `json:"uri"`
-	MovedToURI     string                `json:"moved_to_uri,omitempty"`
-	IsSuspended    bool                  `json:"is_suspended"`
+	ID             string             `json:"id"`
+	Username       string             `json:"username"`
+	Name           string             `json:"name"`
+	Summary        string             `json:"summary"`
+	URL            string             `json:"url"`
+	ProfileFields  []profileFieldView `json:"profile_fields"`
+	Birthday       string             `json:"birthday"`
+	Location       string             `json:"location"`
+	AvatarURL      string             `json:"avatar_url"`
+	BannerURL      string             `json:"banner_url"`
+	Tags           []string           `json:"tags"`
+	EmojiNames     []string           `json:"emoji_names"`
+	IsBot          bool               `json:"is_bot"`
+	IsCat          bool               `json:"is_cat"`
+	IsLocked       bool               `json:"is_locked"`
+	IsDiscoverable bool               `json:"is_discoverable"`
+	Type           string             `json:"type"`
+	URI            string             `json:"uri"`
+	MovedToURI     string             `json:"moved_to_uri,omitempty"`
+	IsSuspended    bool               `json:"is_suspended"`
+}
+
+type profileFieldView struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 func projectActor(actor *actors.Actor) actorView {
+	fields := make([]profileFieldView, 0, len(actor.ProfileFields))
+	for _, field := range actor.ProfileFields {
+		fields = append(fields, profileFieldView{Name: field.Name, Value: field.Value})
+	}
 	return actorView{
 		ID: actor.ID, Username: actor.Username, Name: actor.Name, Summary: actor.Summary,
-		URL: actor.URL, ProfileFields: actor.ProfileFields, Birthday: actor.Birthday,
+		URL: actor.URL, ProfileFields: fields, Birthday: actor.Birthday,
 		Location: actor.Location, AvatarURL: actor.AvatarURL, BannerURL: actor.BannerURL,
 		Tags: actor.Tags, EmojiNames: actor.EmojiNames, IsBot: actor.IsBot,
 		IsCat: actor.IsCat, IsLocked: actor.IsLocked, IsDiscoverable: actor.IsDiscoverable,

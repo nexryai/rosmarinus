@@ -93,7 +93,9 @@ func TestReadTimelineReturnsSafeProjectionAndCursor(t *testing.T) {
 			Visibility: notes.VisibilitySpecified, VisibleUserURIs: []string{"https://example.test/users/private"},
 			Raw: map[string]any{"private": "federation document"}, CreatedAt: now,
 		},
-		Author: &actors.Actor{ID: "remote-1", Username: "remote", PrivateKeyPEM: "secret"},
+		Author: &actors.Actor{ID: "remote-1", Username: "remote", PrivateKeyPEM: "secret",
+			ProfileFields: []actors.ProfileField{{Name: "Website", Value: "https://remote.test"}},
+		},
 	}}}
 	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
 	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
@@ -108,6 +110,13 @@ func TestReadTimelineReturnsSafeProjectionAndCursor(t *testing.T) {
 	}
 	if body["next"] == "" {
 		t.Fatal("expected a next cursor")
+	}
+	data := body["data"].([]any)
+	author := data[0].(map[string]any)["author"].(map[string]any)
+	fields := author["profile_fields"].([]any)
+	field := fields[0].(map[string]any)
+	if len(field) != 2 || field["name"] != "Website" || field["value"] != "https://remote.test" {
+		t.Fatalf("profile fields must use the Salvia JSON contract: %#v", fields)
 	}
 	encoded := recorder.Body.String()
 	for _, forbidden := range []string{"visible_user", "federation document", "PrivateKey", "secret"} {

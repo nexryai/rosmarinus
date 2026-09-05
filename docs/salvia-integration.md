@@ -223,6 +223,12 @@ Profile projections include viewer-specific `follow_status` and
 viewer can reverse their own block; a profile that has blocked the viewer is
 still hidden.
 
+Actor `profile_fields` (including timeline authors and referenced Notes) is
+an array of `{ "name": string, "value": string }`, empty when unset. Salvia
+also normalizes the legacy `{ "Name": string, "Value": string }` response
+at its API boundary so remote authors with profile fields do not prevent an
+entire timeline page from loading during upgrades.
+
 Account settings expose `theme`, `reduce_motion`, `compact_mode`, and
 `selected_actor_id`. Supported themes are `yellow`, `light`, `dark`, and
 `system`; yellow is the default. Actor settings expose `default_visibility`,

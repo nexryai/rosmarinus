@@ -19,7 +19,8 @@ The Go integration test performs this real federation sequence:
    frontend-facing source resolves without backend caching or image processing;
 7. create a public Misskey note;
 8. wait for the delivered `Create(Note)` to be verified and stored by
-   Rosmarinus;
+   Rosmarinus, then verify the home timeline includes the Note and its followed
+   remote author's nonempty profile fields;
 9. pin and unpin that Misskey note and verify Rosmarinus applies the delivered
    `Add`/`Remove` activities to the remote Actor's `featuredNoteIds`;
 10. renote that public Misskey note and verify Rosmarinus stores the delivered

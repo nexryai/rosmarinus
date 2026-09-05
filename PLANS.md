@@ -14,6 +14,10 @@ differ unless this plan records an intentional Rosmarinus exception.
 
 ## Goals
 
+- Completed: project Actor profile fields with lowercase `name`/`value` JSON
+  keys so remote authors with additional profile information remain readable
+  in Salvia timelines; cover remote home membership in the Misskey fixture.
+
 - Implement ActivityPub federation in Go.
 - Use MongoDB as the primary database.
 - Use Redis for job queues, delayed retries, rate limiting, distributed AP
