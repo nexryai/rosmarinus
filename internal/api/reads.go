@@ -244,6 +244,57 @@ func (h *Handler) profile(w http.ResponseWriter, r *http.Request, accountID, pro
 		h.writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
 		return
 	}
+	h.writeProfile(w, profile)
+}
+
+func (h *Handler) resolveRemoteProfile(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
+	if len(segments) != 1 || segments[0] != "resolve" {
+		h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
+		return
+	}
+	if r.Method != http.MethodPost {
+		h.methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if _, ok := h.authorizeActor(w, r, accountID, actorID, false); !ok {
+		return
+	}
+	var body struct {
+		Target string `json:"target"`
+	}
+	if !h.decodeJSON(w, r, &body, false) {
+		return
+	}
+	target := strings.TrimSpace(body.Target)
+	if target == "" || len(target) > 2048 {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_target", "target must be a remote Actor handle or URL")
+		return
+	}
+	if h.remoteProfiles == nil || h.reader == nil {
+		h.internalError(w, r, fmt.Errorf("remote profile services are not configured"))
+		return
+	}
+	remoteActor, err := h.remoteProfiles.ResolveRemoteActor(r.Context(), target)
+	if err != nil || remoteActor == nil {
+		if h.logger != nil {
+			h.logger.Printf("api: remote profile resolution failed account_id=%s actor_id=%s err=%v", accountID, actorID, err)
+		}
+		h.writeError(w, http.StatusUnprocessableEntity, "profile_unresolvable", "Remote profile could not be resolved")
+		return
+	}
+	profile, err := h.reader.FindProfile(r.Context(), actorID, remoteActor.ID)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("project resolved remote profile: %w", err))
+		return
+	}
+	if profile == nil || profile.Actor == nil {
+		h.writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+		return
+	}
+	h.writeProfile(w, profile)
+}
+
+func (h *Handler) writeProfile(w http.ResponseWriter, profile *readmodel.Profile) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": profileView{
 		Actor: projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
 		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer,

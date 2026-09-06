@@ -30,6 +30,10 @@ part of the target architecture.
   and verify home timeline rendering with nonempty remote profile fields.
   The backend now emits lowercase `name`/`value` keys consistently.
 
+- Completed: resolve remote Actor handles and URLs through an authenticated,
+  owned-Actor-scoped Rosmarinus endpoint, then open the safe Salvia profile so
+  users can create or remove an outgoing ActivityPub follow.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct
@@ -157,6 +161,8 @@ Pub/Sub message arriving.
 - [x] Build account- and Actor-scoped notification views and mark-read actions.
 - [x] Build local and remote Actor profiles, follower/following views, moved and
       suspended states, and safe external-link/media behavior.
+- [x] Add remote-user lookup by handle or Actor URL and route successful
+      resolution into the profile follow/unfollow flow.
 - [x] Generate image upload previews and thumbnails with Canvas, test
       orientation and size handling, and keep the original file available when
       the upload contract requires it.

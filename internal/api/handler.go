@@ -53,22 +53,27 @@ type MediaUploadStore interface {
 	CreateLocal(context.Context, string, string, string, string, string, int64, string, int, int, io.Reader) (*domainmedia.Media, error)
 }
 
+type RemoteProfileResolver interface {
+	ResolveRemoteActor(context.Context, string) (*actors.Actor, error)
+}
+
 type Handler struct {
-	authenticator Authenticator
-	actors        ActorStore
-	executor      connector.CommandExecutor
-	receipts      idempotency.Store
-	reader        readmodel.Reader
-	settings      settings.Repository
-	instance      InstanceInfo
-	events        realtime.Broker
-	accounts      AccountLookup
-	mediaUploads  MediaUploadStore
-	mediaMaxBytes int64
-	authRoutes    http.Handler
-	logger        *log.Logger
-	now           func() time.Time
-	receiptTTL    time.Duration
+	authenticator  Authenticator
+	actors         ActorStore
+	executor       connector.CommandExecutor
+	receipts       idempotency.Store
+	reader         readmodel.Reader
+	settings       settings.Repository
+	instance       InstanceInfo
+	events         realtime.Broker
+	accounts       AccountLookup
+	mediaUploads   MediaUploadStore
+	remoteProfiles RemoteProfileResolver
+	mediaMaxBytes  int64
+	authRoutes     http.Handler
+	logger         *log.Logger
+	now            func() time.Time
+	receiptTTL     time.Duration
 }
 
 func NewHandler(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, logger *log.Logger, receiptTTL time.Duration) http.Handler {
@@ -96,25 +101,30 @@ func NewHandlerComplete(authenticator Authenticator, actorStore ActorStore, exec
 }
 
 func NewHandlerCompleteWithMedia(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerCompleteWithMediaAndRemoteProfiles(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, mediaUploads, nil, mediaMaxBytes, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerCompleteWithMediaAndRemoteProfiles(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
 	return &Handler{
-		authenticator: authenticator,
-		actors:        actorStore,
-		executor:      executor,
-		receipts:      receipts,
-		reader:        reader,
-		settings:      settingsStore,
-		instance:      instance,
-		events:        events,
-		accounts:      accounts,
-		mediaUploads:  mediaUploads,
-		mediaMaxBytes: mediaMaxBytes,
-		authRoutes:    authRoutes,
-		logger:        logger,
-		now:           func() time.Time { return time.Now().UTC() },
-		receiptTTL:    receiptTTL,
+		authenticator:  authenticator,
+		actors:         actorStore,
+		executor:       executor,
+		receipts:       receipts,
+		reader:         reader,
+		settings:       settingsStore,
+		instance:       instance,
+		events:         events,
+		accounts:       accounts,
+		mediaUploads:   mediaUploads,
+		remoteProfiles: remoteProfiles,
+		mediaMaxBytes:  mediaMaxBytes,
+		authRoutes:     authRoutes,
+		logger:         logger,
+		now:            func() time.Time { return time.Now().UTC() },
+		receiptTTL:     receiptTTL,
 	}
 }
 
@@ -304,6 +314,8 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 		h.reactions(w, r, accountID, actorID, segments[2:])
 	case "follows":
 		h.targetMutation(w, r, accountID, actorID, segments[2:], connector.CommandFollowCreate, connector.CommandFollowDelete)
+	case "profiles":
+		h.resolveRemoteProfile(w, r, accountID, actorID, segments[2:])
 	case "blocks":
 		h.targetMutation(w, r, accountID, actorID, segments[2:], connector.CommandBlockCreate, connector.CommandBlockDelete)
 	case "follow-requests":

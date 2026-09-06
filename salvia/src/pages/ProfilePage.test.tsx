@@ -25,6 +25,7 @@ describe("ProfilePage social actions", () => {
         const user = userEvent.setup();
         render(<ProfilePage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} profileID="bob" />);
         await screen.findByRole("heading", { name: "Bob" });
+        expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "フォロー" }));
         await user.click(screen.getByRole("button", { name: "フォロー解除" }));

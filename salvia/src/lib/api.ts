@@ -151,6 +151,7 @@ export const api = {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
     },
     profile: async (viewerID: string, actorID: string, signal?: AbortSignal): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema), { signal })).data,
+    resolveProfile: async (csrf: string, actorID: string, target: string): Promise<Profile> => (await request(`/actors/${encodeURIComponent(actorID)}/profiles/resolve`, envelope(profileSchema), { method: "POST", body: { target }, csrf })).data,
     profileConnections: async (viewerID: string, actorID: string, kind: "followers" | "following"): Promise<Connection[]> => (await request(`/profiles/${encodeURIComponent(actorID)}/${kind}${query({ actor_id: viewerID, limit: "100" })}`, pageEnvelope(connectionSchema))).data,
     follow: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follows`, envelope(z.unknown()), { method: "POST", body: { target }, csrf, idempotent: true });
@@ -174,4 +175,4 @@ export const api = {
     updateActorSettings: async (csrf: string, actorID: string, patch: Partial<ActorSettings>): Promise<ActorSettings> => (await request(`/actors/${encodeURIComponent(actorID)}/settings`, envelope(actorSettingsSchema), { method: "PATCH", body: patch, csrf })).data,
 };
 
-export type Page = "home" | "public" | "notifications" | "follow-requests" | "settings" | "profile" | "note";
+export type Page = "home" | "public" | "users" | "notifications" | "follow-requests" | "settings" | "profile" | "note";

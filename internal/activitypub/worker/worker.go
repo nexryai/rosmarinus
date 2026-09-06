@@ -972,19 +972,31 @@ func (h *Handler) CreateFollow(ctx context.Context, followerID, target string) (
 		return "", fmt.Errorf("local follower not found: %s", followerID)
 	}
 
-	var followee *actors.Actor
-	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
-		followee, err = h.resolver.ResolveActor(ctx, strings.TrimSpace(target))
-	} else {
-		followee, err = h.resolver.ResolveActorHandle(ctx, strings.TrimSpace(target))
-	}
+	followee, err := h.ResolveRemoteActor(ctx, target)
 	if err != nil {
 		return "", fmt.Errorf("resolve follow target: %w", err)
 	}
-	if followee == nil || followee.Host == nil {
-		return "", fmt.Errorf("follow target must be a remote actor")
-	}
 	return h.enqueueOutgoingFollow(ctx, follower, followee)
+}
+
+func (h *Handler) ResolveRemoteActor(ctx context.Context, target string) (*actors.Actor, error) {
+	target = strings.TrimSpace(target)
+	var (
+		actor *actors.Actor
+		err   error
+	)
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		actor, err = h.resolver.ResolveActor(ctx, target)
+	} else {
+		actor, err = h.resolver.ResolveActorHandle(ctx, strings.TrimPrefix(target, "@"))
+	}
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil || actor.Host == nil {
+		return nil, fmt.Errorf("target must be a remote actor")
+	}
+	return actor, nil
 }
 
 func (h *Handler) enqueueOutgoingFollow(ctx context.Context, follower, followee *actors.Actor) (string, error) {

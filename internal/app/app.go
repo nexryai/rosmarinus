@@ -205,10 +205,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 	authLimiter := ratelimit.NewRedisLimiter(redisClient)
 	authAPI := api.NewAuthHandlerWithRateLimit(passkeys, sessionManager, accountRepo, authLimiter, cfg.AuthRateLimit, cfg.AuthRateWindow, logger)
-	applicationAPI := api.NewHandlerCompleteWithMedia(
+	applicationAPI := api.NewHandlerCompleteWithMediaAndRemoteProfiles(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
 		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
-		mediaRepo, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
+		mediaRepo, apWorker, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
 	)
 
 	return &App{

@@ -15,6 +15,7 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TimelinePage } from "./pages/TimelinePage";
+import { UserSearchPage } from "./pages/UserSearchPage";
 
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };
@@ -41,6 +42,7 @@ const rules = {
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
     if (path === "/public") return { page: "public" };
+    if (path === "/users") return { page: "users" };
     if (path === "/notifications") return { page: "notifications" };
     if (path === "/follow-requests") return { page: "follow-requests" };
     if (path === "/settings") return { page: "settings" };
@@ -253,6 +255,7 @@ function App() {
                     refreshKey={refreshKey}
                 />
             )}
+            {route.page === "users" && <UserSearchPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} />}
             {route.page === "notifications" && <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} onActorChange={(id) => void chooseActor(id)} onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
             {route.page === "follow-requests" && <FollowRequestsPage actorID={selectedActor.id} csrf={session.csrf_token} refreshKey={refreshKey} />}
             {route.page === "settings" && <SettingsPage accountSettings={settings} actors={actors} csrf={session.csrf_token} onActorsChanged={loadWorkspace} onSettingsChanged={setSettings} selectedActor={selectedActor} />}

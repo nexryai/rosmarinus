@@ -42,6 +42,14 @@ const rules = {
     alert: css({ borderColor: "var(--danger)", background: "var(--danger)", "@supports (color: color-mix(in lab, red, red))": { borderColor: "color-mix(in srgb, var(--danger) 20%, var(--border))", background: "color-mix(in srgb, var(--danger) 6%, var(--panel))" } }),
 };
 
+const actorHandle = (profile: Profile) => {
+    try {
+        return `@${profile.actor.username}@${new URL(profile.actor.uri).host}`;
+    } catch {
+        return `@${profile.actor.username}`;
+    }
+};
+
 export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actorID: string; csrf: string; onOpenProfile: (actorID: string) => void; profileID: string }) {
     const [profile, setProfile] = useState<Profile>();
     const [following, setFollowing] = useState(false);
@@ -143,7 +151,7 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
                         )}
                     </div>
                     <h1 style={styles.title}>{actor.name || actor.username}</h1>
-                    <p style={styles.handle}>@{actor.username}</p>
+                    <p style={styles.handle}>{actorHandle(profile)}</p>
                     {actor.is_suspended && (
                         <p className={rules.alert} style={styles.alert}>
                             このActorは停止されています。

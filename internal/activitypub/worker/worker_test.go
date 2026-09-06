@@ -958,6 +958,16 @@ type fakeClient struct {
 	lastDeliver string
 }
 
+type fakeWebFinger struct {
+	query string
+	uri   string
+}
+
+func (f *fakeWebFinger) ResolveActor(_ context.Context, query string) (string, error) {
+	f.query = query
+	return f.uri, nil
+}
+
 type fakeInstanceRepo struct {
 	instance *instances.Instance
 	received int
@@ -2091,6 +2101,28 @@ func TestCreateFollowAndAcceptEstablishesOutgoingRelationship(t *testing.T) {
 	follow, _ = followRepo.Find(context.Background(), local.ID, remote.ID)
 	if follow == nil || follow.Status != follows.StatusAccepted || follow.AcceptedAt == nil {
 		t.Fatalf("accepted follow = %+v", follow)
+	}
+}
+
+func TestResolveRemoteActorAcceptsDisplayHandle(t *testing.T) {
+	const actorURI = "https://remote.example/users/alice"
+	repo := &fakeRepo{}
+	client := &fakeClient{objects: map[string]map[string]any{
+		actorURI: {
+			"id": actorURI, "type": "Person", "preferredUsername": "alice",
+			"inbox": actorURI + "/inbox",
+		},
+	}}
+	webFinger := &fakeWebFinger{uri: actorURI}
+	h := New(config.Config{}, nil, repo, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, client, nil)
+	h.SetWebFingerResolver(webFinger)
+
+	actor, err := h.ResolveRemoteActor(context.Background(), " @alice@remote.example ")
+	if err != nil {
+		t.Fatalf("ResolveRemoteActor returned error: %v", err)
+	}
+	if webFinger.query != "alice@remote.example" || actor == nil || actor.URI != actorURI || actor.Host == nil {
+		t.Fatalf("query=%q actor=%+v", webFinger.query, actor)
 	}
 }
 

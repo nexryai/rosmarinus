@@ -106,6 +106,9 @@ Account
 
 - Use the versioned Rosmarinus REST API for all reads and mutations.
   Do not write federation or UI state directly to MongoDB.
+- Resolve remote handles and Actor URLs through the owned-Actor-scoped
+  `/api/v1/actors/{actorId}/profiles/resolve` endpoint before opening a remote
+  profile. Browser code must not contact WebFinger or ActivityPub servers.
 - Read routes that depend on visibility use an `actor_id` query parameter.
   Supply the selected owned Actor and expect Rosmarinus to reject a missing,
   suspended, deleted, or foreign Actor. Never use it as local authorization

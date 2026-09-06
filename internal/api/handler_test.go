@@ -325,6 +325,19 @@ func TestHandlerMapsRESTPostToDomainCommand(t *testing.T) {
 	}
 }
 
+func TestHandlerMapsRemoteFollowToOwnedActor(t *testing.T) {
+	handler, executor, _ := testHandler()
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/follows", `{"target":"@alice@remote.test"}`))
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if executor.command != connector.CommandFollowCreate || executor.actorID != "actor-1" || executor.data != "@alice@remote.test" {
+		t.Fatalf("execution = command:%q actor:%q data:%+v", executor.command, executor.actorID, executor.data)
+	}
+}
+
 func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 	handler, executor, _ := testHandler()
 	first := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello"}`)

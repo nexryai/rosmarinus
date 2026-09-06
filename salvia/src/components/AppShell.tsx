@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { IconBell, IconChevronDown, IconHome, IconLeaf2, IconLogout, IconPlus, IconSettings, IconUsersPlus, IconWorld } from "@tabler/icons-react";
+import { IconBell, IconChevronDown, IconHome, IconLeaf2, IconLogout, IconPlus, IconSettings, IconUserSearch, IconUsersPlus, IconWorld } from "@tabler/icons-react";
 
 import type { Page } from "../lib/api";
 import { css } from "../lib/css";
@@ -10,6 +10,7 @@ import { Avatar, Button } from "./ui";
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [
     { icon: IconHome, label: "ホーム", page: "home", path: "/" },
     { icon: IconWorld, label: "みつける", page: "public", path: "/public" },
+    { icon: IconUserSearch, label: "ユーザー検索", page: "users", path: "/users" },
     { icon: IconBell, label: "通知", page: "notifications", path: "/notifications" },
     { icon: IconUsersPlus, label: "リクエスト", page: "follow-requests", path: "/follow-requests" },
     { icon: IconSettings, label: "設定", page: "settings", path: "/settings" },
@@ -110,12 +111,14 @@ export function AppShell({
                 {children}
             </main>
             <nav aria-label="モバイルナビゲーション" className={rules.mobileNav} style={styles.mobileNav}>
-                {navigation.slice(0, 4).map((item) => (
-                    <button aria-current={page === item.page ? "page" : undefined} key={item.page} onClick={() => onNavigate(item.path)} style={{ ...styles.mobileItem, ...(page === item.page ? { color: "var(--accent-hover)" } : {}) }} type="button">
-                        <item.icon />
-                        <span>{item.label}</span>
-                    </button>
-                ))}
+                {navigation
+                    .filter((item) => item.page !== "settings")
+                    .map((item) => (
+                        <button aria-current={page === item.page ? "page" : undefined} key={item.page} onClick={() => onNavigate(item.path)} style={{ ...styles.mobileItem, ...(page === item.page ? { color: "var(--accent-hover)" } : {}) }} type="button">
+                            <item.icon />
+                            <span>{item.label}</span>
+                        </button>
+                    ))}
                 <button aria-label="ノートを作成" onClick={onCompose} style={styles.mobileCompose} type="button">
                     <IconPlus />
                 </button>

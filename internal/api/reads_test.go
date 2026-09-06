@@ -29,6 +29,17 @@ type fakeReader struct {
 	calls         int
 }
 
+type fakeRemoteProfileResolver struct {
+	target string
+	actor  *actors.Actor
+	err    error
+}
+
+func (f *fakeRemoteProfileResolver) ResolveRemoteActor(_ context.Context, target string) (*actors.Actor, error) {
+	f.target = target
+	return f.actor, f.err
+}
+
 func (f *fakeReader) ListPublicTimeline(_ context.Context, actorID string, _ readmodel.Cursor, _ int) ([]readmodel.Note, error) {
 	f.actorID, f.calls = actorID, f.calls+1
 	return f.publicItems, nil
@@ -66,7 +77,7 @@ func (f *fakeReader) ListLocalEmojis(context.Context, string, int) ([]emojis.Emo
 }
 
 func (f *fakeReader) FindProfile(_ context.Context, viewerActorID, actorID string) (*readmodel.Profile, error) {
-	f.actorID, f.calls = viewerActorID, f.calls+1
+	f.actorID, f.targetActorID, f.calls = viewerActorID, actorID, f.calls+1
 	if f.profile != nil {
 		return f.profile, nil
 	}
@@ -202,6 +213,46 @@ func TestProfileReturnsViewerRelationshipState(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/remote-profile?actor_id=actor-1", nil))
 	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"follow_status":"pending"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"blocked_by_viewer":true`)) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestResolveRemoteProfileRequiresOwnedActorAndReturnsProfile(t *testing.T) {
+	host := "remote.test"
+	resolver := &fakeRemoteProfileResolver{actor: &actors.Actor{ID: "remote-profile", Username: "alice", Host: &host, URI: "https://remote.test/users/alice"}}
+	reader := &fakeReader{profile: &readmodel.Profile{Actor: resolver.actor, FollowStatus: "pending"}}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerCompleteWithMediaAndRemoteProfiles(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}}, store, &fakeExecutor{}, nil,
+		reader, nil, InstanceInfo{}, nil, nil, nil, resolver, 0, nil, nil, 0,
+	)
+	request := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/profiles/resolve", `{"target":" @alice@remote.test "}`)
+	request.Header.Set("X-CSRF-Token", "csrf-token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK || resolver.target != "@alice@remote.test" || reader.actorID != "actor-1" || reader.targetActorID != "remote-profile" {
+		t.Fatalf("status=%d resolver_target=%q viewer=%q body=%s", recorder.Code, resolver.target, reader.actorID, recorder.Body.String())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"id":"remote-profile"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"follow_status":"pending"`)) {
+		t.Fatalf("unexpected profile response: %s", recorder.Body.String())
+	}
+}
+
+func TestResolveRemoteProfileRejectsForeignActorBeforeFederation(t *testing.T) {
+	resolver := &fakeRemoteProfileResolver{actor: &actors.Actor{ID: "remote-profile"}}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-2", OwnerAccountID: "account-2"}}}
+	handler := NewHandlerCompleteWithMediaAndRemoteProfiles(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}}, store, &fakeExecutor{}, nil,
+		&fakeReader{}, nil, InstanceInfo{}, nil, nil, nil, resolver, 0, nil, nil, 0,
+	)
+	request := jsonRequest(http.MethodPost, "/api/v1/actors/actor-2/profiles/resolve", `{"target":"@alice@remote.test"}`)
+	request.Header.Set("X-CSRF-Token", "csrf-token")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	assertError(t, recorder, http.StatusNotFound, "actor_not_found")
+	if resolver.target != "" {
+		t.Fatalf("resolver called for foreign Actor with %q", resolver.target)
 	}
 }
 
