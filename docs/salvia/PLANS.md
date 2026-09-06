@@ -34,6 +34,10 @@ part of the target architecture.
   owned-Actor-scoped Rosmarinus endpoint, then open the safe Salvia profile so
   users can create or remove an outgoing ActivityPub follow.
 
+- Completed: generate new local and remote Actor IDs as collision-checked
+  MongoDB ObjectID hexadecimal strings while keeping IDs opaque to Salvia and
+  using Actor `host` state, rather than an ID prefix, to determine locality.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

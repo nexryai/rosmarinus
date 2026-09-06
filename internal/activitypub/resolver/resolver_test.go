@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	domainemojis "github.com/nexryai/rosmarinus/internal/domain/emojis"
@@ -23,6 +25,9 @@ func TestResolveActorHandle(t *testing.T) {
 	}
 	if actor.URI != "https://remote.example/users/alice" || repo.upserted == nil {
 		t.Fatalf("actor was not resolved and stored: %+v", actor)
+	}
+	if _, err := bson.ObjectIDFromHex(actor.ID); err != nil {
+		t.Fatalf("remote actor ID is not ObjectID hex: %q: %v", actor.ID, err)
 	}
 }
 
@@ -101,6 +106,9 @@ func TestResolveActorRefreshesStaleRemoteActor(t *testing.T) {
 	}
 	if fetcher.calls != 1 || repo.upserted == nil || resolved.Name != "Refreshed" {
 		t.Fatalf("resolved=%+v fetch calls=%d upserted=%+v", resolved, fetcher.calls, repo.upserted)
+	}
+	if resolved.ID != "remote" {
+		t.Fatalf("refresh changed existing actor ID: %q", resolved.ID)
 	}
 }
 
@@ -676,6 +684,18 @@ func (r *resolverEmojiRepository) FindLocalByNames(context.Context, []string) ([
 }
 
 func (r *resolverActorRepository) FindLocalByID(context.Context, string) (*actors.Actor, error) {
+	return nil, nil
+}
+
+func (r *resolverActorRepository) FindAnyByID(_ context.Context, id string) (*actors.Actor, error) {
+	if r.existing != nil && r.existing.ID == id {
+		return r.existing, nil
+	}
+	for _, actor := range r.actors {
+		if actor.ID == id {
+			return actor, nil
+		}
+	}
 	return nil, nil
 }
 

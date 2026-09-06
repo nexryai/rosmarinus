@@ -112,6 +112,14 @@ client-provided ownership field as authorization evidence. Actor creation
 derives `ownerAccountId` from the authenticated session. Ordinary API calls do
 not transfer ownership.
 
+Actor IDs are opaque strings at the REST and SSE boundary. Newly generated
+local and remote Actor IDs are 24-character MongoDB ObjectID hexadecimal
+strings, stored as BSON strings rather than BSON ObjectID values. Salvia must
+not parse their timestamp component, infer whether an Actor is local or remote
+from the ID shape, or construct IDs. Rosmarinus determines locality from Actor
+state such as `host` and continues to accept stable legacy IDs where they have
+not been explicitly migrated.
+
 Account suspension immediately revokes effective REST and SSE access
 and triggers Rosmarinus's reversible Actor suspension policy. Account deletion
 permanently tombstones owned Actors through the existing federation cleanup

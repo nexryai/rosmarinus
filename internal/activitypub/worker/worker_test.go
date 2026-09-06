@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/nexryai/rosmarinus/internal/account"
 	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
@@ -56,6 +57,21 @@ type fakeRepo struct {
 func (f *fakeRepo) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
 	if f.local != nil && f.local.ID == id && !f.local.IsSuspended && f.local.DeletedAt == nil {
 		return f.local, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) FindAnyByID(_ context.Context, id string) (*actors.Actor, error) {
+	if f.local != nil && f.local.ID == id {
+		return f.local, nil
+	}
+	if f.remote != nil && f.remote.ID == id {
+		return f.remote, nil
+	}
+	for _, actor := range f.remotes {
+		if actor.ID == id {
+			return actor, nil
+		}
 	}
 	return nil, nil
 }
@@ -3513,6 +3529,9 @@ func TestCreateActorDerivesOwnershipAndIdentity(t *testing.T) {
 	}
 	if created.ActorID == "" || created.Username != "alice-work" || created.URI != "https://rosmarinus.example/users/"+created.ActorID {
 		t.Fatalf("unexpected result: %+v", created)
+	}
+	if _, err := bson.ObjectIDFromHex(created.ActorID); err != nil {
+		t.Fatalf("local actor ID is not ObjectID hex: %q: %v", created.ActorID, err)
 	}
 	if repo.local == nil || repo.local.OwnerAccountID != "account-1" || repo.local.IsSystemActor || !repo.local.IsLocked || !repo.local.IsDiscoverable || repo.local.PublicKeyID != created.URI+"#main-key" {
 		t.Fatalf("unexpected stored actor: %+v", repo.local)

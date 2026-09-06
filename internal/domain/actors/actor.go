@@ -273,6 +273,7 @@ type Repository interface {
 	SetOwnedLocalActorSuspended(context.Context, string, string, bool, time.Time) (*Actor, error)
 	MarkOwnedLocalActorDeleted(context.Context, string, string, time.Time) (*Actor, error)
 	ListOwnedAccountIDs(context.Context) ([]string, error)
+	FindAnyByID(context.Context, string) (*Actor, error)
 	FindByURI(context.Context, string) (*Actor, error)
 	FindAnyByURI(context.Context, string) (*Actor, error)
 	FilterActiveRemoteIDs(context.Context, []string) (map[string]struct{}, error)

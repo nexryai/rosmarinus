@@ -20,6 +20,22 @@ replayed inbound activities from duplicating completed domain side effects.
 Never use broad key deletion or database flushes as routine queue maintenance;
 use the inspection and promotion commands below.
 
+## Actor ID migration
+
+`go run ./cmd/migrateactorids` inventories Actor IDs and every known internal
+Actor-ID reference without writing. With a current backup available, rerun it
+as `go run ./cmd/migrateactorids --apply` to replace non-ObjectID IDs and
+references in one MongoDB transaction. The command reads `MONGO_URI` and
+`MONGO_DATABASE`, records the old-to-new mapping in `migration_audits`, and
+verifies that the migrated fields contain only ObjectID hexadecimal strings.
+
+The migration preserves public ActivityPub URIs. Migrated Actor documents keep
+their former IDs in the indexed `legacyIds` compatibility field so inbound
+requests to an established `/users/{oldId}` URI continue to resolve. Deploy the
+matching Rosmarinus build before migrating: it uses the new Actor cache
+namespace and understands these aliases. Do not remove `legacyIds`; remote
+servers may retain an Actor URI indefinitely.
+
 Rosmarinus verifies MongoDB and Redis connectivity before serving traffic.
 Shutdown allows up to 30 seconds for workers and network servers to stop. The
 TTL indexes on inbox and API idempotency receipts provide intentional bounded

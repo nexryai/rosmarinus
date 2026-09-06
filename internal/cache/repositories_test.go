@@ -61,6 +61,14 @@ func (r *cachedActorBacking) FindByID(context.Context, string) (*actors.Actor, e
 	return r.actor, nil
 }
 
+func (r *cachedActorBacking) FindAnyByID(_ context.Context, id string) (*actors.Actor, error) {
+	if r.actor != nil && r.actor.ID == id {
+		copy := *r.actor
+		return &copy, nil
+	}
+	return nil, nil
+}
+
 func (r *cachedActorBacking) FindLocalByID(context.Context, string) (*actors.Actor, error) {
 	return nil, nil
 }
@@ -224,7 +232,7 @@ func TestCachedActorRepositoryCachesAndInvalidatesRemoteActor(t *testing.T) {
 	if _, err := repository.UpsertRemoteActor(context.Background(), updated); err != nil {
 		t.Fatal(err)
 	}
-	if _, found := loadJSON[actors.Actor](context.Background(), store, cacheKey("public-key", oldKeyID)); found {
+	if _, found := loadJSON[actors.Actor](context.Background(), store, cacheKey(publicKeyCacheNamespace, oldKeyID)); found {
 		t.Fatal("old public key cache survived actor update")
 	}
 	actor, err := repository.FindByPublicKeyID(context.Background(), updated.PublicKeyID)

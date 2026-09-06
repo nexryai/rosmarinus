@@ -8,8 +8,10 @@ import (
 )
 
 const (
-	actorURICacheTTL  = 5 * time.Minute
-	publicKeyCacheTTL = 12 * time.Hour
+	actorURICacheNamespace  = "actor-uri-v2"
+	publicKeyCacheNamespace = "public-key-v2"
+	actorURICacheTTL        = 5 * time.Minute
+	publicKeyCacheTTL       = 12 * time.Hour
 )
 
 type CachedActorRepository struct {
@@ -28,6 +30,10 @@ func NewCachedActorRepository(repository actorRepository, store ValueStore) *Cac
 
 func (r *CachedActorRepository) FindByID(ctx context.Context, id string) (*actors.Actor, error) {
 	return r.repository.FindByID(ctx, id)
+}
+
+func (r *CachedActorRepository) FindAnyByID(ctx context.Context, id string) (*actors.Actor, error) {
+	return r.repository.FindAnyByID(ctx, id)
 }
 
 func (r *CachedActorRepository) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
@@ -83,7 +89,7 @@ func (r *CachedActorRepository) FindByURI(ctx context.Context, uri string) (*act
 }
 
 func (r *CachedActorRepository) FindAnyByURI(ctx context.Context, uri string) (*actors.Actor, error) {
-	key := cacheKey("actor-uri", uri)
+	key := cacheKey(actorURICacheNamespace, uri)
 	if actor, found := loadJSON[actors.Actor](ctx, r.store, key); found {
 		return actor, nil
 	}
@@ -100,7 +106,7 @@ func (r *CachedActorRepository) FilterActiveRemoteIDs(ctx context.Context, ids [
 }
 
 func (r *CachedActorRepository) FindByPublicKeyID(ctx context.Context, keyID string) (*actors.Actor, error) {
-	key := cacheKey("public-key", keyID)
+	key := cacheKey(publicKeyCacheNamespace, keyID)
 	if actor, found := loadJSON[actors.Actor](ctx, r.store, key); found {
 		if actor.IsSuspended {
 			return nil, nil
@@ -166,7 +172,7 @@ func (r *CachedActorRepository) MarkRemoteActorDeleted(ctx context.Context, uri 
 		return err
 	}
 	r.invalidateActor(ctx, existing)
-	_ = r.store.Delete(ctx, cacheKey("actor-uri", uri))
+	_ = r.store.Delete(ctx, cacheKey(actorURICacheNamespace, uri))
 	return nil
 }
 
@@ -174,9 +180,9 @@ func (r *CachedActorRepository) cacheActor(ctx context.Context, actor *actors.Ac
 	if actor == nil || actor.Host == nil {
 		return
 	}
-	storeJSON(ctx, r.store, cacheKey("actor-uri", actor.URI), actor, actorURICacheTTL)
+	storeJSON(ctx, r.store, cacheKey(actorURICacheNamespace, actor.URI), actor, actorURICacheTTL)
 	if actor.PublicKeyID != "" {
-		storeJSON(ctx, r.store, cacheKey("public-key", actor.PublicKeyID), actor, publicKeyCacheTTL)
+		storeJSON(ctx, r.store, cacheKey(publicKeyCacheNamespace, actor.PublicKeyID), actor, publicKeyCacheTTL)
 	}
 }
 
@@ -185,7 +191,7 @@ func (r *CachedActorRepository) invalidateActor(ctx context.Context, actor *acto
 		return
 	}
 	_ = r.store.Delete(ctx,
-		cacheKey("actor-uri", actor.URI),
-		cacheKey("public-key", actor.PublicKeyID),
+		cacheKey(actorURICacheNamespace, actor.URI),
+		cacheKey(publicKeyCacheNamespace, actor.PublicKeyID),
 	)
 }

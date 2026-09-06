@@ -98,6 +98,8 @@ Account
 - Treat selected Actor state as a UI preference only. Include the Actor ID in
   Actor-scoped requests, and rely on Rosmarinus to verify ownership in the same
   query that loads the Actor.
+- Treat Actor IDs as opaque strings. Do not parse ObjectID timestamps or infer
+  local/remote status from prefixes, length, or other ID formatting.
 - Support zero, one, and multiple Actor states. Make creation, switching,
   profile editing, suspension/deletion status, and command context clear.
 - Do not infer authorization from data already rendered in the browser.

@@ -24,6 +24,7 @@ type ActorRepository struct {
 
 type actorDocument struct {
 	ID              string                      `bson:"_id,omitempty"`
+	LegacyIDs       []string                    `bson:"legacyIds,omitempty"`
 	OwnerAccountID  string                      `bson:"ownerAccountId,omitempty"`
 	IsSystemActor   bool                        `bson:"isSystemActor"`
 	Username        string                      `bson:"username"`
@@ -116,14 +117,13 @@ func (r *ActorRepository) FindOwnedLocalByID(ctx context.Context, accountID, act
 	if accountID == "" || actorID == "" {
 		return nil, nil
 	}
-	return r.findOne(ctx, bson.M{
-		"_id":            actorID,
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-		"isSuspended":    false,
-		"deletedAt":      nil,
-	})
+	filter := actorIDFilter(actorID)
+	filter["ownerAccountId"] = accountID
+	filter["host"] = nil
+	filter["isSystemActor"] = bson.M{"$ne": true}
+	filter["isSuspended"] = false
+	filter["deletedAt"] = nil
+	return r.findOne(ctx, filter)
 }
 
 func (r *ActorRepository) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accountID, actorID string) (*actors.Actor, error) {
@@ -132,12 +132,11 @@ func (r *ActorRepository) FindOwnedLocalByIDIncludingDeleted(ctx context.Context
 	if accountID == "" || actorID == "" {
 		return nil, nil
 	}
-	return r.findOne(ctx, bson.M{
-		"_id":            actorID,
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-	})
+	filter := actorIDFilter(actorID)
+	filter["ownerAccountId"] = accountID
+	filter["host"] = nil
+	filter["isSystemActor"] = bson.M{"$ne": true}
+	return r.findOne(ctx, filter)
 }
 
 func (r *ActorRepository) ListOwnedLocalActorsPage(ctx context.Context, accountID, afterID string, limit int, includeDeleted bool) ([]actors.Actor, error) {
@@ -180,7 +179,9 @@ func (r *ActorRepository) FindLocalForDeliveryByID(ctx context.Context, actorID 
 	if actorID == "" {
 		return nil, nil
 	}
-	return r.findOne(ctx, bson.M{"_id": actorID, "host": nil})
+	filter := actorIDFilter(actorID)
+	filter["host"] = nil
+	return r.findOne(ctx, filter)
 }
 
 func (r *ActorRepository) CreateOwnedLocalActor(ctx context.Context, actor actors.Actor) (*actors.Actor, error) {
@@ -232,13 +233,12 @@ func (r *ActorRepository) UpdateOwnedLocalActor(ctx context.Context, accountID, 
 	if len(unset) != 0 {
 		update["$unset"] = unset
 	}
-	result, err := r.collection.UpdateOne(ctx, bson.M{
-		"_id":            actorID,
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-		"isSuspended":    false,
-	}, update)
+	filter := actorIDFilter(actorID)
+	filter["ownerAccountId"] = accountID
+	filter["host"] = nil
+	filter["isSystemActor"] = bson.M{"$ne": true}
+	filter["isSuspended"] = false
+	result, err := r.collection.UpdateOne(ctx, filter, update)
 	if err != nil {
 		return nil, err
 	}
@@ -257,13 +257,12 @@ func (r *ActorRepository) MarkOwnedLocalActorDeleted(ctx context.Context, accoun
 	if deletedAt.IsZero() {
 		deletedAt = time.Now().UTC()
 	}
-	result, err := r.collection.UpdateOne(ctx, bson.M{
-		"_id":            actorID,
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-		"deletedAt":      nil,
-	}, bson.M{"$set": bson.M{
+	filter := actorIDFilter(actorID)
+	filter["ownerAccountId"] = accountID
+	filter["host"] = nil
+	filter["isSystemActor"] = bson.M{"$ne": true}
+	filter["deletedAt"] = nil
+	result, err := r.collection.UpdateOne(ctx, filter, bson.M{"$set": bson.M{
 		"isSuspended": true,
 		"suspendedAt": deletedAt.UTC(),
 		"deletedAt":   deletedAt.UTC(),
@@ -286,14 +285,12 @@ func (r *ActorRepository) SetOwnedLocalActorSuspended(ctx context.Context, accou
 	if changedAt.IsZero() {
 		changedAt = time.Now().UTC()
 	}
-	filter := bson.M{
-		"_id":            actorID,
-		"ownerAccountId": accountID,
-		"host":           nil,
-		"isSystemActor":  bson.M{"$ne": true},
-		"isSuspended":    bson.M{"$ne": suspended},
-		"deletedAt":      nil,
-	}
+	filter := actorIDFilter(actorID)
+	filter["ownerAccountId"] = accountID
+	filter["host"] = nil
+	filter["isSystemActor"] = bson.M{"$ne": true}
+	filter["isSuspended"] = bson.M{"$ne": suspended}
+	filter["deletedAt"] = nil
 	update := bson.M{"$set": bson.M{"isSuspended": suspended}}
 	if suspended {
 		update["$set"].(bson.M)["suspendedAt"] = changedAt.UTC()
@@ -385,12 +382,15 @@ func (r *ActorRepository) ListOwnedAccountIDs(ctx context.Context) ([]string, er
 }
 
 func (r *ActorRepository) FindLocalByID(ctx context.Context, id string) (*actors.Actor, error) {
-	return r.findOne(ctx, bson.M{
-		"_id":         id,
-		"host":        nil,
-		"isSuspended": false,
-		"deletedAt":   nil,
-	})
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, nil
+	}
+	filter := actorIDFilter(id)
+	filter["host"] = nil
+	filter["isSuspended"] = false
+	filter["deletedAt"] = nil
+	return r.findOne(ctx, filter)
 }
 
 func (r *ActorRepository) FindByID(ctx context.Context, id string) (*actors.Actor, error) {
@@ -398,10 +398,21 @@ func (r *ActorRepository) FindByID(ctx context.Context, id string) (*actors.Acto
 	if id == "" {
 		return nil, nil
 	}
-	return r.findOne(ctx, bson.M{
-		"_id":         id,
-		"isSuspended": false,
-	})
+	filter := actorIDFilter(id)
+	filter["isSuspended"] = false
+	return r.findOne(ctx, filter)
+}
+
+func (r *ActorRepository) FindAnyByID(ctx context.Context, id string) (*actors.Actor, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, actorIDFilter(id))
+}
+
+func actorIDFilter(id string) bson.M {
+	return bson.M{"$or": bson.A{bson.M{"_id": id}, bson.M{"legacyIds": id}}}
 }
 
 func (r *ActorRepository) FindLocalByUsername(ctx context.Context, username string) (*actors.Actor, error) {

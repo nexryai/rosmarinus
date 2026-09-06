@@ -3,7 +3,6 @@ package worker
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -42,6 +41,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
+	"github.com/nexryai/rosmarinus/internal/idgen"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
@@ -3233,9 +3233,12 @@ func (h *Handler) CreateActor(ctx context.Context, accountID string, command con
 	if !validLocalActorType(actorType) {
 		return connector.ActorCreated{}, fmt.Errorf("invalid local actor type")
 	}
-	id, err := newLocalActorID()
+	id, err := idgen.NewUniqueObjectID(ctx, func(ctx context.Context, id string) (bool, error) {
+		found, findErr := h.repo.FindAnyByID(ctx, id)
+		return found != nil, findErr
+	})
 	if err != nil {
-		return connector.ActorCreated{}, err
+		return connector.ActorCreated{}, fmt.Errorf("generate local actor id: %w", err)
 	}
 	base := strings.TrimRight(h.cfg.PublicURL, "/")
 	uri := base + "/users/" + url.PathEscape(id)
@@ -3268,14 +3271,6 @@ func (h *Handler) CreateActor(ctx context.Context, accountID string, command con
 		return connector.ActorCreated{}, fmt.Errorf("created owned actor could not be reloaded")
 	}
 	return connector.ActorCreated{ActorID: actor.ID, URI: actor.URI, Username: actor.Username}, nil
-}
-
-func newLocalActorID() (string, error) {
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate local actor id: %w", err)
-	}
-	return hex.EncodeToString(raw), nil
 }
 
 func validLocalActorType(value string) bool {

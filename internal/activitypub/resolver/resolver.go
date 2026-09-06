@@ -3,7 +3,6 @@ package resolver
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -19,6 +18,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
+	"github.com/nexryai/rosmarinus/internal/idgen"
 	"github.com/nexryai/rosmarinus/internal/mfm"
 )
 
@@ -182,6 +182,17 @@ func (r *Resolver) ResolveActor(ctx context.Context, uri string) (*actors.Actor,
 			return existing, nil
 		}
 		return nil, err
+	}
+	if existing != nil {
+		actor.ID = existing.ID
+	} else {
+		actor.ID, err = idgen.NewUniqueObjectID(ctx, func(ctx context.Context, id string) (bool, error) {
+			found, findErr := r.repo.FindAnyByID(ctx, id)
+			return found != nil, findErr
+		})
+		if err != nil {
+			return nil, fmt.Errorf("generate remote actor id: %w", err)
+		}
 	}
 	_ = r.upsertRemoteEmojis(ctx, actor.Host, apnotes.ExtractEmojis(object["tag"]))
 	if existing != nil {
@@ -621,7 +632,6 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 		return actors.Actor{}, err
 	}
 	return actors.Actor{
-		ID:             remoteActorID(id),
 		Username:       username,
 		UsernameLower:  strings.ToLower(username),
 		Name:           name,
@@ -870,11 +880,6 @@ func actorType(object map[string]any) string {
 		return "Person"
 	}
 	return typ
-}
-
-func remoteActorID(uri string) string {
-	sum := sha256.Sum256([]byte(uri))
-	return "remote_" + hex.EncodeToString(sum[:])[:24]
 }
 
 func validRemoteUsername(username string) bool {
