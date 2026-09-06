@@ -7,6 +7,7 @@ import { css } from "../lib/css";
 import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
 import { Button, ErrorBanner, Modal } from "./ui";
+import { Dropdown, type DropdownOption } from "./ui/Dropdown";
 
 export type ComposerIntent = { kind: "post" } | { kind: "reply" | "quote"; target: Note };
 
@@ -36,7 +37,8 @@ const styles = {
     footer: { marginTop: "1.25rem", paddingTop: "1rem", alignItems: "flex-end", gap: "0.75rem", borderTop: "1px solid var(--border)" },
     options: { display: "flex", alignItems: "flex-end", gap: "0.5rem", flex: 1 },
     optionLabel: { display: "block", color: "var(--muted)", fontSize: "10px", fontWeight: 700, textTransform: "uppercase" },
-    visibility: { border: 0, outline: "none", background: "transparent", fontSize: "0.875rem", fontWeight: 700 },
+    visibility: { minWidth: "8.5rem" },
+    visibilityTrigger: { minHeight: "2.25rem", paddingBlock: "0.375rem", fontSize: "0.8rem", fontWeight: 700 },
     iconToggle: { minHeight: "2.25rem", paddingInline: "0.75rem", display: "flex", alignItems: "center", gap: "0.25rem", border: "1px solid var(--border)", borderRadius: "9999px", color: "var(--muted)", fontSize: "0.75rem", fontWeight: 700 },
     iconToggleActive: { color: "var(--accent-ink)", borderColor: "var(--accent)", background: "var(--accent-soft)" },
     upload: { position: "relative", cursor: "pointer" },
@@ -53,9 +55,17 @@ const rules = {
     iconToggle: css({ "& svg": { width: "1rem", height: "1rem" } }),
 };
 
+type Visibility = "public" | "home" | "followers";
+
+const visibilityOptions = [
+    { value: "public", label: "公開", description: "すべてのユーザーに公開" },
+    { value: "home", label: "ホーム", description: "連合タイムラインに表示しない" },
+    { value: "followers", label: "フォロワー", description: "フォロワーだけに公開" },
+] satisfies DropdownOption<Visibility>[];
+
 export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit }: { actor: Actor; actorSettings?: ActorSettings; csrf: string; intent: ComposerIntent; onClose: () => void; onSubmit: (input: CreatePostInput, intentKey: string, noteID: string) => Promise<void> }) {
     const [text, setText] = useState("");
-    const [visibility, setVisibility] = useState(actorSettings?.default_visibility || "public");
+    const [visibility, setVisibility] = useState<Visibility>(actorSettings?.default_visibility || "public");
     const [useCW, setUseCW] = useState(false);
     const [cw, setCW] = useState("");
     const [usePoll, setUsePoll] = useState(false);
@@ -202,14 +212,10 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                 )}
                 <footer className={rules.footer} style={styles.footer}>
                     <div style={styles.options}>
-                        <label>
+                        <div>
                             <span style={styles.optionLabel}>公開範囲</span>
-                            <select onChange={(event) => setVisibility(event.target.value as typeof visibility)} style={styles.visibility} value={visibility}>
-                                <option value="public">公開</option>
-                                <option value="home">ホーム</option>
-                                <option value="followers">フォロワー</option>
-                            </select>
-                        </label>
+                            <Dropdown label="公開範囲" onChange={setVisibility} options={visibilityOptions} placement="top" style={styles.visibility} triggerStyle={styles.visibilityTrigger} value={visibility} />
+                        </div>
                         <button aria-pressed={useCW} className={rules.iconToggle} onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
                             <IconAlertTriangle />
                             CW

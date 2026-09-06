@@ -1,11 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { IconBell, IconChevronDown, IconHome, IconLeaf2, IconLogout, IconPlus, IconSettings, IconUserSearch, IconUsersPlus, IconWorld } from "@tabler/icons-react";
+import { IconBell, IconHome, IconLeaf2, IconLogout, IconPlus, IconSettings, IconUserSearch, IconUsersPlus, IconWorld } from "@tabler/icons-react";
 
 import type { Page } from "../lib/api";
 import { css } from "../lib/css";
 import type { Actor, Session } from "../lib/schema";
 import { Avatar, Button } from "./ui";
+import { Dropdown } from "./ui/Dropdown";
 
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [
     { icon: IconHome, label: "ホーム", page: "home", path: "/" },
@@ -27,7 +28,8 @@ const styles = {
     accountSwitcher: { marginTop: "auto", padding: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", border: "1px solid var(--border)", borderRadius: "1rem", background: "var(--panel-muted)" },
     accountLabel: { minWidth: 0, flex: 1 },
     accountName: { display: "block", overflow: "hidden", fontSize: "0.875rem", fontWeight: 700, textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    actorSelect: { width: "100%", display: "block", appearance: "none", border: 0, outline: 0, color: "var(--muted)", background: "transparent", fontSize: "0.75rem" },
+    actorSelect: { marginTop: "0.125rem" },
+    actorTrigger: { minHeight: "1.25rem", padding: 0, border: 0, borderRadius: "0.375rem", color: "var(--muted)", background: "transparent", boxShadow: "none", fontSize: "0.75rem" },
     logout: { marginTop: "0.5rem", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", borderRadius: "0.75rem", fontSize: "0.875rem", transition: "color 150ms, background-color 150ms" },
     main: { minWidth: 0, flex: 1, background: "var(--panel)" },
     mobileNav: { position: "fixed", zIndex: 30, insetInline: 0, bottom: 0, height: "4.25rem", paddingInline: "0.5rem", alignItems: "center", justifyContent: "space-around", borderTop: "1px solid var(--border)", backdropFilter: "blur(24px)" },
@@ -40,7 +42,7 @@ const rules = {
     wordmark: css({ "& svg": { width: "1.5rem", height: "1.5rem" } }),
     nav: css({ "& > :not(:last-child)": { marginBottom: "0.25rem" } }),
     navItem: css({ color: "var(--muted)", "&:hover": { color: "var(--text)", background: "var(--panel-muted)" }, "& svg": { width: "1.25rem", height: "1.25rem" } }),
-    accountSwitcher: css({ "& > svg": { width: "1rem", height: "1rem", color: "var(--muted)" } }),
+    accountSwitcher: css({ "&:focus-within": { borderColor: "var(--accent-hover)", boxShadow: "0 0 0 3px var(--accent-soft)" } }),
     logout: css({ color: "var(--muted)", "&:hover": { color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 8%, transparent)" }, "& svg": { width: "1rem", height: "1rem" } }),
     main: css({ paddingBottom: "5rem", "@media (width >= 64rem)": { paddingBottom: 0 } }),
     mobileNav: css({ display: "flex", background: "var(--panel)", "@supports (color: color-mix(in lab, red, red))": { background: "color-mix(in srgb, var(--panel) 94%, transparent)" }, "@media (width >= 64rem)": { display: "none" }, "& svg": { width: "1.25rem", height: "1.25rem" } }),
@@ -90,17 +92,10 @@ export function AppShell({
                 </Button>
                 <div className={rules.accountSwitcher} style={styles.accountSwitcher}>
                     <Avatar actor={selectedActor} size="small" />
-                    <label style={styles.accountLabel}>
+                    <div style={styles.accountLabel}>
                         <span style={styles.accountName}>{session.display_name || session.username}</span>
-                        <select aria-label="操作するActor" onChange={(event) => onActorChange(event.target.value)} style={styles.actorSelect} value={selectedActor.id}>
-                            {actors.map((actor) => (
-                                <option key={actor.id} value={actor.id}>
-                                    @{actor.username}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <IconChevronDown />
+                        <Dropdown label="操作するActor" onChange={onActorChange} options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))} placement="top" style={styles.actorSelect} triggerStyle={styles.actorTrigger} value={selectedActor.id} />
+                    </div>
                 </div>
                 <button className={rules.logout} onClick={onLogout} style={styles.logout} type="button">
                     <IconLogout />

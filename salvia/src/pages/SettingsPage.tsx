@@ -3,6 +3,7 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 import { IconPalette, IconPlus, IconTrash, IconUserCircle } from "@tabler/icons-react";
 
 import { Button, ErrorBanner, PageHeader } from "../components/ui";
+import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { AccountSettings, Actor, ActorSettings } from "../lib/schema";
@@ -17,6 +18,7 @@ const styles = {
     field: { display: "block" },
     fieldLabel: { display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 700 },
     input: { width: "100%", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
+    dropdownTrigger: { minHeight: "2.875rem", paddingInline: "1rem" },
     toggle: { marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.875rem", fontWeight: 600 },
     checkbox: { width: "1rem", height: "1rem", accentColor: "var(--accent-hover)" },
     settingsTitle: { marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" },
@@ -37,6 +39,19 @@ const rules = {
     inlineForm: css({ "@media (width >= 40rem)": { gridTemplateColumns: "1fr 1fr auto" } }),
     dangerCard: css({ borderColor: "var(--danger)", "@supports (color: color-mix(in lab, red, red))": { borderColor: "color-mix(in srgb, var(--danger) 25%, var(--border))" } }),
 };
+
+const themeOptions = [
+    { value: "yellow", label: "Salvia Yellow", description: "あたたかな黄色の標準テーマ" },
+    { value: "light", label: "ライト", description: "明るくニュートラルな配色" },
+    { value: "dark", label: "ダーク", description: "暗い場所でも見やすい配色" },
+    { value: "system", label: "システム", description: "端末の外観設定に合わせる" },
+] satisfies DropdownOption<AccountSettings["theme"]>[];
+
+const visibilityOptions = [
+    { value: "public", label: "公開", description: "すべてのユーザーに公開" },
+    { value: "home", label: "ホーム", description: "連合タイムラインに表示しない" },
+    { value: "followers", label: "フォロワー", description: "フォロワーだけに公開" },
+] satisfies DropdownOption<ActorSettings["default_visibility"]>[];
 
 export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, onSettingsChanged, selectedActor }: { accountSettings: AccountSettings; actors: Actor[]; csrf: string; onActorsChanged: () => Promise<void>; onSettingsChanged: (value: AccountSettings) => void; selectedActor: Actor }) {
     const [actorSettings, setActorSettings] = useState<ActorSettings>();
@@ -106,15 +121,10 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                 )}
                 <section className={rules.card} style={styles.card}>
                     <h2 style={styles.cardTitle}>表示</h2>
-                    <label style={styles.field}>
+                    <div style={styles.field}>
                         <span style={styles.fieldLabel}>テーマ</span>
-                        <select className={rules.input} onChange={(event) => void updateAccount({ theme: event.target.value as AccountSettings["theme"] })} style={styles.input} value={accountSettings.theme}>
-                            <option value="yellow">Salvia Yellow</option>
-                            <option value="light">ライト</option>
-                            <option value="dark">ダーク</option>
-                            <option value="system">システム</option>
-                        </select>
-                    </label>
+                        <Dropdown label="テーマ" onChange={(theme) => void updateAccount({ theme })} options={themeOptions} triggerStyle={styles.dropdownTrigger} value={accountSettings.theme} />
+                    </div>
                     <label style={styles.toggle}>
                         <input checked={accountSettings.reduce_motion} onChange={(event) => void updateAccount({ reduce_motion: event.target.checked })} style={styles.checkbox} type="checkbox" />
                         <span>動きを減らす</span>
@@ -149,14 +159,10 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                     </form>
                     {actorSettings && (
                         <div className={rules.preferences} style={styles.preferences}>
-                            <label style={styles.field}>
+                            <div style={styles.field}>
                                 <span style={styles.fieldLabel}>標準の公開範囲</span>
-                                <select className={rules.input} onChange={(event) => void saveActorSettings({ default_visibility: event.target.value as ActorSettings["default_visibility"] })} style={styles.input} value={actorSettings.default_visibility}>
-                                    <option value="public">公開</option>
-                                    <option value="home">ホーム</option>
-                                    <option value="followers">フォロワー</option>
-                                </select>
-                            </label>
+                                <Dropdown label="標準の公開範囲" onChange={(default_visibility) => void saveActorSettings({ default_visibility })} options={visibilityOptions} triggerStyle={styles.dropdownTrigger} value={actorSettings.default_visibility} />
+                            </div>
                             <label style={styles.toggle}>
                                 <input checked={actorSettings.pinned} onChange={(event) => void saveActorSettings({ pinned: event.target.checked })} style={styles.checkbox} type="checkbox" />
                                 <span>Actor切替で上に固定</span>

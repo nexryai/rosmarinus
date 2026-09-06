@@ -56,6 +56,12 @@ const buttonClass = css({
 再利用される UI コンポーネントである。ページや機能に固有の見た目を共有
 `styles.tsx` のようなカタログへ集約しない。
 
+選択UIには `src/components/ui/Dropdown.tsx` の共通ドロップダウンを使う。
+ブラウザー標準の `select` に見た目だけを重ねず、listboxとしてのキーボード操作、
+外側クリックとEscapeでの閉じ方、フォーカス復帰、選択状態を維持する。開閉の
+アニメーションはコンポーネント内のオブジェクトと `keyframes()` で定義し、
+Salviaの「動きを減らす」設定とOSのreduced-motion設定の両方を尊重する。
+
 ## 独自ランタイム
 
 `src/lib/css.tsx` に依存関係を持たない最小限の仕組みを実装する。
