@@ -407,6 +407,29 @@ func TestHandlerMapsFollowApprovalAndNotificationRead(t *testing.T) {
 	}
 }
 
+func TestHandlerPublishesAccountWideBlockInvalidation(t *testing.T) {
+	executor := &fakeExecutor{}
+	store := &fakeActorStore{actors: []actors.Actor{{
+		ID: "actor-1", OwnerAccountID: "account-1", Username: "alice", URI: "https://example.test/users/actor-1",
+	}}}
+	broker := &fakeEventBroker{}
+	handler := NewHandlerComplete(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}},
+		store, executor, &fakeReceiptStore{}, nil, nil, InstanceInfo{}, broker, nil, nil, nil, time.Hour,
+	)
+	recorder := httptest.NewRecorder()
+	request := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/blocks", `{"target":"bob@remote.test"}`)
+	request.Header.Set("Idempotency-Key", "account-wide-block-123456")
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if broker.accountID != "account-1" || broker.eventType != "block.changed" || broker.actorID != "" {
+		t.Fatalf("block event account=%q type=%q actor=%q", broker.accountID, broker.eventType, broker.actorID)
+	}
+}
+
 func TestHandlerDoesNotExposeInternalErrors(t *testing.T) {
 	handler, executor, _ := testHandler()
 	executor.err = errors.New("database password was logged")

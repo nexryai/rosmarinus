@@ -47,6 +47,10 @@ part of the target architecture.
   requester through one idempotent REST mutation, with an explicit confirmation
   action in Salvia.
 
+- Completed: share outbound blocks across every non-deleted Actor owned by an
+  account. Active Actors federate their own Block and Undo while suspended
+  Actors retain the local moderation relationship until resumed or deleted.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

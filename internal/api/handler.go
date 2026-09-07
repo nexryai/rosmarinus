@@ -629,6 +629,9 @@ func (h *Handler) execute(w http.ResponseWriter, r *http.Request, accountID, com
 	if resultActorID != "" {
 		eventActorID = resultActorID
 	}
+	if command == connector.CommandBlockCreate || command == connector.CommandBlockDelete || command == connector.CommandFollowRejectAndBlock {
+		eventActorID = ""
+	}
 	h.publishMutationEvent(r.Context(), accountID, eventActorID, command, result)
 	h.writeJSON(w, successStatus, map[string]any{"data": result})
 }

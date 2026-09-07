@@ -14,10 +14,15 @@ import (
 
 type fakeEventBroker struct {
 	accountID string
+	eventType string
+	actorID   string
 	events    chan []byte
 }
 
-func (b *fakeEventBroker) Publish(context.Context, string, string, string, any) error {
+func (b *fakeEventBroker) Publish(_ context.Context, accountID, eventType, actorID string, _ any) error {
+	b.accountID = accountID
+	b.eventType = eventType
+	b.actorID = actorID
 	return nil
 }
 

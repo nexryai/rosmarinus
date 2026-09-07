@@ -49,6 +49,7 @@ import (
 
 type fakeRepo struct {
 	local            *actors.Actor
+	ownedLocals      []*actors.Actor
 	remote           *actors.Actor
 	remotes          map[string]*actors.Actor
 	deletedRemoteURI string
@@ -58,12 +59,22 @@ func (f *fakeRepo) FindLocalByID(ctx context.Context, id string) (*actors.Actor,
 	if f.local != nil && f.local.ID == id && !f.local.IsSuspended && f.local.DeletedAt == nil {
 		return f.local, nil
 	}
+	for _, actor := range f.ownedLocals {
+		if actor != nil && actor.ID == id && actor.Host == nil && !actor.IsSuspended && actor.DeletedAt == nil {
+			return actor, nil
+		}
+	}
 	return nil, nil
 }
 
 func (f *fakeRepo) FindAnyByID(_ context.Context, id string) (*actors.Actor, error) {
 	if f.local != nil && f.local.ID == id {
 		return f.local, nil
+	}
+	for _, actor := range f.ownedLocals {
+		if actor != nil && actor.ID == id {
+			return actor, nil
+		}
 	}
 	if f.remote != nil && f.remote.ID == id {
 		return f.remote, nil
@@ -79,6 +90,11 @@ func (f *fakeRepo) FindAnyByID(_ context.Context, id string) (*actors.Actor, err
 func (f *fakeRepo) FindLocalForDeliveryByID(ctx context.Context, id string) (*actors.Actor, error) {
 	if f.local != nil && f.local.ID == id && f.local.Host == nil {
 		return f.local, nil
+	}
+	for _, actor := range f.ownedLocals {
+		if actor != nil && actor.ID == id && actor.Host == nil {
+			return actor, nil
+		}
 	}
 	return nil, nil
 }
@@ -105,6 +121,20 @@ func (f *fakeRepo) FindOwnedLocalByIDIncludingDeleted(ctx context.Context, accou
 }
 
 func (f *fakeRepo) ListOwnedLocalActorsPage(_ context.Context, accountID, afterID string, limit int, includeDeleted bool) ([]actors.Actor, error) {
+	if len(f.ownedLocals) > 0 {
+		result := make([]actors.Actor, 0, limit)
+		for _, actor := range f.ownedLocals {
+			if actor == nil || actor.OwnerAccountID != accountID || actor.Host != nil || actor.IsSystemActor || actor.ID <= afterID || (!includeDeleted && actor.DeletedAt != nil) {
+				continue
+			}
+			result = append(result, *actor)
+		}
+		sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+		if len(result) > limit {
+			result = result[:limit]
+		}
+		return result, nil
+	}
 	if f.local == nil || f.local.OwnerAccountID != accountID || f.local.Host != nil || f.local.IsSystemActor || f.local.ID <= afterID || (!includeDeleted && f.local.DeletedAt != nil) || limit <= 0 {
 		return nil, nil
 	}
@@ -164,6 +194,11 @@ func (f *fakeRepo) ListOwnedAccountIDs(ctx context.Context) ([]string, error) {
 func (f *fakeRepo) FindByURI(ctx context.Context, uri string) (*actors.Actor, error) {
 	if f.local != nil && f.local.URI == uri {
 		return f.local, nil
+	}
+	for _, actor := range f.ownedLocals {
+		if actor != nil && actor.URI == uri {
+			return actor, nil
+		}
 	}
 	if f.remote != nil && f.remote.URI == uri {
 		return f.remote, nil
@@ -2365,6 +2400,65 @@ func TestCreateAndDeleteBlockRemovesFollowsAndDeliversActivities(t *testing.T) {
 	object, ok := undoPayload.Object["object"].(map[string]any)
 	if !ok || object["id"] != "https://rosmarinus.example/blocks/block-id" || object["type"] != "Block" || object["object"] != remote.URI {
 		t.Fatalf("unexpected embedded Block: %+v", undoPayload.Object["object"])
+	}
+}
+
+func TestCreateAndDeleteBlockAppliesToEveryOwnedActor(t *testing.T) {
+	host := "remote.example"
+	first := &actors.Actor{ID: "actor-a", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/a"}
+	second := &actors.Actor{ID: "actor-b", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/b"}
+	suspended := &actors.Actor{ID: "actor-c", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/c", IsSuspended: true}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/remote", Host: &host, Inbox: "https://remote.example/users/remote/inbox"}
+	followRepo := &fakeFollowRepo{}
+	for _, local := range []*actors.Actor{first, second, suspended} {
+		_, _ = followRepo.Upsert(context.Background(), follows.Follow{FollowerID: remote.ID, FolloweeID: local.ID, Status: follows.StatusAccepted})
+	}
+	blockRepo := &fakeBlockRepo{}
+	queued := &fakeQueue{}
+	repo := &fakeRepo{local: first, ownedLocals: []*actors.Actor{first, second, suspended}, remote: remote}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, repo, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, queued, &fakeClient{}, first)
+
+	created, err := h.CreateBlock(context.Background(), connector.BlockCreateCommand{ActorID: first.ID, Target: remote.URI})
+	if err != nil {
+		t.Fatalf("CreateBlock returned error: %v", err)
+	}
+	if created.BlockeeID != remote.ID {
+		t.Fatalf("created block = %+v", created)
+	}
+	for _, local := range []*actors.Actor{first, second, suspended} {
+		if block, _ := blockRepo.Find(context.Background(), local.ID, remote.ID); block == nil {
+			t.Fatalf("block missing for owned actor %s", local.ID)
+		}
+		if follow, _ := followRepo.Find(context.Background(), remote.ID, local.ID); follow != nil {
+			t.Fatalf("incoming follow remains for owned actor %s: %+v", local.ID, follow)
+		}
+	}
+	if len(queued.tasks) != 2 {
+		t.Fatalf("Block deliveries = %d, want active owned actors only", len(queued.tasks))
+	}
+	for index, actorID := range []string{first.ID, second.ID} {
+		payload, ok := queued.tasks[index].Payload.(queue.DeliverPayload)
+		if !ok || payload.ActorID != actorID || payload.Object["type"] != "Block" {
+			t.Fatalf("unexpected Block delivery %d: %+v", index, queued.tasks[index])
+		}
+	}
+
+	deleted, err := h.DeleteBlock(context.Background(), connector.BlockDeleteCommand{ActorID: second.ID, Target: remote.URI})
+	if err != nil {
+		t.Fatalf("DeleteBlock returned error: %v", err)
+	}
+	if deleted.BlockeeID != remote.ID {
+		t.Fatalf("deleted block = %+v", deleted)
+	}
+	for _, local := range []*actors.Actor{first, second, suspended} {
+		if block, _ := blockRepo.Find(context.Background(), local.ID, remote.ID); block != nil {
+			t.Fatalf("block remains for owned actor %s: %+v", local.ID, block)
+		}
+	}
+	if len(queued.tasks) != 4 {
+		t.Fatalf("total Block and Undo deliveries = %d, want four", len(queued.tasks))
 	}
 }
 

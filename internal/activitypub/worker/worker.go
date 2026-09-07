@@ -1308,38 +1308,58 @@ func (h *Handler) CreateBlock(ctx context.Context, command connector.BlockCreate
 	if err != nil {
 		return connector.BlockCreated{}, fmt.Errorf("block target %w", err)
 	}
-	stored, err := h.blocks.Upsert(ctx, blocks.Block{
-		BlockerID:   blocker.ID,
-		BlockeeID:   blockee.ID,
-		BlockerURI:  blocker.URI,
-		BlockeeURI:  blockee.URI,
-		BlockerHost: blocker.Host,
-		BlockeeHost: blockee.Host,
-		CreatedAt:   time.Now().UTC(),
-	})
+	blockers, err := h.accountBlockers(ctx, blocker)
 	if err != nil {
 		return connector.BlockCreated{}, err
 	}
+	var result connector.BlockCreated
+	for i := range blockers {
+		accountActor := &blockers[i]
+		stored, err := h.blocks.Upsert(ctx, blocks.Block{
+			BlockerID:   accountActor.ID,
+			BlockeeID:   blockee.ID,
+			BlockerURI:  accountActor.URI,
+			BlockeeURI:  blockee.URI,
+			BlockerHost: accountActor.Host,
+			BlockeeHost: blockee.Host,
+			CreatedAt:   time.Now().UTC(),
+		})
+		if err != nil {
+			return connector.BlockCreated{}, err
+		}
+		if h.follows != nil {
+			if err := h.follows.Delete(ctx, accountActor.ID, blockee.ID, ""); err != nil {
+				return connector.BlockCreated{}, err
+			}
+			if err := h.follows.Delete(ctx, blockee.ID, accountActor.ID, ""); err != nil {
+				return connector.BlockCreated{}, err
+			}
+		}
+		activity := apblocks.RenderBlock(h.cfg.PublicURL, stored)
+		created := connector.BlockCreated{BlockID: stored.ID, BlockeeID: stored.BlockeeID, URI: activity["id"].(string)}
+		if accountActor.ID == blocker.ID {
+			result = created
+		}
+		if accountActor.IsSuspended {
+			continue
+		}
+		task := queue.NewDeliverTask(accountActor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		if isSharedInbox {
+			task = queue.NewSharedInboxDeliverTask(accountActor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		}
+		if err := h.queue.Enqueue(ctx, task); err != nil {
+			return connector.BlockCreated{}, fmt.Errorf("enqueue Block delivery for actor %s: %w", accountActor.ID, err)
+		}
+	}
 	if h.follows != nil {
-		if err := h.follows.Delete(ctx, blocker.ID, blockee.ID, ""); err != nil {
-			return connector.BlockCreated{}, err
-		}
-		if err := h.follows.Delete(ctx, blockee.ID, blocker.ID, ""); err != nil {
-			return connector.BlockCreated{}, err
-		}
 		if err := h.refreshInstanceRelationshipCounts(ctx, blockee.Host); err != nil {
 			return connector.BlockCreated{}, err
 		}
 	}
-	activity := apblocks.RenderBlock(h.cfg.PublicURL, stored)
-	task := queue.NewDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
-	if isSharedInbox {
-		task = queue.NewSharedInboxDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	if result.BlockID == "" {
+		return connector.BlockCreated{}, fmt.Errorf("initiating actor is missing from its owning account")
 	}
-	if err := h.queue.Enqueue(ctx, task); err != nil {
-		return connector.BlockCreated{}, fmt.Errorf("enqueue Block delivery: %w", err)
-	}
-	return connector.BlockCreated{BlockID: stored.ID, BlockeeID: stored.BlockeeID, URI: activity["id"].(string)}, nil
+	return result, nil
 }
 
 func (h *Handler) DeleteBlock(ctx context.Context, command connector.BlockDeleteCommand) (connector.BlockDeleted, error) {
@@ -1357,29 +1377,77 @@ func (h *Handler) DeleteBlock(ctx context.Context, command connector.BlockDelete
 	if err != nil {
 		return connector.BlockDeleted{}, fmt.Errorf("resolve block target: %w", err)
 	}
-	existing, err := h.blocks.Find(ctx, blocker.ID, blockee.ID)
-	if err != nil {
-		return connector.BlockDeleted{}, err
-	}
-	if existing == nil {
-		return connector.BlockDeleted{}, fmt.Errorf("block relationship not found")
-	}
 	inbox, isSharedInbox, err := deliveryInbox(blockee)
 	if err != nil {
 		return connector.BlockDeleted{}, fmt.Errorf("block target %w", err)
 	}
-	activity := apblocks.RenderUndoBlock(h.cfg.PublicURL, existing, time.Now().UTC())
-	if err := h.blocks.Delete(ctx, blocker.ID, blockee.ID, activity["id"].(string)); err != nil {
+	blockers, err := h.accountBlockers(ctx, blocker)
+	if err != nil {
 		return connector.BlockDeleted{}, err
 	}
-	task := queue.NewDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
-	if isSharedInbox {
-		task = queue.NewSharedInboxDeliverTask(blocker.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+	var result connector.BlockDeleted
+	deleted := 0
+	deletedAt := time.Now().UTC()
+	for i := range blockers {
+		accountActor := &blockers[i]
+		existing, err := h.blocks.Find(ctx, accountActor.ID, blockee.ID)
+		if err != nil {
+			return connector.BlockDeleted{}, err
+		}
+		if existing == nil {
+			continue
+		}
+		activity := apblocks.RenderUndoBlock(h.cfg.PublicURL, existing, deletedAt)
+		if err := h.blocks.Delete(ctx, accountActor.ID, blockee.ID, activity["id"].(string)); err != nil {
+			return connector.BlockDeleted{}, err
+		}
+		deleted++
+		current := connector.BlockDeleted{BlockID: existing.ID, BlockeeID: existing.BlockeeID, URI: activity["id"].(string)}
+		if result.BlockID == "" || accountActor.ID == blocker.ID {
+			result = current
+		}
+		if accountActor.IsSuspended {
+			continue
+		}
+		task := queue.NewDeliverTask(accountActor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		if isSharedInbox {
+			task = queue.NewSharedInboxDeliverTask(accountActor.ID, inbox, activity, h.cfg.DeliverQueue.MaxRetry, h.cfg.DeliverQueue.Timeout)
+		}
+		if err := h.queue.Enqueue(ctx, task); err != nil {
+			return connector.BlockDeleted{}, fmt.Errorf("enqueue Undo(Block) delivery for actor %s: %w", accountActor.ID, err)
+		}
 	}
-	if err := h.queue.Enqueue(ctx, task); err != nil {
-		return connector.BlockDeleted{}, fmt.Errorf("enqueue Undo(Block) delivery: %w", err)
+	if deleted == 0 {
+		return connector.BlockDeleted{}, fmt.Errorf("block relationship not found")
 	}
-	return connector.BlockDeleted{BlockID: existing.ID, BlockeeID: existing.BlockeeID, URI: activity["id"].(string)}, nil
+	return result, nil
+}
+
+func (h *Handler) accountBlockers(ctx context.Context, initiating *actors.Actor) ([]actors.Actor, error) {
+	if initiating == nil {
+		return nil, fmt.Errorf("initiating blocker is missing")
+	}
+	if initiating.OwnerAccountID == "" || initiating.IsSystemActor {
+		return []actors.Actor{*initiating}, nil
+	}
+	result := make([]actors.Actor, 0, 1)
+	afterID := ""
+	for {
+		page, err := h.repo.ListOwnedLocalActorsPage(ctx, initiating.OwnerAccountID, afterID, postDeliveryFollowerLimit, false)
+		if err != nil {
+			return nil, fmt.Errorf("list account actors for block: %w", err)
+		}
+		result = append(result, page...)
+		if len(page) < postDeliveryFollowerLimit {
+			break
+		}
+		next := page[len(page)-1].ID
+		if next == "" || next <= afterID {
+			return nil, fmt.Errorf("account actor pagination did not advance")
+		}
+		afterID = next
+	}
+	return result, nil
 }
 
 func (h *Handler) resolveRemoteActorTarget(ctx context.Context, target string) (*actors.Actor, error) {

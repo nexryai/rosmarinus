@@ -489,6 +489,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// directions, and update its profile. Verify Rosmarinus delivers a full
 	// Update(Person), then verify an inbound Misskey home Note publishes a
 	// note.created SSE invalidation to the following Actor's owning account.
+	// Add a sibling Actor and prove blocking from either account Actor applies
+	// and federates the same target for both, then remove the sibling fixture.
 	const ownedUsername = "ownedprofile"
 	const ownedUpdatedName = "Updated Rosmarinus profile"
 	ownedCreated, err := worker.CreateActor(ctx, "federation-account", connector.ActorCreateCommand{
@@ -631,6 +633,70 @@ waitForRemoteNoteEvent:
 	}
 	if _, err := worker.DeleteFollow(ctx, connector.FollowDeleteCommand{ActorID: ownedActor.ID, Target: remoteActorURI}); err != nil {
 		t.Fatalf("remove account-owned Actor outgoing Follow fixture: %v", err)
+	}
+	const siblingUsername = "ownedsibling"
+	siblingCreated, err := worker.CreateActor(ctx, "federation-account", connector.ActorCreateCommand{
+		Username: siblingUsername,
+		Name:     "Rosmarinus owned sibling",
+		Type:     "Person",
+	})
+	if err != nil {
+		t.Fatalf("create sibling account-owned Actor: %v", err)
+	}
+	siblingActor, err := actorRepo.FindOwnedLocalByID(ctx, "federation-account", siblingCreated.ActorID)
+	if err != nil || siblingActor == nil {
+		t.Fatalf("find sibling account-owned Actor: actor=%+v err=%v", siblingActor, err)
+	}
+	var siblingOnMisskey struct {
+		ID string `json:"id"`
+	}
+	misskey.call(ctx, "users/show", map[string]any{
+		"i": directRecipient.Token, "username": siblingUsername, "host": "rosmarinus.test",
+	}, &siblingOnMisskey)
+	if siblingOnMisskey.ID == "" {
+		t.Fatal("Misskey did not resolve the sibling account-owned Actor")
+	}
+	sharedBlock, err := worker.CreateBlock(ctx, connector.BlockCreateCommand{ActorID: ownedActor.ID, Target: remoteActorURI})
+	if err != nil {
+		t.Fatalf("create account-shared Block: %v", err)
+	}
+	if sharedBlock.BlockeeID != remoteActor.ID {
+		t.Fatalf("unexpected account-shared Block: %+v", sharedBlock)
+	}
+	for _, blockerID := range []string{ownedActor.ID, siblingActor.ID} {
+		if block, findErr := blockRepo.Find(ctx, blockerID, remoteActor.ID); findErr != nil || block == nil {
+			t.Fatalf("account-shared Block missing for %s: block=%+v err=%v", blockerID, block, findErr)
+		}
+	}
+	waitFor(t, ctx, "account-shared Blocks applied by Misskey", func() bool {
+		for _, userID := range []string{ownedMisskeyID, siblingOnMisskey.ID} {
+			var shown struct {
+				IsBlocked bool `json:"isBlocked"`
+			}
+			misskey.call(ctx, "users/show", map[string]any{"i": admin.Token, "userId": userID}, &shown)
+			if !shown.IsBlocked {
+				return false
+			}
+		}
+		return true
+	})
+	if _, err := worker.DeleteBlock(ctx, connector.BlockDeleteCommand{ActorID: siblingActor.ID, Target: remoteActorURI}); err != nil {
+		t.Fatalf("delete account-shared Block from sibling: %v", err)
+	}
+	waitFor(t, ctx, "account-shared Undo(Blocks) applied by Misskey", func() bool {
+		for _, userID := range []string{ownedMisskeyID, siblingOnMisskey.ID} {
+			var shown struct {
+				IsBlocked bool `json:"isBlocked"`
+			}
+			misskey.call(ctx, "users/show", map[string]any{"i": admin.Token, "userId": userID}, &shown)
+			if shown.IsBlocked {
+				return false
+			}
+		}
+		return true
+	})
+	if _, err := worker.DeleteActor(ctx, "federation-account", connector.ActorDeleteCommand{ActorID: siblingActor.ID}); err != nil {
+		t.Fatalf("delete sibling account-owned Actor fixture: %v", err)
 	}
 
 	// Phase 13: block the Misskey Actor from Rosmarinus, verify Misskey removes

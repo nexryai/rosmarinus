@@ -188,6 +188,12 @@ authenticated account; reusing one for a different operation or Actor returns
 `409`. Request JSON is limited to 1 MiB, rejects unknown fields, and cannot
 supply account ownership. Actor responses explicitly omit owner IDs, public
 key material, private keys, inboxes, and internal delivery state.
+
+Block and unblock mutations apply the remote target to every non-deleted local
+Actor owned by the authenticated account. Rosmarinus stores the relationship
+for suspended owned Actors as well, but sends ActivityPub `Block` or
+`Undo(Block)` only from active Actors. The resulting `block.changed` SSE event
+omits `actor_id` because every selected Actor projection may have changed.
 The safe Actor projection includes `moved_to_uri` and `is_suspended` so Salvia
 can show migration and moderation state without reading federation or database
 records directly.
