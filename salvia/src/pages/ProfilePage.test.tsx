@@ -49,4 +49,17 @@ describe("ProfilePage social actions", () => {
         await waitFor(() => expect(api.profileConnections).toHaveBeenCalledWith("alice", "bob", "followers"));
         expect(screen.getByRole("dialog", { name: "フォロワー" })).toBeInTheDocument();
     });
+
+    it("keeps the profile hero layout when no banner image is configured", async () => {
+        vi.spyOn(api, "profile").mockResolvedValue(profile);
+        const { container } = render(<ProfilePage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} profileID="bob" />);
+
+        await screen.findByRole("heading", { name: "Bob" });
+
+        const banner = container.querySelector("[data-profile-banner]");
+        expect(banner).toBeInTheDocument();
+        expect(banner).toBeEmptyDOMElement();
+        expect(banner).toHaveStyle({ background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))" });
+        expect(screen.getByRole("img", { name: "Bobのアバター" }).parentElement?.style.top).toBe("-3rem");
+    });
 });

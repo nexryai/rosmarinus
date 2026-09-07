@@ -9,7 +9,8 @@ import type { Connection, Profile } from "../lib/schema";
 
 const styles = {
     hero: { overflow: "hidden", borderBottom: "1px solid var(--border)" },
-    banner: { width: "100%", objectFit: "cover", background: "var(--panel-muted)" },
+    banner: { width: "100%", overflow: "hidden", background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))" },
+    bannerImage: { width: "100%", height: "100%", objectFit: "cover" },
     body: { position: "relative", paddingTop: "3.5rem", paddingBottom: "1.75rem" },
     avatar: { position: "absolute" },
     actions: { position: "absolute", top: "1rem", display: "flex", gap: "0.5rem" },
@@ -122,9 +123,11 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
     return (
         <>
             <header style={styles.hero}>
-                {actor.banner_url && <img alt="" className={rules.banner} referrerPolicy="no-referrer" src={actor.banner_url} style={styles.banner} />}
+                <div aria-hidden="true" className={rules.banner} data-profile-banner="" style={styles.banner}>
+                    {actor.banner_url && <img alt="" referrerPolicy="no-referrer" src={actor.banner_url} style={styles.bannerImage} />}
+                </div>
                 <div className={rules.body} style={styles.body}>
-                    <div className={rules.avatar} style={{ ...styles.avatar, top: actor.banner_url ? "-3rem" : "1rem" }}>
+                    <div className={rules.avatar} style={{ ...styles.avatar, top: "-3rem" }}>
                         <Avatar actor={actor} size="large" />
                     </div>
                     <div className={rules.actions} style={styles.actions}>
