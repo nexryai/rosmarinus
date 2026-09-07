@@ -1,15 +1,19 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../lib/api";
-import type { Actor, Profile } from "../lib/schema";
+import type { Actor, Note, Profile } from "../lib/schema";
 import { ProfilePage } from "./ProfilePage";
 
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob", profile_fields: [], tags: [] } as unknown as Actor;
 const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false } as Profile;
 
 describe("ProfilePage social actions", () => {
+    beforeEach(() => {
+        vi.spyOn(api, "profileNotes").mockResolvedValue({ data: [], next: "" });
+    });
+
     afterEach(() => {
         cleanup();
         vi.restoreAllMocks();
@@ -23,7 +27,7 @@ describe("ProfilePage social actions", () => {
         const unblock = vi.spyOn(api, "unblock").mockResolvedValue(undefined);
         vi.spyOn(window, "confirm").mockReturnValue(true);
         const user = userEvent.setup();
-        render(<ProfilePage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} profileID="bob" />);
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
         await screen.findByRole("heading", { name: "Bob" });
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
 
@@ -42,7 +46,7 @@ describe("ProfilePage social actions", () => {
         vi.spyOn(api, "profile").mockResolvedValue(profile);
         vi.spyOn(api, "profileConnections").mockResolvedValue([{ id: "follow-1", status: "accepted", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote }]);
         const user = userEvent.setup();
-        render(<ProfilePage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} profileID="bob" />);
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
         await screen.findByRole("heading", { name: "Bob" });
         await user.click(screen.getByRole("button", { name: "2フォロワー" }));
 
@@ -52,7 +56,7 @@ describe("ProfilePage social actions", () => {
 
     it("keeps the profile hero layout when no banner image is configured", async () => {
         vi.spyOn(api, "profile").mockResolvedValue(profile);
-        const { container } = render(<ProfilePage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} profileID="bob" />);
+        const { container } = render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
 
         await screen.findByRole("heading", { name: "Bob" });
 
@@ -61,5 +65,27 @@ describe("ProfilePage social actions", () => {
         expect(banner).toBeEmptyDOMElement();
         expect(banner).toHaveStyle({ background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))" });
         expect(screen.getByRole("img", { name: "Bobのアバター" }).parentElement?.style.top).toBe("-3rem");
+    });
+
+    it("renders the profile actor's visibility-filtered notes", async () => {
+        const note = {
+            id: "note-1",
+            uri: "https://remote.test/notes/1",
+            text: "Bobのノート",
+            visibility: "public",
+            created_at: "2026-09-08T00:00:00Z",
+            author: remote,
+            attachments: [],
+            emojis: [],
+            reactions: [],
+        } as unknown as Note;
+        vi.spyOn(api, "profile").mockResolvedValue(profile);
+        vi.mocked(api.profileNotes).mockResolvedValue({ data: [note], next: "next-page" });
+
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
+
+        expect(await screen.findByText("Bobのノート")).toBeInTheDocument();
+        expect(api.profileNotes).toHaveBeenCalledWith("alice", "bob", "", expect.any(AbortSignal));
+        expect(screen.getByRole("button", { name: "もっと見る" })).toBeInTheDocument();
     });
 });

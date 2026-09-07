@@ -585,9 +585,9 @@ Rosmarinus Go backend ----> MongoDB (all durable application/federation state)
       boundary for Actor-scoped domain operations. The SPA-selected Actor is
       input, never proof of ownership.
 - [x] Provide browser-safe REST representations and stable pagination for
-      Actors, timelines, notes, notifications, follows, reactions, polls,
-      instances, and settings. Do not expose unrestricted collection-query
-      endpoints.
+      Actors, timelines, profile Note lists, notes, notifications, follows,
+      reactions, polls, instances, and settings. Do not expose unrestricted
+      collection-query endpoints.
 - [x] Add REST endpoints for the already implemented Actor, post, follow,
       reaction, block, poll, and notification domain operations.
 - [x] Return structured, versioned errors and use conventional HTTP status

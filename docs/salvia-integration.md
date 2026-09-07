@@ -231,6 +231,7 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/notes/{noteId}?actor_id={viewer}` | Visibility-checked Note detail with reply/quote/renote projections |
 | `GET` | `/api/v1/notes/{noteId}/thread?actor_id={viewer}` | Visibility-checked direct replies |
 | `GET` | `/api/v1/profiles/{actorId}?actor_id={viewer}` | Safe local or remote Actor profile |
+| `GET` | `/api/v1/profiles/{actorId}/notes?actor_id={viewer}` | Cursor-paginated, visibility- and block-filtered Notes authored by the profile Actor |
 | `GET` | `/api/v1/profiles/{actorId}/followers?actor_id={viewer}` | Block-filtered followers |
 | `GET` | `/api/v1/profiles/{actorId}/following?actor_id={viewer}` | Block-filtered following list |
 | `GET` | `/api/v1/actors/{actorId}/followers` | Followers of an owned Actor |
@@ -246,10 +247,10 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 `actor_id` on read routes is the viewing identity. It is required and must be
 an active local Actor owned by the authenticated account; it is never accepted
 as proof of ownership. Note queries enforce visibility and bilateral blocks
-before projection. The public and home timelines, Note threads, and
-notifications use opaque created-time/ID cursors. Connection and emoji cursors
-are likewise opaque to the SPA even where their current representation is a
-stable record ID or name.
+before projection. The public and home timelines, profile Note lists, Note
+threads, and notifications use opaque created-time/ID cursors. Connection and
+emoji cursors are likewise opaque to the SPA even where their current
+representation is a stable record ID or name.
 Profile projections include viewer-specific `follow_status` and
 `blocked_by_viewer`. A profile blocked by the viewer remains readable so the
 viewer can reverse their own block; a profile that has blocked the viewer is

@@ -60,6 +60,11 @@ func (f *fakeReader) ListVisibleThread(_ context.Context, actorID, _ string, _ r
 	return f.publicItems, nil
 }
 
+func (f *fakeReader) ListProfileNotes(_ context.Context, viewerActorID, targetActorID string, _ readmodel.Cursor, _ int) ([]readmodel.Note, error) {
+	f.actorID, f.targetActorID, f.calls = viewerActorID, targetActorID, f.calls+1
+	return f.publicItems, nil
+}
+
 func (f *fakeReader) ListConnections(_ context.Context, viewerActorID, targetActorID, _, _ string, _ int) ([]readmodel.Connection, error) {
 	f.actorID, f.targetActorID, f.calls = viewerActorID, targetActorID, f.calls+1
 	return []readmodel.Connection{{Follow: follows.Follow{ID: "follow-1"}, Actor: &actors.Actor{ID: "remote-1"}}}, nil
@@ -213,6 +218,40 @@ func TestProfileReturnsViewerRelationshipState(t *testing.T) {
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/remote-profile?actor_id=actor-1", nil))
 	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"follow_status":"pending"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"blocked_by_viewer":true`)) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestProfileNotesReturnsVisibilityCheckedPage(t *testing.T) {
+	now := time.Date(2026, 9, 8, 1, 2, 3, 0, time.UTC)
+	reader := &fakeReader{
+		profile: &readmodel.Profile{Actor: &actors.Actor{ID: "remote-profile"}},
+		publicItems: []readmodel.Note{{
+			Note:   notes.Note{ID: "note-1", URI: "https://remote.test/notes/1", Text: "profile note", Visibility: notes.VisibilityPublic, CreatedAt: now},
+			Author: &actors.Actor{ID: "remote-profile", Username: "alice", URI: "https://remote.test/users/alice"},
+		}},
+	}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/remote-profile/notes?actor_id=actor-1&limit=1", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if reader.actorID != "actor-1" || reader.targetActorID != "remote-profile" {
+		t.Fatalf("reader actor IDs = viewer %q target %q", reader.actorID, reader.targetActorID)
+	}
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+		Next string `json:"next"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Data) != 1 || body.Data[0].ID != "note-1" || body.Next == "" {
+		t.Fatalf("unexpected profile note page: %+v", body)
 	}
 }
 

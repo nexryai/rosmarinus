@@ -190,6 +190,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(segments) >= 2 && segments[0] == "profiles" {
 		if len(segments) == 2 {
 			h.profile(w, r, accountID, segments[1])
+		} else if len(segments) == 3 && segments[2] == "notes" {
+			h.profileNotes(w, r, accountID, segments[1])
 		} else if len(segments) == 3 && (segments[2] == "followers" || segments[2] == "following") {
 			h.profileConnections(w, r, accountID, segments[1], segments[2])
 		} else {

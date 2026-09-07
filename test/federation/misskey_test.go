@@ -251,6 +251,20 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if !foundRemoteNote {
 		t.Fatal("home timeline omitted the followed Misskey user's note")
 	}
+	profileNotes, err := mongostore.NewSalviaReader(db).ListProfileNotes(ctx, localActor.ID, remoteActor.ID, readmodel.Cursor{}, 30)
+	if err != nil {
+		t.Fatalf("read remote Actor profile notes: %v", err)
+	}
+	foundRemoteNote = false
+	for _, item := range profileNotes {
+		if item.Note.ID == remoteNote.ID {
+			foundRemoteNote = true
+			break
+		}
+	}
+	if !foundRemoteNote {
+		t.Fatal("remote Actor profile omitted its visibility-checked Misskey note")
+	}
 
 	// Phase 6: pin and unpin the Misskey Note, verifying Rosmarinus applies the
 	// delivered Add/Remove pair to the remote Actor's featured Note IDs.

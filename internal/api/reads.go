@@ -159,6 +159,40 @@ func (h *Handler) profileConnections(w http.ResponseWriter, r *http.Request, acc
 	h.writeConnections(w, r, viewerActorID, profileActorID, kind)
 }
 
+func (h *Handler) profileNotes(w http.ResponseWriter, r *http.Request, accountID, profileActorID string) {
+	if r.Method != http.MethodGet {
+		h.methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	viewerActorID, ok := h.requireOwnedActorQuery(w, r, accountID)
+	if !ok {
+		return
+	}
+	if h.reader == nil {
+		h.internalError(w, r, fmt.Errorf("read service is not configured"))
+		return
+	}
+	profile, err := h.reader.FindProfile(r.Context(), viewerActorID, profileActorID)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("authorize profile notes: %w", err))
+		return
+	}
+	if profile == nil || profile.Actor == nil {
+		h.writeError(w, http.StatusNotFound, "profile_not_found", "Profile not found")
+		return
+	}
+	limit, after, ok := h.readPage(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.reader.ListProfileNotes(r.Context(), viewerActorID, profileActorID, after, limit)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("list profile notes: %w", err))
+		return
+	}
+	h.writeNotePage(w, items, limit)
+}
+
 func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request, accountID, actorID string) {
 	if _, ok := h.authorizeActor(w, r, accountID, actorID, false); !ok {
 		return

@@ -180,8 +180,9 @@ Pub/Sub message arriving.
 - [x] Implement compose, delete, reaction, poll vote, follow/unfollow,
       block/unblock, and mandatory follow approve/reject flows.
 - [x] Build account- and Actor-scoped notification views and mark-read actions.
-- [x] Build local and remote Actor profiles, follower/following views, moved and
-      suspended states, and safe external-link/media behavior.
+- [x] Build local and remote Actor profiles with visibility-filtered Note
+      lists, follower/following views, moved and suspended states, and safe
+      external-link/media behavior.
 - [x] Add remote-user lookup by handle or Actor URL and route successful
       resolution into the profile follow/unfollow flow.
 - [x] Generate image upload previews and thumbnails with Canvas, test

@@ -63,6 +63,7 @@ type Reader interface {
 	ListHomeTimeline(context.Context, string, Cursor, int) ([]Note, error)
 	FindVisibleNote(context.Context, string, string) (*Note, error)
 	ListVisibleThread(context.Context, string, string, Cursor, int) ([]Note, error)
+	ListProfileNotes(context.Context, string, string, Cursor, int) ([]Note, error)
 	ListConnections(context.Context, string, string, string, string, int) ([]Connection, error)
 	ListNotifications(context.Context, string, string, Cursor, int, *bool) ([]Notification, error)
 	ListLocalEmojis(context.Context, string, int) ([]emojis.Emoji, error)

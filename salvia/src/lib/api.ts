@@ -151,6 +151,10 @@ export const api = {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
     },
     profile: async (viewerID: string, actorID: string, signal?: AbortSignal): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema), { signal })).data,
+    profileNotes: async (viewerID: string, actorID: string, after = "", signal?: AbortSignal): Promise<{ data: Note[]; next: string }> => {
+        const result = await request(`/profiles/${encodeURIComponent(actorID)}/notes${query({ actor_id: viewerID, after, limit: "30" })}`, pageEnvelope(noteSchema), { signal });
+        return { data: result.data, next: result.next };
+    },
     resolveProfile: async (csrf: string, actorID: string, target: string): Promise<Profile> => (await request(`/actors/${encodeURIComponent(actorID)}/profiles/resolve`, envelope(profileSchema), { method: "POST", body: { target }, csrf })).data,
     profileConnections: async (viewerID: string, actorID: string, kind: "followers" | "following"): Promise<Connection[]> => (await request(`/profiles/${encodeURIComponent(actorID)}/${kind}${query({ actor_id: viewerID, limit: "100" })}`, pageEnvelope(connectionSchema))).data,
     follow: async (csrf: string, actorID: string, target: string): Promise<void> => {

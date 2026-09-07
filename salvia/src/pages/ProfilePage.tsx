@@ -1,11 +1,12 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
-import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
+import { NoteCard } from "../components/NoteCard";
+import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
-import type { Connection, Profile } from "../lib/schema";
+import type { Connection, Emoji, Note, Profile } from "../lib/schema";
 
 const styles = {
     hero: { overflow: "hidden", borderBottom: "1px solid var(--border)" },
@@ -30,6 +31,8 @@ const styles = {
     connectionButton: { width: "100%", padding: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", borderRadius: "1rem", textAlign: "left" },
     connectionText: { display: "block" },
     connectionHandle: { display: "block", color: "var(--muted)" },
+    notesHeader: { padding: "1rem 1.5rem", borderBottom: "1px solid var(--border)", fontSize: "1rem", fontWeight: 900 },
+    loadMore: { padding: "1.5rem", display: "flex", justifyContent: "center" },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
@@ -51,17 +54,22 @@ const actorHandle = (profile: Profile) => {
     }
 };
 
-export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actorID: string; csrf: string; onOpenProfile: (actorID: string) => void; profileID: string }) {
+export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOpenProfile, profileID }: { actorID: string; csrf: string; emojis: Emoji[]; onCompose: (kind: "reply" | "quote", note: Note) => void; onOpenNote: (noteID: string) => void; onOpenProfile: (actorID: string) => void; profileID: string }) {
     const [profile, setProfile] = useState<Profile>();
+    const [notes, setNotes] = useState<Note[]>([]);
+    const [next, setNext] = useState("");
     const [following, setFollowing] = useState(false);
     const [blocked, setBlocked] = useState(false);
     const [connections, setConnections] = useState<{ kind: "followers" | "following"; items: Connection[] }>();
     const [loading, setLoading] = useState(true);
+    const [notesLoading, setNotesLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
+        setProfile(undefined);
+        setError("");
         api.profile(actorID, profileID, controller.signal)
             .then((value) => {
                 setProfile(value);
@@ -76,6 +84,34 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
             });
         return () => controller.abort();
     }, [actorID, profileID]);
+    const loadNotes = useCallback(
+        async (after = "", append = false, signal?: AbortSignal) => {
+            setNotesLoading(true);
+            try {
+                const page = await api.profileNotes(actorID, profileID, after, signal);
+                setNotes((current) => (append ? [...current, ...page.data.filter((note) => !current.some((item) => item.id === note.id))] : page.data));
+                setNext(page.next);
+            } catch (reason) {
+                if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "ノートを読み込めませんでした");
+            } finally {
+                if (!signal?.aborted) setNotesLoading(false);
+            }
+        },
+        [actorID, profileID],
+    );
+    useEffect(() => {
+        const controller = new AbortController();
+        void loadNotes("", false, controller.signal);
+        return () => controller.abort();
+    }, [loadNotes]);
+    const mutateNote = async (operation: () => Promise<void>) => {
+        try {
+            await operation();
+            await loadNotes();
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "操作に失敗しました");
+        }
+    };
     const toggleFollow = async () => {
         if (!profile) return;
         setBusy(true);
@@ -212,6 +248,42 @@ export function ProfilePage({ actorID, csrf, onOpenProfile, profileID }: { actor
                 </div>
             </header>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
+            <section aria-labelledby="profile-notes-heading">
+                <h2 id="profile-notes-heading" style={styles.notesHeader}>
+                    ノート
+                </h2>
+                {notesLoading && notes.length === 0 ? (
+                    <Loading label="ノートを読み込み中" />
+                ) : notes.length === 0 ? (
+                    <Empty>表示できるノートはまだありません。</Empty>
+                ) : (
+                    <DividedList aria-label="プロフィールのノート一覧">
+                        {notes.map((note) => (
+                            <NoteCard
+                                emojis={emojis}
+                                key={note.id}
+                                note={note}
+                                onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
+                                onOpenNote={onOpenNote}
+                                onOpenProfile={onOpenProfile}
+                                onQuote={(target) => onCompose("quote", target)}
+                                onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
+                                onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
+                                onReply={(target) => onCompose("reply", target)}
+                                onVote={(noteID, choice) => mutateNote(() => api.vote(csrf, actorID, noteID, choice))}
+                                ownActorID={actorID}
+                            />
+                        ))}
+                        {next && (
+                            <div style={styles.loadMore}>
+                                <Button disabled={notesLoading} onClick={() => void loadNotes(next, true)} variant="secondary">
+                                    もっと見る
+                                </Button>
+                            </div>
+                        )}
+                    </DividedList>
+                )}
+            </section>
             {connections && (
                 <Modal label={connections.kind === "followers" ? "フォロワー" : "フォロー中"} onClose={() => setConnections(undefined)}>
                     <section>

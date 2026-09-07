@@ -99,6 +99,19 @@ func (r *SalviaReader) ListVisibleThread(ctx context.Context, viewerActorID, not
 	return r.enrichNotes(ctx, viewerActorID, docs)
 }
 
+func (r *SalviaReader) ListProfileNotes(ctx context.Context, viewerActorID, actorID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
+	visibility, err := r.visibleNoteFilter(ctx, viewerActorID)
+	if err != nil {
+		return nil, err
+	}
+	filter := bson.M{"$and": bson.A{
+		bson.M{"authorId": actorID, "deletedAt": nil},
+		visibility,
+	}}
+	filter = withCreatedCursor(filter, after)
+	return r.listNotes(ctx, viewerActorID, filter, limit, -1)
+}
+
 func (r *SalviaReader) ListConnections(ctx context.Context, viewerActorID, actorID, kind, afterID string, limit int) ([]readmodel.Connection, error) {
 	filter := bson.M{"deletedAt": nil}
 	actorField := "followerId"
