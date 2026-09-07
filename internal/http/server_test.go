@@ -442,14 +442,6 @@ func TestActorCollectionsByID(t *testing.T) {
 			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/outbox"`, `"first":"https://example.test/users/actor-id/outbox?page=true"`, `"last":"https://example.test/users/actor-id/outbox?page=true\u0026since_id=000000000000000000000000"`},
 		},
 		{
-			path: "/users/actor-id/followers",
-			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/followers"`, `"first":"https://example.test/users/actor-id/followers?page=true"`},
-		},
-		{
-			path: "/users/actor-id/following",
-			want: []string{`"type":"OrderedCollection"`, `"id":"https://example.test/users/actor-id/following"`, `"first":"https://example.test/users/actor-id/following?page=true"`},
-		},
-		{
 			path: "/users/actor-id/outbox?page=true",
 			want: []string{`"type":"OrderedCollectionPage"`, `"partOf":"https://example.test/users/actor-id/outbox"`, `"orderedItems":[]`},
 		},
@@ -475,7 +467,7 @@ func TestActorCollectionsByID(t *testing.T) {
 	}
 }
 
-func TestActorFollowCollectionsByIDUseStoredFollows(t *testing.T) {
+func TestActorFollowCollectionsByIDArePrivate(t *testing.T) {
 	lookup := fakeActorLookup{actor: &actors.Actor{
 		ID:       "actor-id",
 		Username: "alice",
@@ -495,39 +487,25 @@ func TestActorFollowCollectionsByIDUseStoredFollows(t *testing.T) {
 			FolloweeURI: "https://remote.example/users/bob",
 		}},
 	}
-	cases := []struct {
-		path string
-		want []string
-	}{
-		{
-			path: "/users/actor-id/followers",
-			want: []string{`"totalItems":1`, `"first":"https://example.test/users/actor-id/followers?page=true"`},
-		},
-		{
-			path: "/users/actor-id/followers?page=true",
-			want: []string{`"totalItems":1`, `"orderedItems":["https://remote.example/users/alice"]`},
-		},
-		{
-			path: "/users/actor-id/following",
-			want: []string{`"totalItems":1`, `"first":"https://example.test/users/actor-id/following?page=true"`},
-		},
-		{
-			path: "/users/actor-id/following?page=true",
-			want: []string{`"totalItems":1`, `"orderedItems":["https://remote.example/users/bob"]`},
-		},
+	paths := []string{
+		"/users/actor-id/followers",
+		"/users/actor-id/followers?page=true",
+		"/users/actor-id/following",
+		"/users/actor-id/following?page=true",
 	}
-	for _, tt := range cases {
-		t.Run(tt.path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 			NewHandlerWithStores(testConfig(), nil, lookup, nil, followLookup, nil, nil).ServeHTTP(rec, req)
-			if rec.Code != http.StatusOK {
+			if rec.Code != http.StatusForbidden {
 				t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 			}
-			for _, want := range tt.want {
-				if !strings.Contains(rec.Body.String(), want) {
-					t.Fatalf("body does not contain %q: %s", want, rec.Body.String())
-				}
+			if rec.Header().Get("Cache-Control") != "public, max-age=30" {
+				t.Fatalf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+			}
+			if rec.Body.Len() != 0 {
+				t.Fatalf("private relationship response leaked body: %s", rec.Body.String())
 			}
 		})
 	}

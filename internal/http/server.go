@@ -98,7 +98,7 @@ func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorL
 	}
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
-	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, followLookup, emojiLookup, queueClient, logger))
+	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, emojiLookup, queueClient, logger))
 	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
 	mux.HandleFunc("/media/", mediaByID(mediaLookup))
 	mux.HandleFunc("/emojis/", emojiByName(cfg, emojiLookup))
@@ -340,7 +340,7 @@ func notImplemented(logger *log.Logger, methods ...string) http.HandlerFunc {
 	}
 }
 
-func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLookup, emojiLookup EmojiLookup, queueClient QueueClient, logger *log.Logger) http.HandlerFunc {
+func actorByID(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLookup, queueClient QueueClient, logger *log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/inbox") {
 			inbox(cfg, queueClient)(w, r)
@@ -372,13 +372,19 @@ func actorByID(cfg config.Config, actorLookup ActorLookup, followLookup FollowLo
 		}
 		if len(parts) == 2 {
 			switch parts[1] {
-			case "outbox", "followers", "following":
-				body, err := renderActorCollection(r, cfg, actor, parts[1], followLookup)
+			case "outbox":
+				body, err := renderActorCollection(r, cfg, actor, parts[1])
 				if err != nil {
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 					return
 				}
 				writeActivityJSON(w, body)
+				return
+			case "followers", "following":
+				// Keep the collection identifiers for ActivityPub addressing, but never
+				// disclose account relationships or their counts through public HTTP.
+				w.Header().Set("Cache-Control", "public, max-age=30")
+				w.WriteHeader(http.StatusForbidden)
 				return
 			}
 		}
@@ -716,18 +722,10 @@ func writeActivityJSON(w http.ResponseWriter, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func renderActorCollection(r *http.Request, cfg config.Config, actor *actors.Actor, name string, followLookup FollowLookup) (map[string]any, error) {
+func renderActorCollection(r *http.Request, cfg config.Config, actor *actors.Actor, name string) (map[string]any, error) {
 	partOf := strings.TrimRight(actor.URI, "/") + "/" + name
-	totalItems, err := actorCollectionCount(r.Context(), actor, name, followLookup)
-	if err != nil {
-		return nil, err
-	}
 	if r.URL.Query().Get("page") == "true" {
-		items, err := actorCollectionItems(r.Context(), actor, name, followLookup, 10)
-		if err != nil {
-			return nil, err
-		}
-		return renderOrderedCollectionPage(publicRequestURL(cfg, r), totalItems, items, partOf, "", ""), nil
+		return renderOrderedCollectionPage(publicRequestURL(cfg, r), 0, []any{}, partOf, "", ""), nil
 	}
 
 	var first string
@@ -736,10 +734,8 @@ func renderActorCollection(r *http.Request, cfg config.Config, actor *actors.Act
 	case "outbox":
 		first = partOf + "?page=true"
 		last = partOf + "?page=true&since_id=000000000000000000000000"
-	case "followers", "following":
-		first = partOf + "?page=true"
 	}
-	return renderOrderedCollection(partOf, totalItems, first, last, nil), nil
+	return renderOrderedCollection(partOf, 0, first, last, nil), nil
 }
 
 func renderFeaturedCollection(actor *actors.Actor) map[string]any {
@@ -780,48 +776,6 @@ func renderOrderedCollectionPage(id string, totalItems int, orderedItems []any, 
 		body["next"] = next
 	}
 	return withActivityContext(body)
-}
-
-func actorCollectionCount(ctx context.Context, actor *actors.Actor, name string, followLookup FollowLookup) (int, error) {
-	if followLookup == nil {
-		return 0, nil
-	}
-	switch name {
-	case "followers":
-		return followLookup.CountFollowers(ctx, actor.ID)
-	case "following":
-		return followLookup.CountFollowing(ctx, actor.ID)
-	default:
-		return 0, nil
-	}
-}
-
-func actorCollectionItems(ctx context.Context, actor *actors.Actor, name string, followLookup FollowLookup, limit int) ([]any, error) {
-	if followLookup == nil {
-		return []any{}, nil
-	}
-	var rows []follows.Follow
-	var err error
-	switch name {
-	case "followers":
-		rows, err = followLookup.ListFollowers(ctx, actor.ID, limit)
-	case "following":
-		rows, err = followLookup.ListFollowing(ctx, actor.ID, limit)
-	default:
-		return []any{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	items := make([]any, 0, len(rows))
-	for _, follow := range rows {
-		if name == "followers" {
-			items = append(items, follow.FollowerURI)
-		} else {
-			items = append(items, follow.FolloweeURI)
-		}
-	}
-	return items, nil
 }
 
 func publicRequestURL(cfg config.Config, r *http.Request) string {

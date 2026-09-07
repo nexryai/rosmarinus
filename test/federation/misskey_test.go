@@ -128,6 +128,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 2: send an outgoing Follow to Misskey, verify that its dereferenceable
 	// Follow resource is exposed while pending, then wait for Misskey's Accept.
+	// The resulting non-empty following collection remains private over public
+	// ActivityPub HTTP.
 	remoteActorURI := "https://a.test/users/" + admin.ID
 	result, err := worker.CreateFollow(ctx, localActor.ID, remoteActorURI)
 	t.Logf("Rosmarinus outgoing Follow result=%q actor=%s target=%s err=%v", result, localActor.ID, remoteActorURI, err)
@@ -152,6 +154,12 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Logf("[DEBUG] followRepo.Find: %s <= %s: relationship=%+v err=%v", localActor.ID, remoteActor.ID, relationship, findErr)
 		return findErr == nil && relationship != nil && relationship.Status == follows.StatusAccepted
 	})
+	if status := misskey.getStatus(ctx, localActor.URI+"/following"); status != http.StatusForbidden {
+		t.Fatalf("public following collection status=%d, want %d", status, http.StatusForbidden)
+	}
+	if status := misskey.getStatus(ctx, localActor.URI+"/following?page=true"); status != http.StatusForbidden {
+		t.Fatalf("public following page status=%d, want %d", status, http.StatusForbidden)
+	}
 
 	// Phase 3: upload an avatar and update the followed Misskey Actor, verifying
 	// Rosmarinus authenticates Update(Person) and refreshes its profile fields.
@@ -459,7 +467,9 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	})
 
 	// Phase 11: make Misskey follow Rosmarinus, approve the pending request in
-	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow).
+	// Rosmarinus, and verify Misskey applies the delivered Accept(Follow). The
+	// resulting non-empty followers collection remains private over public
+	// ActivityPub HTTP.
 	misskey.call(ctx, "following/create", map[string]any{
 		"i":      admin.Token,
 		"userId": relayOnMisskey.ID,
@@ -484,6 +494,12 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}, &shown)
 		return shown.IsFollowing
 	})
+	if status := misskey.getStatus(ctx, localActor.URI+"/followers"); status != http.StatusForbidden {
+		t.Fatalf("public followers collection status=%d, want %d", status, http.StatusForbidden)
+	}
+	if status := misskey.getStatus(ctx, localActor.URI+"/followers?page=true"); status != http.StatusForbidden {
+		t.Fatalf("public followers page status=%d, want %d", status, http.StatusForbidden)
+	}
 
 	// Phase 12: create an account-owned Actor, exercise follows in both
 	// directions, and update its profile. Verify Rosmarinus delivers a full
