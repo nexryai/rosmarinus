@@ -369,30 +369,51 @@ func rewriteReferences(ctx context.Context, db *mongo.Database, mappings map[str
 }
 
 func rekeyCollection(ctx context.Context, collection *mongo.Collection, mappings map[string]idMapping, preserveLegacy bool) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+	oldIDs := make([]any, 0, len(mappings))
 	for _, mapping := range mappings {
+		oldIDs = append(oldIDs, mapping.Old)
+	}
+	cursor, err := collection.Find(ctx, bson.M{"_id": bson.M{"$in": oldIDs}})
+	if isNamespaceNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+	documents := make([]bson.M, 0, len(mappings))
+	originalIDs := make([]any, 0, len(mappings))
+	for cursor.Next(ctx) {
 		var doc bson.M
-		err := collection.FindOne(ctx, bson.M{"_id": mapping.Old}).Decode(&doc)
-		if errors.Is(err, mongo.ErrNoDocuments) || isNamespaceNotFound(err) {
-			continue
+		if err := cursor.Decode(&doc); err != nil {
+			return err
 		}
+		oldID := doc["_id"]
+		key, err := valueKey(oldID)
 		if err != nil {
 			return err
 		}
+		mapping, exists := mappings[key]
+		if !exists {
+			return fmt.Errorf("missing %s id mapping for %v", collection.Name(), oldID)
+		}
 		doc["_id"] = mapping.New
 		if preserveLegacy {
-			legacyID := legacyString(mapping.Old)
+			legacyID := legacyString(oldID)
 			if legacyID != mapping.New {
 				doc["legacyIds"] = appendUniqueString(doc["legacyIds"], legacyID)
 			}
 		}
-		if _, err := collection.DeleteOne(ctx, bson.M{"_id": mapping.Old}); err != nil {
-			return fmt.Errorf("delete legacy %s document: %w", collection.Name(), err)
-		}
-		if _, err := collection.InsertOne(ctx, doc); err != nil {
-			return fmt.Errorf("insert migrated %s document: %w", collection.Name(), err)
-		}
+		documents = append(documents, doc)
+		originalIDs = append(originalIDs, oldID)
 	}
-	return nil
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	return replaceDocuments(ctx, collection, originalIDs, documents)
 }
 
 func backfillPolls(ctx context.Context, db *mongo.Database, plan *migrationPlan) error {
@@ -405,6 +426,8 @@ func backfillPolls(ctx context.Context, db *mongo.Database, plan *migrationPlan)
 		return err
 	}
 	defer cursor.Close(ctx)
+	originalIDs := make([]any, 0)
+	documents := make([]bson.M, 0)
 	for cursor.Next(ctx) {
 		var doc bson.M
 		if err := cursor.Decode(&doc); err != nil {
@@ -417,11 +440,14 @@ func backfillPolls(ctx context.Context, db *mongo.Database, plan *migrationPlan)
 		}
 		doc["noteId"] = mappedValue(plan.notes, noteID)
 		newID := mappedValue(plan.ids["polls"], oldID)
-		if err := replaceDocumentID(ctx, collection, oldID, newID, doc); err != nil {
-			return err
-		}
+		doc["_id"] = newID
+		originalIDs = append(originalIDs, oldID)
+		documents = append(documents, doc)
 	}
-	return cursor.Err()
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	return replaceDocuments(ctx, collection, originalIDs, documents)
 }
 
 func backfillActivityReceipts(ctx context.Context, db *mongo.Database, mappings map[string]idMapping) error {
@@ -434,6 +460,8 @@ func backfillActivityReceipts(ctx context.Context, db *mongo.Database, mappings 
 		return err
 	}
 	defer cursor.Close(ctx)
+	originalIDs := make([]any, 0)
+	documents := make([]bson.M, 0)
 	for cursor.Next(ctx) {
 		var doc bson.M
 		if err := cursor.Decode(&doc); err != nil {
@@ -443,11 +471,14 @@ func backfillActivityReceipts(ctx context.Context, db *mongo.Database, mappings 
 		if _, exists := doc["activityId"]; !exists {
 			doc["activityId"] = legacyString(oldID)
 		}
-		if err := replaceDocumentID(ctx, collection, oldID, mappedValue(mappings, oldID), doc); err != nil {
-			return err
-		}
+		doc["_id"] = mappedValue(mappings, oldID)
+		originalIDs = append(originalIDs, oldID)
+		documents = append(documents, doc)
 	}
-	return cursor.Err()
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	return replaceDocuments(ctx, collection, originalIDs, documents)
 }
 
 func backfillPollVotes(ctx context.Context, db *mongo.Database, mappings map[string]idMapping) error {
@@ -477,6 +508,8 @@ func backfillPollVotes(ctx context.Context, db *mongo.Database, mappings map[str
 		return err
 	}
 	defer cursor.Close(ctx)
+	originalIDs := make([]any, 0)
+	documents := make([]bson.M, 0)
 	for cursor.Next(ctx) {
 		var doc bson.M
 		if err := cursor.Decode(&doc); err != nil {
@@ -489,24 +522,47 @@ func backfillPollVotes(ctx context.Context, db *mongo.Database, mappings map[str
 		multiple := polls[noteID]
 		doc["multiple"] = multiple
 		doc["scopeKey"] = voteScope(noteID, actorID, choice, multiple)
-		if err := replaceDocumentID(ctx, collection, oldID, mappedValue(mappings, oldID), doc); err != nil {
-			return err
-		}
+		doc["_id"] = mappedValue(mappings, oldID)
+		originalIDs = append(originalIDs, oldID)
+		documents = append(documents, doc)
 	}
-	return cursor.Err()
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	return replaceDocuments(ctx, collection, originalIDs, documents)
 }
 
-func replaceDocumentID(ctx context.Context, collection *mongo.Collection, oldID any, newID string, doc bson.M) error {
-	doc["_id"] = newID
-	if oldText, ok := oldID.(string); ok && oldText == newID {
-		_, err := collection.ReplaceOne(ctx, bson.M{"_id": oldID}, doc)
-		return err
+func replaceDocuments(ctx context.Context, collection *mongo.Collection, originalIDs []any, documents []bson.M) error {
+	if len(originalIDs) != len(documents) {
+		return fmt.Errorf("replace %s documents: id and document counts differ", collection.Name())
 	}
-	if _, err := collection.DeleteOne(ctx, bson.M{"_id": oldID}); err != nil {
-		return err
+	changedIDs := make([]any, 0, len(originalIDs))
+	changedDocuments := make([]any, 0, len(documents))
+	unchanged := make([]mongo.WriteModel, 0, len(documents))
+	for index, doc := range documents {
+		oldID := originalIDs[index]
+		newID := doc["_id"]
+		if oldText, ok := oldID.(string); ok && oldText == newID {
+			unchanged = append(unchanged, mongo.NewReplaceOneModel().SetFilter(bson.M{"_id": oldID}).SetReplacement(doc))
+			continue
+		}
+		changedIDs = append(changedIDs, oldID)
+		changedDocuments = append(changedDocuments, doc)
 	}
-	_, err := collection.InsertOne(ctx, doc)
-	return err
+	if len(changedIDs) != 0 {
+		if _, err := collection.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": changedIDs}}); err != nil {
+			return fmt.Errorf("delete legacy %s documents: %w", collection.Name(), err)
+		}
+		if _, err := collection.InsertMany(ctx, changedDocuments); err != nil {
+			return fmt.Errorf("insert migrated %s documents: %w", collection.Name(), err)
+		}
+	}
+	if len(unchanged) != 0 {
+		if _, err := collection.BulkWrite(ctx, unchanged, options.BulkWrite().SetOrdered(false)); err != nil {
+			return fmt.Errorf("replace unchanged-id %s documents: %w", collection.Name(), err)
+		}
+	}
+	return nil
 }
 
 func verify(ctx context.Context, db *mongo.Database) error {
