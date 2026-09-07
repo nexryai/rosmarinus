@@ -18,34 +18,218 @@ const navigation: { icon: typeof IconHome; label: string; page: Page; path: stri
 ];
 
 const styles = {
-    layout: { width: "100%", minHeight: "100dvh", maxWidth: "72rem", marginInline: "auto", display: "flex", background: "var(--panel)", boxShadow: "var(--shadow)" },
-    sidebar: { position: "sticky", top: 0, width: "16rem", height: "100dvh", padding: "1.5rem 1.25rem", flexDirection: "column", flexShrink: 0, borderRight: "1px solid var(--border)" },
-    wordmark: { marginBottom: "2rem", paddingInline: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", borderRadius: "0.75rem", fontSize: "1.25rem", lineHeight: 1.4, fontWeight: 900, letterSpacing: "-0.025em" },
-    mark: { width: "2.75rem", height: "2.75rem", display: "grid", placeItems: "center", borderRadius: "1rem", color: "var(--accent-ink)", background: "linear-gradient(135deg, #f8d56a, var(--accent))", boxShadow: "0 8px 22px #e9a91d3d" },
-    navItem: { width: "100%", padding: "0.75rem 1rem", display: "flex", alignItems: "center", gap: "1rem", borderRadius: "0.75rem", textAlign: "left", fontWeight: 600, transition: "color 150ms, background-color 150ms" },
-    navItemActive: { color: "var(--accent-ink)", background: "var(--accent-soft)" },
-    compose: { width: "100%", marginTop: "1.5rem" },
-    accountSwitcher: { marginTop: "auto", padding: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", border: "1px solid var(--border)", borderRadius: "1rem", background: "var(--panel-muted)" },
-    accountLabel: { minWidth: 0, flex: 1 },
-    accountName: { display: "block", overflow: "hidden", fontSize: "0.875rem", fontWeight: 700, textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    actorSelect: { marginTop: "0.125rem" },
-    actorTrigger: { minHeight: "1.25rem", padding: 0, border: 0, borderRadius: "0.375rem", color: "var(--muted)", background: "transparent", boxShadow: "none", fontSize: "0.75rem" },
-    logout: { marginTop: "0.5rem", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", gap: "0.5rem", borderRadius: "0.75rem", fontSize: "0.875rem", transition: "color 150ms, background-color 150ms" },
-    main: { minWidth: 0, flex: 1, background: "var(--panel)" },
-    mobileNav: { position: "fixed", zIndex: 30, insetInline: 0, bottom: 0, height: "4.25rem", paddingInline: "0.5rem", alignItems: "center", justifyContent: "space-around", borderTop: "1px solid var(--border)", backdropFilter: "blur(24px)" },
-    mobileItem: { minWidth: "3.5rem", display: "grid", placeItems: "center", gap: "0.125rem", color: "var(--muted)", fontSize: "10px" },
-    mobileCompose: { width: "2.75rem", height: "2.75rem", minWidth: "2.75rem", display: "grid", placeItems: "center", borderRadius: "9999px", color: "var(--accent-ink)", background: "var(--accent)" },
+    layout: {
+        width: "100%",
+        minHeight: "100dvh",
+        maxWidth: "72rem",
+        marginInline: "auto",
+        display: "flex",
+        background: "var(--panel)",
+        boxShadow: "var(--shadow)",
+    },
+    sidebar: {
+        position: "sticky",
+        top: 0,
+        width: "16rem",
+        height: "100dvh",
+        padding: "1.5rem 1.25rem",
+        flexDirection: "column",
+        flexShrink: 0,
+        borderRight: "1px solid var(--border)",
+    },
+    wordmark: {
+        marginBottom: "2rem",
+        paddingInline: "0.75rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        borderRadius: "0.75rem",
+        fontSize: "1.25rem",
+        lineHeight: 1.4,
+        fontWeight: 900,
+        letterSpacing: "-0.025em",
+    },
+    mark: {
+        width: "2.75rem",
+        height: "2.75rem",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "1rem",
+        color: "var(--accent-ink)",
+        background: "linear-gradient(135deg, #f8d56a, var(--accent))",
+        boxShadow: "0 8px 22px #e9a91d3d",
+    },
+    navItem: {
+        width: "100%",
+        padding: "0.75rem 1rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "1rem",
+        borderRadius: "0.75rem",
+        textAlign: "left",
+        fontWeight: 600,
+        transition: "color 150ms, background-color 150ms",
+    },
+    navItemActive: {
+        color: "var(--accent-ink)",
+        background: "var(--accent-soft)",
+    },
+    compose: {
+        width: "100%",
+        marginTop: "1.5rem",
+    },
+    accountSwitcher: {
+        marginTop: "auto",
+        padding: "0.75rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        border: "1px solid var(--border)",
+        borderRadius: "1rem",
+        background: "var(--panel-muted)",
+    },
+    accountLabel: {
+        minWidth: 0,
+        flex: 1,
+    },
+    accountName: {
+        display: "block",
+        overflow: "hidden",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    actorSelect: {
+        marginTop: "0.125rem",
+    },
+    actorTrigger: {
+        minHeight: "1.25rem",
+        padding: 0,
+        border: 0,
+        borderRadius: "0.375rem",
+        color: "var(--muted)",
+        background: "transparent",
+        boxShadow: "none",
+        fontSize: "0.75rem",
+    },
+    logout: {
+        marginTop: "0.5rem",
+        padding: "0.5rem 0.75rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        borderRadius: "0.75rem",
+        fontSize: "0.875rem",
+        transition: "color 150ms, background-color 150ms",
+    },
+    main: {
+        minWidth: 0,
+        flex: 1,
+        background: "var(--panel)",
+    },
+    mobileNav: {
+        position: "fixed",
+        zIndex: 30,
+        insetInline: 0,
+        bottom: 0,
+        height: "4.25rem",
+        paddingInline: "0.5rem",
+        alignItems: "center",
+        justifyContent: "space-around",
+        borderTop: "1px solid var(--border)",
+        backdropFilter: "blur(24px)",
+    },
+    mobileItem: {
+        minWidth: "3.5rem",
+        display: "grid",
+        placeItems: "center",
+        gap: "0.125rem",
+        color: "var(--muted)",
+        fontSize: "10px",
+    },
+    mobileCompose: {
+        width: "2.75rem",
+        height: "2.75rem",
+        minWidth: "2.75rem",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "9999px",
+        color: "var(--accent-ink)",
+        background: "var(--accent)",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    sidebar: css({ display: "none", background: "var(--panel)", "@supports (color: color-mix(in lab, red, red))": { background: "color-mix(in srgb, var(--panel) 94%, transparent)" }, "@media (width >= 64rem)": { display: "flex" } }),
-    wordmark: css({ "& svg": { width: "1.5rem", height: "1.5rem" } }),
-    nav: css({ "& > :not(:last-child)": { marginBottom: "0.25rem" } }),
-    navItem: css({ color: "var(--muted)", "&:hover": { color: "var(--text)", background: "var(--panel-muted)" }, "& svg": { width: "1.25rem", height: "1.25rem" } }),
-    accountSwitcher: css({ "&:focus-within": { borderColor: "var(--accent-hover)", boxShadow: "0 0 0 3px var(--accent-soft)" } }),
-    logout: css({ color: "var(--muted)", "&:hover": { color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 8%, transparent)" }, "& svg": { width: "1rem", height: "1rem" } }),
-    main: css({ paddingBottom: "5rem", "@media (width >= 64rem)": { paddingBottom: 0 } }),
-    mobileNav: css({ display: "flex", background: "var(--panel)", "@supports (color: color-mix(in lab, red, red))": { background: "color-mix(in srgb, var(--panel) 94%, transparent)" }, "@media (width >= 64rem)": { display: "none" }, "& svg": { width: "1.25rem", height: "1.25rem" } }),
+    sidebar: css({
+        display: "none",
+        background: "var(--panel)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            background: "color-mix(in srgb, var(--panel) 94%, transparent)",
+        },
+        "@media (width >= 64rem)": {
+            display: "flex",
+        },
+    }),
+    wordmark: css({
+        "& svg": {
+            width: "1.5rem",
+            height: "1.5rem",
+        },
+    }),
+    nav: css({
+        "& > :not(:last-child)": {
+            marginBottom: "0.25rem",
+        },
+    }),
+    navItem: css({
+        color: "var(--muted)",
+        "&:hover": {
+            color: "var(--text)",
+            background: "var(--panel-muted)",
+        },
+        "& svg": {
+            width: "1.25rem",
+            height: "1.25rem",
+        },
+    }),
+    accountSwitcher: css({
+        "&:focus-within": {
+            borderColor: "var(--accent-hover)",
+            boxShadow: "0 0 0 3px var(--accent-soft)",
+        },
+    }),
+    logout: css({
+        color: "var(--muted)",
+        "&:hover": {
+            color: "var(--danger)",
+            background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+        },
+        "& svg": {
+            width: "1rem",
+            height: "1rem",
+        },
+    }),
+    main: css({
+        paddingBottom: "5rem",
+        "@media (width >= 64rem)": {
+            paddingBottom: 0,
+        },
+    }),
+    mobileNav: css({
+        display: "flex",
+        background: "var(--panel)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            background: "color-mix(in srgb, var(--panel) 94%, transparent)",
+        },
+        "@media (width >= 64rem)": {
+            display: "none",
+        },
+        "& svg": {
+            width: "1.25rem",
+            height: "1.25rem",
+        },
+    }),
 };
 
 export function AppShell({

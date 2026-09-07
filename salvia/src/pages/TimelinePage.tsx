@@ -8,7 +8,11 @@ import { api } from "../lib/api";
 import type { Emoji, Note } from "../lib/schema";
 
 const styles = {
-    loadMore: { padding: "1.5rem", display: "flex", justifyContent: "center" },
+    loadMore: {
+        padding: "1.5rem",
+        display: "flex",
+        justifyContent: "center",
+    },
 } satisfies Record<string, CSSProperties>;
 
 export function TimelinePage({

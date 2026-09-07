@@ -9,11 +9,26 @@ import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
 
 const styles = {
-    back: { marginRight: "0.75rem", marginLeft: 0 },
+    back: {
+        marginRight: "0.75rem",
+        marginLeft: 0,
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    thread: css({ "& > h2": { padding: "0.75rem 1.25rem", fontSize: "0.875rem", fontWeight: 900, background: "var(--panel-muted)" }, "@media (width >= 40rem)": { "& > h2": { paddingInline: "1.75rem" } } }),
+    thread: css({
+        "& > h2": {
+            padding: "0.75rem 1.25rem",
+            fontSize: "0.875rem",
+            fontWeight: 900,
+            background: "var(--panel-muted)",
+        },
+        "@media (width >= 40rem)": {
+            "& > h2": {
+                paddingInline: "1.75rem",
+            },
+        },
+    }),
 };
 
 export function NotePage({

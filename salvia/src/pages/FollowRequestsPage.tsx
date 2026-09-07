@@ -8,17 +8,58 @@ import { css } from "../lib/css";
 import type { Connection } from "../lib/schema";
 
 const styles = {
-    headerIcon: { width: "1.5rem", height: "1.5rem", marginLeft: "auto", color: "var(--accent-hover)" },
-    request: { paddingBlock: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" },
-    identity: { minWidth: 0, flex: 1 },
-    name: { display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    handle: { display: "block", overflow: "hidden", color: "var(--muted)", fontSize: "0.875rem", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    actions: { display: "flex", gap: "0.5rem" },
+    headerIcon: {
+        width: "1.5rem",
+        height: "1.5rem",
+        marginLeft: "auto",
+        color: "var(--accent-hover)",
+    },
+    request: {
+        paddingBlock: "1.25rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+    },
+    identity: {
+        minWidth: 0,
+        flex: 1,
+    },
+    name: {
+        display: "block",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    handle: {
+        display: "block",
+        overflow: "hidden",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    actions: {
+        display: "flex",
+        gap: "0.5rem",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    request: css({ paddingInline: "1.25rem", "@media (width >= 40rem)": { paddingInline: "1.75rem" }, "@media (width <= 639px)": { flexWrap: "wrap" } }),
-    actions: css({ "@media (width <= 639px)": { width: "100%", marginLeft: "3rem" } }),
+    request: css({
+        paddingInline: "1.25rem",
+        "@media (width >= 40rem)": {
+            paddingInline: "1.75rem",
+        },
+        "@media (width <= 639px)": {
+            flexWrap: "wrap",
+        },
+    }),
+    actions: css({
+        "@media (width <= 639px)": {
+            width: "100%",
+            marginLeft: "3rem",
+        },
+    }),
 };
 
 export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: string; csrf: string; refreshKey: number }) {

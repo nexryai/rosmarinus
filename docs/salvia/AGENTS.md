@@ -11,6 +11,9 @@ edit it or carry its Next.js and Ably architecture into the current app.
 - Keep styling in TSX through CSS-in-JSX. Do not add CSS files or a CSS
   framework dependency. Keep reusable theme tokens and shared UI primitives
   aligned with the yellow-first product direction.
+- Format CSS-in-JS style objects with one CSS declaration per line, including
+  nested selectors, at-rules, and keyframe steps. Keep Biome's `expand` option
+  set to `auto` so intentionally multiline objects remain readable.
 - Use `pnpm` for dependencies and commit the lockfile with dependency changes.
 - Keep runtime configuration environment-backed at build or deployment time.
   No value shipped to the browser may be a secret.

@@ -5,17 +5,32 @@ import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { css, keyframes } from "../../lib/css";
 
 const openAnimation = keyframes({
-    from: { opacity: 0, transform: "translateY(-0.4rem) scale(0.97)" },
-    to: { opacity: 1, transform: "translateY(0) scale(1)" },
+    from: {
+        opacity: 0,
+        transform: "translateY(-0.4rem) scale(0.97)",
+    },
+    to: {
+        opacity: 1,
+        transform: "translateY(0) scale(1)",
+    },
 });
 
 const closeAnimation = keyframes({
-    from: { opacity: 1, transform: "translateY(0) scale(1)" },
-    to: { opacity: 0, transform: "translateY(-0.3rem) scale(0.98)" },
+    from: {
+        opacity: 1,
+        transform: "translateY(0) scale(1)",
+    },
+    to: {
+        opacity: 0,
+        transform: "translateY(-0.3rem) scale(0.98)",
+    },
 });
 
 const styles = {
-    root: { position: "relative", minWidth: 0 },
+    root: {
+        position: "relative",
+        minWidth: 0,
+    },
     trigger: {
         width: "100%",
         minHeight: "2.75rem",
@@ -30,8 +45,20 @@ const styles = {
         textAlign: "left",
         transition: "border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease",
     },
-    value: { minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    chevron: { width: "1rem", height: "1rem", flexShrink: 0, color: "var(--muted)", transition: "transform 180ms cubic-bezier(.2,.8,.2,1)" },
+    value: {
+        minWidth: 0,
+        flex: 1,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    chevron: {
+        width: "1rem",
+        height: "1rem",
+        flexShrink: 0,
+        color: "var(--muted)",
+        transition: "transform 180ms cubic-bezier(.2,.8,.2,1)",
+    },
     menu: {
         position: "absolute",
         zIndex: 80,
@@ -48,8 +75,13 @@ const styles = {
         transformOrigin: "top center",
         willChange: "transform, opacity",
     },
-    menuBottom: { top: "calc(100% + 0.5rem)" },
-    menuTop: { bottom: "calc(100% + 0.5rem)", transformOrigin: "bottom center" },
+    menuBottom: {
+        top: "calc(100% + 0.5rem)",
+    },
+    menuTop: {
+        bottom: "calc(100% + 0.5rem)",
+        transformOrigin: "bottom center",
+    },
     option: {
         width: "100%",
         minHeight: "2.5rem",
@@ -61,25 +93,71 @@ const styles = {
         textAlign: "left",
         transition: "color 120ms ease, background-color 120ms ease, transform 120ms ease",
     },
-    optionText: { minWidth: 0, flex: 1 },
-    optionLabel: { display: "block", overflow: "hidden", fontSize: "0.875rem", fontWeight: 700, textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    description: { display: "block", marginTop: "0.0625rem", overflow: "hidden", color: "var(--muted)", fontSize: "0.7rem", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    check: { width: "1rem", height: "1rem", flexShrink: 0, color: "var(--accent-hover)" },
+    optionText: {
+        minWidth: 0,
+        flex: 1,
+    },
+    optionLabel: {
+        display: "block",
+        overflow: "hidden",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    description: {
+        display: "block",
+        marginTop: "0.0625rem",
+        overflow: "hidden",
+        color: "var(--muted)",
+        fontSize: "0.7rem",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    check: {
+        width: "1rem",
+        height: "1rem",
+        flexShrink: 0,
+        color: "var(--accent-hover)",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
     trigger: css({
-        "&:hover": { borderColor: "var(--accent-hover)", background: "var(--panel)" },
-        '&[aria-expanded="true"]': { borderColor: "var(--accent-hover)", background: "var(--panel)", boxShadow: "0 0 0 3px var(--accent-soft)" },
-        "@media (prefers-reduced-motion: reduce)": { transitionDuration: "0.01ms" },
+        "&:hover": {
+            borderColor: "var(--accent-hover)",
+            background: "var(--panel)",
+        },
+        '&[aria-expanded="true"]': {
+            borderColor: "var(--accent-hover)",
+            background: "var(--panel)",
+            boxShadow: "0 0 0 3px var(--accent-soft)",
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+            transitionDuration: "0.01ms",
+        },
     }),
     option: css({
-        "&:hover": { background: "var(--panel-muted)" },
-        '&[data-active="true"]': { background: "var(--accent-soft)", color: "var(--accent-ink)", transform: "translateX(0.125rem)" },
-        "&:disabled": { opacity: 0.45 },
-        "@media (prefers-reduced-motion: reduce)": { transitionDuration: "0.01ms" },
+        "&:hover": {
+            background: "var(--panel-muted)",
+        },
+        '&[data-active="true"]': {
+            background: "var(--accent-soft)",
+            color: "var(--accent-ink)",
+            transform: "translateX(0.125rem)",
+        },
+        "&:disabled": {
+            opacity: 0.45,
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+            transitionDuration: "0.01ms",
+        },
     }),
-    menu: css({ "@media (prefers-reduced-motion: reduce)": { animationDuration: "0.01ms" } }),
+    menu: css({
+        "@media (prefers-reduced-motion: reduce)": {
+            animationDuration: "0.01ms",
+        },
+    }),
 };
 
 export type DropdownOption<Value extends string> = {

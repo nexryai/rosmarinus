@@ -8,27 +8,128 @@ import { createPasskey, getPasskey } from "../lib/webauthn";
 import { Button, ErrorBanner } from "./ui";
 
 const styles = {
-    page: { minHeight: "100dvh", padding: "2.5rem 1.25rem", display: "grid", placeItems: "center", background: "radial-gradient(circle at 50% 0, var(--accent-soft), transparent 38%), var(--page)" },
-    wrap: { width: "100%", maxWidth: "28rem" },
-    intro: { marginBottom: "1.75rem", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" },
-    mark: { width: "2.75rem", height: "2.75rem", display: "grid", placeItems: "center", borderRadius: "1rem", color: "var(--accent-ink)", background: "linear-gradient(135deg, #f8d56a, var(--accent))", boxShadow: "0 8px 22px #e9a91d3d" },
-    title: { marginTop: "1rem", fontSize: "1.875rem", lineHeight: 1.2, fontWeight: 900, letterSpacing: "-0.025em" },
-    tagline: { maxWidth: "20rem", marginTop: "0.5rem", color: "var(--muted)", fontSize: "0.875rem", lineHeight: "1.5rem" },
-    card: { width: "100%", padding: "1.5rem", border: "1px solid var(--border)", borderRadius: "1.5rem", background: "var(--panel)", boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a" },
-    heading: { marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.75rem" },
-    headingMark: { width: "2.5rem", height: "2.5rem", display: "grid", placeItems: "center", borderRadius: "1rem", color: "var(--accent-hover)", background: "var(--accent-soft)" },
-    headingTitle: { fontWeight: 900 },
-    headingText: { color: "var(--muted)", fontSize: "0.75rem" },
-    field: { display: "block", marginBottom: "1rem" },
-    fieldLabel: { display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 700 },
-    input: { width: "100%", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
-    hint: { marginTop: "1rem", color: "var(--muted)", textAlign: "center", fontSize: "0.75rem", lineHeight: "1.25rem" },
+    page: {
+        minHeight: "100dvh",
+        padding: "2.5rem 1.25rem",
+        display: "grid",
+        placeItems: "center",
+        background: "radial-gradient(circle at 50% 0, var(--accent-soft), transparent 38%), var(--page)",
+    },
+    wrap: {
+        width: "100%",
+        maxWidth: "28rem",
+    },
+    intro: {
+        marginBottom: "1.75rem",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+    },
+    mark: {
+        width: "2.75rem",
+        height: "2.75rem",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "1rem",
+        color: "var(--accent-ink)",
+        background: "linear-gradient(135deg, #f8d56a, var(--accent))",
+        boxShadow: "0 8px 22px #e9a91d3d",
+    },
+    title: {
+        marginTop: "1rem",
+        fontSize: "1.875rem",
+        lineHeight: 1.2,
+        fontWeight: 900,
+        letterSpacing: "-0.025em",
+    },
+    tagline: {
+        maxWidth: "20rem",
+        marginTop: "0.5rem",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+        lineHeight: "1.5rem",
+    },
+    card: {
+        width: "100%",
+        padding: "1.5rem",
+        border: "1px solid var(--border)",
+        borderRadius: "1.5rem",
+        background: "var(--panel)",
+        boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a",
+    },
+    heading: {
+        marginBottom: "1.5rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+    },
+    headingMark: {
+        width: "2.5rem",
+        height: "2.5rem",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "1rem",
+        color: "var(--accent-hover)",
+        background: "var(--accent-soft)",
+    },
+    headingTitle: {
+        fontWeight: 900,
+    },
+    headingText: {
+        color: "var(--muted)",
+        fontSize: "0.75rem",
+    },
+    field: {
+        display: "block",
+        marginBottom: "1rem",
+    },
+    fieldLabel: {
+        display: "block",
+        marginBottom: "0.375rem",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+    },
+    input: {
+        width: "100%",
+        padding: "0.625rem 1rem",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderRadius: "1rem",
+        outline: "none",
+        color: "var(--text)",
+        transition: "border-color 150ms, background-color 150ms",
+    },
+    hint: {
+        marginTop: "1rem",
+        color: "var(--muted)",
+        textAlign: "center",
+        fontSize: "0.75rem",
+        lineHeight: "1.25rem",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    mark: css({ "& svg": { width: "1.5rem", height: "1.5rem" } }),
-    headingMark: css({ "& svg": { width: "1.25rem", height: "1.25rem" } }),
-    input: css({ borderColor: "var(--border)", background: "var(--panel-muted)", "&:focus": { borderColor: "var(--accent-hover)", background: "var(--panel)" } }),
+    mark: css({
+        "& svg": {
+            width: "1.5rem",
+            height: "1.5rem",
+        },
+    }),
+    headingMark: css({
+        "& svg": {
+            width: "1.25rem",
+            height: "1.25rem",
+        },
+    }),
+    input: css({
+        borderColor: "var(--border)",
+        background: "var(--panel-muted)",
+        "&:focus": {
+            borderColor: "var(--accent-hover)",
+            background: "var(--panel)",
+        },
+    }),
 };
 
 export function AuthScreen({ mode, onAuthenticated }: { mode: "login" | "setup"; onAuthenticated: () => Promise<void> }) {

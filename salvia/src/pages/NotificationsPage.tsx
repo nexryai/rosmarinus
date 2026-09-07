@@ -10,23 +10,95 @@ import type { Notification } from "../lib/schema";
 const labels: Record<string, string> = { follow: "フォローされました", reaction: "リアクションが届きました", mention: "メンションされました", reply: "返信が届きました", poll_vote: "投票されました" };
 
 const styles = {
-    headerIcon: { width: "1.5rem", height: "1.5rem", marginLeft: "auto", color: "var(--accent-hover)" },
-    tabs: { paddingBlock: "0.75rem", display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--border)" },
-    tab: { padding: "0.5rem 1rem", borderRadius: "9999px", color: "var(--muted)", fontSize: "0.875rem", fontWeight: 700 },
-    tabActive: { color: "var(--accent-ink)", background: "var(--accent-soft)" },
-    notification: { paddingBlock: "1.25rem", display: "flex", alignItems: "flex-start", gap: "0.75rem" },
-    body: { minWidth: 0, flex: 1 },
-    kind: { color: "var(--muted)", fontSize: "0.875rem" },
-    quote: { marginTop: "0.5rem", padding: "0.75rem", display: "-webkit-box", overflow: "hidden", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, borderRadius: "0.75rem", background: "var(--panel-muted)", fontSize: "0.875rem" },
-    context: { marginTop: "0.5rem", marginRight: "0.75rem", color: "var(--accent-hover)", background: "transparent", fontSize: "0.75rem", fontWeight: 700, textDecoration: "underline" },
-    time: { marginTop: "0.5rem", display: "block", color: "var(--muted)", fontSize: "0.75rem" },
-    readButton: { minHeight: "2rem", paddingInline: "0.75rem", fontSize: "0.75rem" },
+    headerIcon: {
+        width: "1.5rem",
+        height: "1.5rem",
+        marginLeft: "auto",
+        color: "var(--accent-hover)",
+    },
+    tabs: {
+        paddingBlock: "0.75rem",
+        display: "flex",
+        gap: "0.5rem",
+        borderBottom: "1px solid var(--border)",
+    },
+    tab: {
+        padding: "0.5rem 1rem",
+        borderRadius: "9999px",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+    },
+    tabActive: {
+        color: "var(--accent-ink)",
+        background: "var(--accent-soft)",
+    },
+    notification: {
+        paddingBlock: "1.25rem",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "0.75rem",
+    },
+    body: {
+        minWidth: 0,
+        flex: 1,
+    },
+    kind: {
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    quote: {
+        marginTop: "0.5rem",
+        padding: "0.75rem",
+        display: "-webkit-box",
+        overflow: "hidden",
+        WebkitBoxOrient: "vertical",
+        WebkitLineClamp: 2,
+        borderRadius: "0.75rem",
+        background: "var(--panel-muted)",
+        fontSize: "0.875rem",
+    },
+    context: {
+        marginTop: "0.5rem",
+        marginRight: "0.75rem",
+        color: "var(--accent-hover)",
+        background: "transparent",
+        fontSize: "0.75rem",
+        fontWeight: 700,
+        textDecoration: "underline",
+    },
+    time: {
+        marginTop: "0.5rem",
+        display: "block",
+        color: "var(--muted)",
+        fontSize: "0.75rem",
+    },
+    readButton: {
+        minHeight: "2rem",
+        paddingInline: "0.75rem",
+        fontSize: "0.75rem",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    tabs: css({ paddingInline: "1.25rem", "@media (width >= 40rem)": { paddingInline: "1.75rem" } }),
-    notification: css({ paddingInline: "1.25rem", "@media (width >= 40rem)": { paddingInline: "1.75rem" } }),
-    unread: css({ background: "var(--accent-soft)", "@supports (color: color-mix(in lab, red, red))": { background: "color-mix(in srgb, var(--accent-soft) 42%, var(--panel))" } }),
+    tabs: css({
+        paddingInline: "1.25rem",
+        "@media (width >= 40rem)": {
+            paddingInline: "1.75rem",
+        },
+    }),
+    notification: css({
+        paddingInline: "1.25rem",
+        "@media (width >= 40rem)": {
+            paddingInline: "1.75rem",
+        },
+    }),
+    unread: css({
+        background: "var(--accent-soft)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            background: "color-mix(in srgb, var(--accent-soft) 42%, var(--panel))",
+        },
+    }),
 };
 
 export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, refreshKey }: { actorID: string; csrf: string; onActorChange: (actorID: string) => void; onOpenNote: (noteID: string) => void; refreshKey: number }) {

@@ -22,22 +22,98 @@ const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false
 const actorCanAct = (actor: Actor) => !actor.is_suspended && !actor.moved_to_uri;
 
 const styles = {
-    fullPage: { minHeight: "100dvh", padding: "2.5rem 1.25rem", display: "grid", placeItems: "center", background: "radial-gradient(circle at 50% 0, var(--accent-soft), transparent 38%), var(--page)" },
-    fatalPage: { maxWidth: "28rem", marginInline: "auto", display: "flex", flexDirection: "column", justifyContent: "center", gap: "1rem", textAlign: "center" },
-    splash: { alignContent: "center", gap: "1rem" },
-    mark: { width: "2.75rem", height: "2.75rem", display: "grid", placeItems: "center", borderRadius: "1rem", color: "var(--accent-ink)", background: "linear-gradient(135deg, #f8d56a, var(--accent))", boxShadow: "0 8px 22px #e9a91d3d" },
-    fatalTitle: { fontSize: "1.5rem", lineHeight: 1.333, fontWeight: 900 },
-    noActor: { width: "100%", maxWidth: "28rem", padding: "1.5rem", border: "1px solid var(--border)", borderRadius: "1.5rem", textAlign: "center", background: "var(--panel)", boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a" },
-    noActorMark: { marginInline: "auto", marginBottom: "1rem" },
-    noActorText: { margin: "0.5rem 0 1.5rem", color: "var(--muted)", fontSize: "0.875rem" },
-    field: { display: "block", marginBottom: "1rem", textAlign: "left" },
-    fieldLabel: { display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 700 },
-    input: { width: "100%", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
+    fullPage: {
+        minHeight: "100dvh",
+        padding: "2.5rem 1.25rem",
+        display: "grid",
+        placeItems: "center",
+        background: "radial-gradient(circle at 50% 0, var(--accent-soft), transparent 38%), var(--page)",
+    },
+    fatalPage: {
+        maxWidth: "28rem",
+        marginInline: "auto",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        gap: "1rem",
+        textAlign: "center",
+    },
+    splash: {
+        alignContent: "center",
+        gap: "1rem",
+    },
+    mark: {
+        width: "2.75rem",
+        height: "2.75rem",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "1rem",
+        color: "var(--accent-ink)",
+        background: "linear-gradient(135deg, #f8d56a, var(--accent))",
+        boxShadow: "0 8px 22px #e9a91d3d",
+    },
+    fatalTitle: {
+        fontSize: "1.5rem",
+        lineHeight: 1.333,
+        fontWeight: 900,
+    },
+    noActor: {
+        width: "100%",
+        maxWidth: "28rem",
+        padding: "1.5rem",
+        border: "1px solid var(--border)",
+        borderRadius: "1.5rem",
+        textAlign: "center",
+        background: "var(--panel)",
+        boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a",
+    },
+    noActorMark: {
+        marginInline: "auto",
+        marginBottom: "1rem",
+    },
+    noActorText: {
+        margin: "0.5rem 0 1.5rem",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    field: {
+        display: "block",
+        marginBottom: "1rem",
+        textAlign: "left",
+    },
+    fieldLabel: {
+        display: "block",
+        marginBottom: "0.375rem",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+    },
+    input: {
+        width: "100%",
+        padding: "0.625rem 1rem",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderRadius: "1rem",
+        outline: "none",
+        color: "var(--text)",
+        transition: "border-color 150ms, background-color 150ms",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    mark: css({ "& svg": { width: "1.5rem", height: "1.5rem" } }),
-    input: css({ borderColor: "var(--border)", background: "var(--panel-muted)", "&:focus": { borderColor: "var(--accent-hover)", background: "var(--panel)" } }),
+    mark: css({
+        "& svg": {
+            width: "1.5rem",
+            height: "1.5rem",
+        },
+    }),
+    input: css({
+        borderColor: "var(--border)",
+        background: "var(--panel-muted)",
+        "&:focus": {
+            borderColor: "var(--accent-hover)",
+            background: "var(--panel)",
+        },
+    }),
 };
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {

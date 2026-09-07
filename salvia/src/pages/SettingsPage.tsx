@@ -9,35 +9,158 @@ import { css } from "../lib/css";
 import type { AccountSettings, Actor, ActorSettings } from "../lib/schema";
 
 const styles = {
-    headerIcon: { width: "1.5rem", height: "1.5rem", marginLeft: "auto", color: "var(--accent-hover)" },
-    stack: { background: "var(--page)" },
-    success: { margin: "1rem", padding: "0.75rem 1rem", border: "1px solid #b7dfc5", borderRadius: "1rem", color: "#287a48", background: "#effaf2", fontSize: "0.875rem" },
-    card: { border: "1px solid var(--border)", borderRadius: "1.5rem", background: "var(--panel)" },
-    cardTitle: { marginBottom: "0.25rem", fontSize: "1.125rem", lineHeight: 1.556, fontWeight: 900 },
-    cardText: { marginBottom: "1.25rem", color: "var(--muted)", fontSize: "0.875rem" },
-    field: { display: "block" },
-    fieldLabel: { display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 700 },
-    input: { width: "100%", padding: "0.625rem 1rem", borderWidth: 1, borderStyle: "solid", borderRadius: "1rem", outline: "none", color: "var(--text)", transition: "border-color 150ms, background-color 150ms" },
-    dropdownTrigger: { minHeight: "2.875rem", paddingInline: "1rem" },
-    toggle: { marginTop: "1rem", display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.875rem", fontWeight: 600 },
-    checkbox: { width: "1rem", height: "1rem", accentColor: "var(--accent-hover)" },
-    settingsTitle: { marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" },
-    settingsIcon: { width: "1.75rem", height: "1.75rem", color: "var(--accent-hover)" },
-    settingsSubtitle: { color: "var(--muted)", fontSize: "0.75rem" },
-    grid: { display: "grid", gap: "1rem" },
-    preferences: { marginTop: "1.5rem", paddingTop: "1.25rem", display: "grid", gap: "0.75rem", borderTop: "1px solid var(--border)" },
-    inlineForm: { display: "grid", gap: "0.75rem" },
+    headerIcon: {
+        width: "1.5rem",
+        height: "1.5rem",
+        marginLeft: "auto",
+        color: "var(--accent-hover)",
+    },
+    stack: {
+        background: "var(--page)",
+    },
+    success: {
+        margin: "1rem",
+        padding: "0.75rem 1rem",
+        border: "1px solid #b7dfc5",
+        borderRadius: "1rem",
+        color: "#287a48",
+        background: "#effaf2",
+        fontSize: "0.875rem",
+    },
+    card: {
+        border: "1px solid var(--border)",
+        borderRadius: "1.5rem",
+        background: "var(--panel)",
+    },
+    cardTitle: {
+        marginBottom: "0.25rem",
+        fontSize: "1.125rem",
+        lineHeight: 1.556,
+        fontWeight: 900,
+    },
+    cardText: {
+        marginBottom: "1.25rem",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    field: {
+        display: "block",
+    },
+    fieldLabel: {
+        display: "block",
+        marginBottom: "0.375rem",
+        fontSize: "0.875rem",
+        fontWeight: 700,
+    },
+    input: {
+        width: "100%",
+        padding: "0.625rem 1rem",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderRadius: "1rem",
+        outline: "none",
+        color: "var(--text)",
+        transition: "border-color 150ms, background-color 150ms",
+    },
+    dropdownTrigger: {
+        minHeight: "2.875rem",
+        paddingInline: "1rem",
+    },
+    toggle: {
+        marginTop: "1rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        fontSize: "0.875rem",
+        fontWeight: 600,
+    },
+    checkbox: {
+        width: "1rem",
+        height: "1rem",
+        accentColor: "var(--accent-hover)",
+    },
+    settingsTitle: {
+        marginBottom: "1.25rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+    },
+    settingsIcon: {
+        width: "1.75rem",
+        height: "1.75rem",
+        color: "var(--accent-hover)",
+    },
+    settingsSubtitle: {
+        color: "var(--muted)",
+        fontSize: "0.75rem",
+    },
+    grid: {
+        display: "grid",
+        gap: "1rem",
+    },
+    preferences: {
+        marginTop: "1.5rem",
+        paddingTop: "1.25rem",
+        display: "grid",
+        gap: "0.75rem",
+        borderTop: "1px solid var(--border)",
+    },
+    inlineForm: {
+        display: "grid",
+        gap: "0.75rem",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    stack: css({ padding: "1rem", "& > :not(:last-child)": { marginBottom: "1rem" }, "@media (width >= 40rem)": { padding: "1.5rem" } }),
-    card: css({ padding: "1.25rem", "@media (width >= 40rem)": { padding: "1.5rem" } }),
-    input: css({ borderColor: "var(--border)", background: "var(--panel-muted)", "&:focus": { borderColor: "var(--accent-hover)", background: "var(--panel)" } }),
-    grid: css({ "@media (width >= 40rem)": { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }),
-    fullField: css({ "@media (width >= 40rem)": { gridColumn: "span 2" } }),
-    preferences: css({ "@media (width >= 40rem)": { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }),
-    inlineForm: css({ "@media (width >= 40rem)": { gridTemplateColumns: "1fr 1fr auto" } }),
-    dangerCard: css({ borderColor: "var(--danger)", "@supports (color: color-mix(in lab, red, red))": { borderColor: "color-mix(in srgb, var(--danger) 25%, var(--border))" } }),
+    stack: css({
+        padding: "1rem",
+        "& > :not(:last-child)": {
+            marginBottom: "1rem",
+        },
+        "@media (width >= 40rem)": {
+            padding: "1.5rem",
+        },
+    }),
+    card: css({
+        padding: "1.25rem",
+        "@media (width >= 40rem)": {
+            padding: "1.5rem",
+        },
+    }),
+    input: css({
+        borderColor: "var(--border)",
+        background: "var(--panel-muted)",
+        "&:focus": {
+            borderColor: "var(--accent-hover)",
+            background: "var(--panel)",
+        },
+    }),
+    grid: css({
+        "@media (width >= 40rem)": {
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        },
+    }),
+    fullField: css({
+        "@media (width >= 40rem)": {
+            gridColumn: "span 2",
+        },
+    }),
+    preferences: css({
+        "@media (width >= 40rem)": {
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        },
+    }),
+    inlineForm: css({
+        "@media (width >= 40rem)": {
+            gridTemplateColumns: "1fr 1fr auto",
+        },
+    }),
+    dangerCard: css({
+        borderColor: "var(--danger)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            borderColor: "color-mix(in srgb, var(--danger) 25%, var(--border))",
+        },
+    }),
 };
 
 const themeOptions = [

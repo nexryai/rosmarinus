@@ -9,41 +9,195 @@ import { css } from "../lib/css";
 import type { Connection, Emoji, Note, Profile } from "../lib/schema";
 
 const styles = {
-    hero: { overflow: "hidden", borderBottom: "1px solid var(--border)" },
-    banner: { width: "100%", overflow: "hidden", background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))" },
-    bannerImage: { width: "100%", height: "100%", objectFit: "cover" },
-    body: { position: "relative", paddingTop: "3.5rem", paddingBottom: "1.75rem" },
-    avatar: { position: "absolute" },
-    actions: { position: "absolute", top: "1rem", display: "flex", gap: "0.5rem" },
-    title: { marginTop: "0.25rem", fontSize: "1.5rem", lineHeight: 1.333, fontWeight: 900 },
-    handle: { color: "var(--muted)", fontSize: "0.875rem" },
-    alert: { marginTop: "0.75rem", padding: "0.5rem 0.75rem", borderWidth: 1, borderStyle: "solid", borderRadius: "0.75rem", color: "var(--danger)", fontSize: "0.875rem" },
-    summary: { marginTop: "1.25rem", lineHeight: "1.75rem", whiteSpace: "pre-wrap" },
-    meta: { marginTop: "1rem", display: "flex", flexWrap: "wrap", gap: "1rem", color: "var(--muted)", fontSize: "0.875rem" },
-    fields: { marginTop: "1rem", display: "grid", gap: 1, overflow: "hidden", border: "1px solid var(--border)", borderRadius: "1rem", background: "var(--border)" },
-    field: { padding: "0.5rem 0.75rem", display: "grid", gridTemplateColumns: "minmax(6rem, .35fr) 1fr", gap: "0.75rem", background: "var(--panel)", fontSize: "0.875rem" },
-    fieldName: { color: "var(--muted)", fontWeight: 700 },
-    fieldValue: { overflowWrap: "break-word" },
-    tags: { marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", color: "var(--accent-hover)", fontSize: "0.875rem" },
-    counts: { marginTop: "1.25rem", display: "flex", gap: "1.5rem", color: "var(--muted)", fontSize: "0.875rem" },
-    countButton: { color: "inherit" },
-    count: { marginRight: "0.25rem", color: "var(--text)" },
-    connectionButton: { width: "100%", padding: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem", borderRadius: "1rem", textAlign: "left" },
-    connectionText: { display: "block" },
-    connectionHandle: { display: "block", color: "var(--muted)" },
-    notesHeader: { padding: "1rem 1.5rem", borderBottom: "1px solid var(--border)", fontSize: "1rem", fontWeight: 900 },
-    loadMore: { padding: "1.5rem", display: "flex", justifyContent: "center" },
+    hero: {
+        overflow: "hidden",
+        borderBottom: "1px solid var(--border)",
+    },
+    banner: {
+        width: "100%",
+        overflow: "hidden",
+        background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))",
+    },
+    bannerImage: {
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+    },
+    body: {
+        position: "relative",
+        paddingTop: "3.5rem",
+        paddingBottom: "1.75rem",
+    },
+    avatar: {
+        position: "absolute",
+    },
+    actions: {
+        position: "absolute",
+        top: "1rem",
+        display: "flex",
+        gap: "0.5rem",
+    },
+    title: {
+        marginTop: "0.25rem",
+        fontSize: "1.5rem",
+        lineHeight: 1.333,
+        fontWeight: 900,
+    },
+    handle: {
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    alert: {
+        marginTop: "0.75rem",
+        padding: "0.5rem 0.75rem",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderRadius: "0.75rem",
+        color: "var(--danger)",
+        fontSize: "0.875rem",
+    },
+    summary: {
+        marginTop: "1.25rem",
+        lineHeight: "1.75rem",
+        whiteSpace: "pre-wrap",
+    },
+    meta: {
+        marginTop: "1rem",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "1rem",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    fields: {
+        marginTop: "1rem",
+        display: "grid",
+        gap: 1,
+        overflow: "hidden",
+        border: "1px solid var(--border)",
+        borderRadius: "1rem",
+        background: "var(--border)",
+    },
+    field: {
+        padding: "0.5rem 0.75rem",
+        display: "grid",
+        gridTemplateColumns: "minmax(6rem, .35fr) 1fr",
+        gap: "0.75rem",
+        background: "var(--panel)",
+        fontSize: "0.875rem",
+    },
+    fieldName: {
+        color: "var(--muted)",
+        fontWeight: 700,
+    },
+    fieldValue: {
+        overflowWrap: "break-word",
+    },
+    tags: {
+        marginTop: "0.75rem",
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "0.5rem",
+        color: "var(--accent-hover)",
+        fontSize: "0.875rem",
+    },
+    counts: {
+        marginTop: "1.25rem",
+        display: "flex",
+        gap: "1.5rem",
+        color: "var(--muted)",
+        fontSize: "0.875rem",
+    },
+    countButton: {
+        color: "inherit",
+    },
+    count: {
+        marginRight: "0.25rem",
+        color: "var(--text)",
+    },
+    connectionButton: {
+        width: "100%",
+        padding: "0.75rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        borderRadius: "1rem",
+        textAlign: "left",
+    },
+    connectionText: {
+        display: "block",
+    },
+    connectionHandle: {
+        display: "block",
+        color: "var(--muted)",
+    },
+    notesHeader: {
+        padding: "1rem 1.5rem",
+        borderBottom: "1px solid var(--border)",
+        fontSize: "1rem",
+        fontWeight: 900,
+    },
+    loadMore: {
+        padding: "1.5rem",
+        display: "flex",
+        justifyContent: "center",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    banner: css({ height: "10rem", "@media (width >= 40rem)": { height: "13rem" } }),
-    body: css({ paddingInline: "1.5rem", "@media (width >= 40rem)": { paddingInline: "2rem" } }),
-    avatar: css({ left: "1.5rem", "@media (width >= 40rem)": { left: "2rem" } }),
-    actions: css({ right: "1.5rem", "@media (width >= 40rem)": { right: "2rem" } }),
-    meta: css({ "& span, & a": { display: "inline-flex", alignItems: "center", gap: "0.25rem" }, "& svg": { width: "1rem", height: "1rem" } }),
-    countButton: css({ "&:hover": { textDecoration: "underline" } }),
-    connectionButton: css({ "&:hover": { background: "var(--panel-muted)" } }),
-    alert: css({ borderColor: "var(--danger)", background: "var(--danger)", "@supports (color: color-mix(in lab, red, red))": { borderColor: "color-mix(in srgb, var(--danger) 20%, var(--border))", background: "color-mix(in srgb, var(--danger) 6%, var(--panel))" } }),
+    banner: css({
+        height: "10rem",
+        "@media (width >= 40rem)": {
+            height: "13rem",
+        },
+    }),
+    body: css({
+        paddingInline: "1.5rem",
+        "@media (width >= 40rem)": {
+            paddingInline: "2rem",
+        },
+    }),
+    avatar: css({
+        left: "1.5rem",
+        "@media (width >= 40rem)": {
+            left: "2rem",
+        },
+    }),
+    actions: css({
+        right: "1.5rem",
+        "@media (width >= 40rem)": {
+            right: "2rem",
+        },
+    }),
+    meta: css({
+        "& span, & a": {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.25rem",
+        },
+        "& svg": {
+            width: "1rem",
+            height: "1rem",
+        },
+    }),
+    countButton: css({
+        "&:hover": {
+            textDecoration: "underline",
+        },
+    }),
+    connectionButton: css({
+        "&:hover": {
+            background: "var(--panel-muted)",
+        },
+    }),
+    alert: css({
+        borderColor: "var(--danger)",
+        background: "var(--danger)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            borderColor: "color-mix(in srgb, var(--danger) 20%, var(--border))",
+            background: "color-mix(in srgb, var(--danger) 6%, var(--panel))",
+        },
+    }),
 };
 
 const actorHandle = (profile: Profile) => {
