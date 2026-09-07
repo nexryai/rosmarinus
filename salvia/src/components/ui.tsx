@@ -1,4 +1,4 @@
-import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type HTMLAttributes, type MouseEvent, type PropsWithChildren, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type HTMLAttributes, type MouseEvent, type PropsWithChildren, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 
@@ -7,6 +7,19 @@ import type { Actor } from "../lib/schema";
 
 const spin = keyframes({ to: { transform: "rotate(360deg)" } });
 const rippleAnimation = keyframes({ to: { boxShadow: "0 0 0 var(--ripple-radius) transparent" } });
+const modalBackdropOpen = keyframes({ from: { opacity: 0 }, to: { opacity: 1 } });
+const modalBackdropClose = keyframes({ from: { opacity: 1 }, to: { opacity: 0 } });
+const modalOpen = keyframes({
+    from: { opacity: 0, transform: "translate3d(0, 0.625rem, 0) scale(0.98)" },
+    to: { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+});
+const modalClose = keyframes({
+    from: { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+    to: { opacity: 0, transform: "translate3d(0, 0.375rem, 0) scale(0.985)" },
+});
+
+const modalCloseDuration = 110;
+const motionIsReduced = () => document.documentElement.dataset.reduceMotion === "true" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
 const styles = {
     fatalPage: {
@@ -65,8 +78,8 @@ const styles = {
         color: "var(--danger)",
         fontSize: "0.875rem",
     },
-    modalBackdrop: { position: "fixed", zIndex: 50, inset: 0, padding: "1rem", display: "grid", placeItems: "center", backgroundColor: "rgb(0 0 0 / 40%)", backdropFilter: "blur(8px)" },
-    modal: { position: "relative", width: "100%", maxWidth: "36rem", border: "1px solid var(--border)", borderRadius: "1.5rem", color: "var(--text)", background: "var(--panel)", boxShadow: "0 25px 50px -12px #00000040" },
+    modalBackdrop: { position: "fixed", zIndex: 50, inset: 0, padding: "1rem", display: "grid", placeItems: "center", backgroundColor: "rgb(0 0 0 / 40%)", backdropFilter: "blur(8px)", willChange: "opacity" },
+    modal: { position: "relative", width: "100%", maxWidth: "36rem", border: "1px solid var(--border)", borderRadius: "1.5rem", color: "var(--text)", background: "var(--panel)", boxShadow: "0 25px 50px -12px #00000040", transformOrigin: "center", willChange: "transform, opacity" },
     modalClose: { position: "absolute", top: "1rem", right: "1rem", width: "2.25rem", height: "2.25rem", display: "grid", placeItems: "center", borderRadius: "9999px" },
     pageHeader: { position: "sticky", zIndex: 20, top: 0, height: "5rem", display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)", backdropFilter: "blur(24px)" },
     eyebrow: { marginBottom: "0.125rem", color: "var(--muted)", fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" },
@@ -96,7 +109,8 @@ const rules = {
         "& > button": { marginLeft: "auto", background: "transparent" },
         "& > button > svg": { width: "1rem", height: "1rem" },
     }),
-    modal: css({ padding: "1.25rem", "@media (width >= 40rem)": { padding: "1.5rem" } }),
+    modalBackdrop: css({ "@media (prefers-reduced-motion: reduce)": { animationDuration: "0.01ms" } }),
+    modal: css({ padding: "1.25rem", "@media (width >= 40rem)": { padding: "1.5rem" }, "@media (prefers-reduced-motion: reduce)": { animationDuration: "0.01ms" } }),
     modalClose: css({ color: "var(--muted)", background: "transparent", "&:hover": { background: "var(--panel-muted)" }, "& > svg": { width: "1.25rem", height: "1.25rem" } }),
     pageHeader: css({ paddingInline: "1.25rem", background: "var(--panel)", "@supports (color: color-mix(in lab, red, red))": { background: "color-mix(in srgb, var(--panel) 88%, transparent)" }, "@media (width >= 40rem)": { paddingInline: "1.75rem" } }),
     roundButton: css({ color: "var(--muted)", "&:hover": { color: "var(--text)", background: "var(--panel-muted)" }, "& > svg": { width: "1.25rem", height: "1.25rem" } }),
@@ -231,16 +245,61 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
 }
 
 export function Modal({ children, label, onClose }: PropsWithChildren<{ label: string; onClose: () => void }>) {
+    const [phase, setPhase] = useState<"open" | "closing">("open");
+    const closeTimer = useRef<number | undefined>(undefined);
+
+    const requestClose = useCallback(() => {
+        if (phase === "closing") return;
+        if (motionIsReduced()) {
+            onClose();
+            return;
+        }
+        setPhase("closing");
+        closeTimer.current = window.setTimeout(onClose, modalCloseDuration);
+    }, [onClose, phase]);
+
+    useEffect(() => {
+        const onKeyDown = (event: globalThis.KeyboardEvent) => {
+            if (event.key !== "Escape") return;
+            event.preventDefault();
+            requestClose();
+        };
+        document.addEventListener("keydown", onKeyDown);
+        return () => document.removeEventListener("keydown", onKeyDown);
+    }, [requestClose]);
+
+    useEffect(
+        () => () => {
+            if (closeTimer.current !== undefined) window.clearTimeout(closeTimer.current);
+        },
+        [],
+    );
+
     return (
         <div
+            aria-hidden={phase === "closing" ? true : undefined}
+            className={rules.modalBackdrop}
             onMouseDown={(event) => {
-                if (event.currentTarget === event.target) onClose();
+                if (event.currentTarget === event.target) requestClose();
             }}
             role="presentation"
-            style={styles.modalBackdrop}
+            style={{
+                ...styles.modalBackdrop,
+                animation: `${phase === "open" ? modalBackdropOpen : modalBackdropClose} ${phase === "open" ? 140 : modalCloseDuration}ms cubic-bezier(.2,.8,.2,1) both`,
+                pointerEvents: phase === "closing" ? "none" : "auto",
+            }}
         >
-            <section aria-label={label} aria-modal="true" className={rules.modal} role="dialog" style={styles.modal}>
-                <button aria-label="閉じる" className={rules.modalClose} onClick={onClose} style={styles.modalClose} type="button">
+            <section
+                aria-label={label}
+                aria-modal="true"
+                className={rules.modal}
+                role="dialog"
+                style={{
+                    ...styles.modal,
+                    animation: `${phase === "open" ? modalOpen : modalClose} ${phase === "open" ? 160 : modalCloseDuration}ms cubic-bezier(.2,.8,.2,1) both`,
+                }}
+            >
+                <button aria-label="閉じる" className={rules.modalClose} onClick={requestClose} style={styles.modalClose} type="button">
                     <IconX />
                 </button>
                 {children}

@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Button } from "./ui";
+import { Button, Modal } from "./ui";
 import { Dropdown } from "./ui/Dropdown";
 
 describe("Button ripple", () => {
@@ -35,6 +35,51 @@ describe("Button ripple", () => {
         rerender(<Button>戻る</Button>);
         fireEvent.mouseDown(screen.getByRole("button", { name: "戻る" }));
         expect(screen.queryByTestId("button-ripple")).not.toBeInTheDocument();
+    });
+});
+
+describe("Modal", () => {
+    afterEach(() => {
+        cleanup();
+        vi.useRealTimers();
+        delete document.documentElement.dataset.reduceMotion;
+    });
+
+    it("animates quickly when it opens and closes", () => {
+        vi.useFakeTimers();
+        const onClose = vi.fn();
+        render(
+            <Modal label="投稿" onClose={onClose}>
+                本文
+            </Modal>,
+        );
+
+        const dialog = screen.getByRole("dialog", { name: "投稿" });
+        expect(dialog.style.animation).toContain("160ms");
+        expect(dialog.parentElement?.style.animation).toContain("140ms");
+
+        fireEvent.click(screen.getByRole("button", { name: "閉じる" }));
+
+        expect(onClose).not.toHaveBeenCalled();
+        const closingDialog = screen.getByRole("dialog", { hidden: true });
+        expect(closingDialog.style.animation).toContain("110ms");
+        expect(closingDialog.parentElement).toHaveStyle({ pointerEvents: "none" });
+        act(() => vi.advanceTimersByTime(110));
+        expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it("closes immediately when reduced motion is enabled", () => {
+        document.documentElement.dataset.reduceMotion = "true";
+        const onClose = vi.fn();
+        render(
+            <Modal label="設定" onClose={onClose}>
+                本文
+            </Modal>,
+        );
+
+        fireEvent.keyDown(document, { key: "Escape" });
+
+        expect(onClose).toHaveBeenCalledOnce();
     });
 });
 
