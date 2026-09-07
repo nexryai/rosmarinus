@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +9,10 @@ const author = { id: "bob", username: "bob", name: "Bob" } as Actor;
 const note = { id: "note-1", uri: "https://example.test/notes/1", text: "hello", visibility: "public", created_at: new Date().toISOString(), author, attachments: [], emojis: [], reactions: [] } as unknown as Note;
 
 describe("NoteCard social actions", () => {
-    afterEach(cleanup);
+    afterEach(() => {
+        cleanup();
+        delete document.documentElement.dataset.reduceMotion;
+    });
 
     it("exposes reply, quote, renote, and reaction actions", async () => {
         const user = userEvent.setup();
@@ -38,6 +41,29 @@ describe("NoteCard social actions", () => {
         expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "/media/salvia");
         expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.includes("<script>") === true)).toBeInTheDocument();
         expect(document.querySelector("script")).toBeNull();
+    });
+
+    it("opens image attachments in the custom viewer", () => {
+        document.documentElement.dataset.reduceMotion = "true";
+        const imageNote = {
+            ...note,
+            attachments: [
+                {
+                    media_type: "image/jpeg",
+                    name: "庭のサルビア",
+                    sensitive: false,
+                    url: "https://media.example.test/salvia.jpg",
+                },
+            ],
+        } as Note;
+        render(<NoteCard note={imageNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole("button", { name: "画像を表示: 庭のサルビア" }));
+        expect(screen.getByRole("dialog", { name: "画像ビューアー" })).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "元の画像を開く" })).toHaveAttribute("href", imageNote.attachments[0].url);
+
+        fireEvent.keyDown(document, { key: "Escape" });
+        expect(screen.queryByRole("dialog", { name: "画像ビューアー" })).not.toBeInTheDocument();
     });
 
     it("votes in a poll and confirms deletion of an owned note", async () => {

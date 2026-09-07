@@ -4,6 +4,7 @@ import { IconMessageCircle, IconQuote, IconRepeat, IconTrash } from "@tabler/ico
 
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
+import { ImageViewer } from "./ImageViewer";
 import { Avatar, Button } from "./ui";
 
 const styles = {
@@ -111,6 +112,12 @@ const styles = {
         maxHeight: "24rem",
         objectFit: "cover",
         background: "var(--panel-muted)",
+    },
+    attachmentButton: {
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+        cursor: "zoom-in",
     },
     attachmentFile: {
         padding: "1rem",
@@ -281,6 +288,14 @@ const rules = {
             background: "var(--accent-soft)",
         },
     }),
+    attachmentButton: css({
+        "&:hover img": {
+            transform: "scale(1.015)",
+        },
+        "& img": {
+            transition: "transform 160ms cubic-bezier(.2,.8,.2,1)",
+        },
+    }),
 };
 
 const relativeTime = (value: string) => {
@@ -330,7 +345,9 @@ export function NoteCard({
     const [revealed, setRevealed] = useState(!note.content_warning);
     const [busy, setBusy] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
     const author = note.author;
+    const imageAttachments = note.attachments.filter((attachment) => attachment.media_type?.startsWith("image/"));
     const maxPollVotes = Math.max(...(note.poll?.choices ?? []).map((item) => item.votes), 1);
     const act = async (operation: () => Promise<void>) => {
         setBusy(true);
@@ -378,9 +395,9 @@ export function NoteCard({
                     <div style={{ ...styles.attachments, ...(note.attachments.length > 1 ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } : {}) }}>
                         {note.attachments.map((attachment) =>
                             attachment.media_type?.startsWith("image/") ? (
-                                <a href={attachment.url} key={attachment.url} rel="noreferrer" target="_blank">
+                                <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.attachmentButton} key={attachment.url} onClick={() => setViewerIndex(imageAttachments.indexOf(attachment))} style={styles.attachmentButton} type="button">
                                     <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.url} style={styles.attachmentImage} />
-                                </a>
+                                </button>
                             ) : (
                                 <a href={attachment.url} key={attachment.url} rel="noreferrer" style={styles.attachmentFile} target="_blank">
                                     {attachment.name || "添付ファイル"}
@@ -467,6 +484,7 @@ export function NoteCard({
                     </div>
                 )}
             </div>
+            {viewerIndex !== undefined && <ImageViewer images={imageAttachments} initialIndex={viewerIndex} onClose={() => setViewerIndex(undefined)} />}
         </article>
     );
 }
