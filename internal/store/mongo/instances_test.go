@@ -15,9 +15,6 @@ func TestNormalizeInstanceHost(t *testing.T) {
 	if host != "xn--bcher-kva.example" {
 		t.Fatalf("host = %q", host)
 	}
-	if instanceID(host) != instanceID("xn--bcher-kva.example") {
-		t.Fatal("instance ID is not deterministic")
-	}
 	for _, invalid := range []string{"", "bad host", "example.test:443", "https://example.test"} {
 		if _, err := normalizeInstanceHost(invalid); err == nil {
 			t.Fatalf("invalid host %q was accepted", invalid)

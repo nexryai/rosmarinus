@@ -26,7 +26,8 @@ type ActivityReceiptRepository struct {
 }
 
 type activityReceiptDocument struct {
-	ActivityID     string     `bson:"_id"`
+	ID             string     `bson:"_id"`
+	ActivityID     string     `bson:"activityId"`
 	ActorURI       string     `bson:"actorUri"`
 	Status         string     `bson:"status"`
 	LeaseToken     string     `bson:"leaseToken,omitempty"`
@@ -63,9 +64,13 @@ func (r *ActivityReceiptRepository) Claim(ctx context.Context, activityID, actor
 	}
 	leaseExpiresAt := now.Add(lease)
 	expiresAt := now.Add(retention)
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, false, fmt.Errorf("generate activity receipt id: %w", err)
+	}
 	filter := bson.M{
-		"_id":      activityID,
-		"actorUri": actorURI,
+		"activityId": activityID,
+		"actorUri":   actorURI,
 		"$or": bson.A{
 			bson.M{"status": bson.M{"$exists": false}},
 			bson.M{"status": activityReceiptProcessing, "leaseExpiresAt": bson.M{"$lte": now}},
@@ -76,7 +81,7 @@ func (r *ActivityReceiptRepository) Claim(ctx context.Context, activityID, actor
 			"status": activityReceiptProcessing, "leaseToken": token,
 			"leaseExpiresAt": leaseExpiresAt, "expiresAt": expiresAt,
 		},
-		"$setOnInsert": bson.M{"actorUri": actorURI, "createdAt": now},
+		"$setOnInsert": bson.M{"_id": id, "activityId": activityID, "actorUri": actorURI, "createdAt": now},
 		"$unset":       bson.M{"completedAt": ""},
 	}
 	var doc activityReceiptDocument
@@ -109,7 +114,7 @@ func (r *ActivityReceiptRepository) Complete(ctx context.Context, claim activiti
 		now = time.Now().UTC()
 	}
 	result, err := r.collection.UpdateOne(ctx, bson.M{
-		"_id": claim.ActivityID, "actorUri": claim.ActorURI,
+		"activityId": claim.ActivityID, "actorUri": claim.ActorURI,
 		"status": activityReceiptProcessing, "leaseToken": claim.Token,
 	}, bson.M{
 		"$set":   bson.M{"status": activityReceiptCompleted, "completedAt": now.UTC()},
@@ -129,7 +134,7 @@ func (r *ActivityReceiptRepository) Release(ctx context.Context, claim activitie
 		return fmt.Errorf("activity receipt collection is not configured")
 	}
 	_, err := r.collection.DeleteOne(ctx, bson.M{
-		"_id": claim.ActivityID, "actorUri": claim.ActorURI,
+		"activityId": claim.ActivityID, "actorUri": claim.ActorURI,
 		"status": activityReceiptProcessing, "leaseToken": claim.Token,
 	})
 	return err
@@ -137,7 +142,7 @@ func (r *ActivityReceiptRepository) Release(ctx context.Context, claim activitie
 
 func (r *ActivityReceiptRepository) find(ctx context.Context, activityID string) (*activityReceiptDocument, error) {
 	var doc activityReceiptDocument
-	if err := r.collection.FindOne(ctx, bson.M{"_id": activityID}).Decode(&doc); err != nil {
+	if err := r.collection.FindOne(ctx, bson.M{"activityId": activityID}).Decode(&doc); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}

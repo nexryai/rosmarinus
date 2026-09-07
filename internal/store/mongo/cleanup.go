@@ -39,7 +39,7 @@ func (r *AccountCleanupRepository) CleanupNote(ctx context.Context, noteID strin
 		return result, fmt.Errorf("cleanup poll votes on note %s: %w", noteID, err)
 	}
 	result.PollVotes = deleted.DeletedCount
-	deleted, err = r.db.Collection("polls").DeleteMany(ctx, bson.M{"_id": noteID})
+	deleted, err = r.db.Collection("polls").DeleteMany(ctx, bson.M{"noteId": noteID})
 	if err != nil {
 		return result, fmt.Errorf("cleanup poll on note %s: %w", noteID, err)
 	}

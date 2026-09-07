@@ -280,8 +280,8 @@ function App() {
                     csrf={session.csrf_token}
                     intent={composerIntent}
                     onClose={() => setComposerIntent(undefined)}
-                    onSubmit={async (input, intentKey, noteID) => {
-                        await api.createPost(session.csrf_token, selectedActor.id, input, intentKey, noteID);
+                    onSubmit={async (input, intentKey) => {
+                        await api.createPost(session.csrf_token, selectedActor.id, input, intentKey);
                         setRefreshKey((value) => value + 1);
                     }}
                 />

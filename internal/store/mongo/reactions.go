@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -21,6 +19,7 @@ type ReactionRepository struct {
 
 type reactionDocument struct {
 	ID                   string     `bson:"_id,omitempty"`
+	LegacyIDs            []string   `bson:"legacyIds,omitempty"`
 	NoteID               string     `bson:"noteId"`
 	NoteURI              string     `bson:"noteUri"`
 	ActorID              string     `bson:"actorId"`
@@ -47,7 +46,7 @@ func (r *ReactionRepository) Find(ctx context.Context, noteID, actorID string) (
 
 func (r *ReactionRepository) FindByID(ctx context.Context, id string) (*reactions.Reaction, error) {
 	return r.findOne(ctx, bson.M{
-		"_id":       id,
+		"$or":       bson.A{bson.M{"_id": id}, bson.M{"legacyIds": id}},
 		"deletedAt": nil,
 	})
 }
@@ -56,14 +55,16 @@ func (r *ReactionRepository) Upsert(ctx context.Context, reaction reactions.Reac
 	if reaction.NoteID == "" || reaction.ActorID == "" {
 		return nil, fmt.Errorf("noteId and actorId are required")
 	}
-	if reaction.ID == "" {
-		reaction.ID = reactionID(reaction.NoteID, reaction.ActorID)
+	generatedID, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate reaction id: %w", err)
 	}
+	reaction.ID = generatedID
 	if reaction.CreatedAt.IsZero() {
 		reaction.CreatedAt = time.Now().UTC()
 	}
 	doc := fromReaction(reaction)
-	_, err := r.collection.UpdateOne(ctx, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{
 		"noteId":  doc.NoteID,
 		"actorId": doc.ActorID,
 	}, bson.M{
@@ -144,9 +145,4 @@ func toReaction(doc reactionDocument) *reactions.Reaction {
 		RemoteUndoActivityID: doc.RemoteUndoActivityID,
 		CreatedAt:            doc.CreatedAt,
 	}
-}
-
-func reactionID(noteID, actorID string) string {
-	sum := sha256.Sum256([]byte(noteID + "\x00" + actorID))
-	return "reaction_" + hex.EncodeToString(sum[:])[:24]
 }

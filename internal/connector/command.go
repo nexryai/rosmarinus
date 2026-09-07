@@ -81,7 +81,6 @@ type FollowDeleted struct {
 }
 
 type PostCreateData struct {
-	NoteID         string          `json:"note_id"`
 	RenoteID       string          `json:"renote_id,omitempty"`
 	Text           string          `json:"text"`
 	Visibility     string          `json:"visibility,omitempty"`
@@ -549,8 +548,8 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 		}
 		hasContent := strings.TrimSpace(command.Text) != "" || command.Poll != nil || len(command.MediaIDs) > 0
 		hasRenote := strings.TrimSpace(command.RenoteID) != ""
-		if strings.TrimSpace(command.NoteID) == "" || hasContent == hasRenote {
-			return nil, actorID, fmt.Errorf("note_id and exactly one of text or poll, or renote_id are required")
+		if hasContent == hasRenote {
+			return nil, actorID, fmt.Errorf("exactly one of text or poll, or renote_id is required")
 		}
 		var poll *PollCreateCommand
 		if command.Poll != nil {
@@ -558,7 +557,6 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 		}
 		result, err := executor.CreatePost(ctx, PostCreateCommand{
 			ActorID:        actorID,
-			NoteID:         command.NoteID,
 			RenoteID:       command.RenoteID,
 			Text:           command.Text,
 			Visibility:     command.Visibility,

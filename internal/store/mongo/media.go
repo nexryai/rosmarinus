@@ -22,6 +22,8 @@ type MediaRepository struct {
 
 type mediaDocument struct {
 	ID           string     `bson:"_id"`
+	LegacyIDs    []string   `bson:"legacyIds,omitempty"`
+	UploadKey    string     `bson:"uploadKey,omitempty"`
 	OwnerActorID string     `bson:"ownerActorId,omitempty"`
 	Name         string     `bson:"name,omitempty"`
 	Width        int        `bson:"width,omitempty"`
@@ -37,20 +39,25 @@ type mediaDocument struct {
 	FetchedAt    *time.Time `bson:"fetchedAt,omitempty"`
 }
 
-func (r *MediaRepository) CreateLocal(ctx context.Context, id, actorID, name, publicURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
-	if id == "" || actorID == "" || publicURL == "" || size <= 0 || digest == "" {
+func (r *MediaRepository) CreateLocal(ctx context.Context, uploadKey, actorID, name, publicBaseURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
+	if uploadKey == "" || actorID == "" || publicBaseURL == "" || size <= 0 || digest == "" {
 		return nil, fmt.Errorf("local media metadata is incomplete")
 	}
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate local media id: %w", err)
+	}
+	publicURL := strings.TrimRight(publicBaseURL, "/") + "/" + id
 	now := time.Now().UTC()
-	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$setOnInsert": bson.M{
-		"_id": id, "ownerActorId": actorID, "name": name, "width": width, "height": height, "originalUrl": publicURL,
+	result, err := r.collection.UpdateOne(ctx, bson.M{"uploadKey": uploadKey}, bson.M{"$setOnInsert": bson.M{
+		"_id": id, "uploadKey": uploadKey, "ownerActorId": actorID, "name": name, "width": width, "height": height, "originalUrl": publicURL,
 		"publicUrl": publicURL, "state": domainmedia.StatePending, "createdAt": now,
 	}}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
 	if result.MatchedCount > 0 {
-		existing, findErr := r.FindByID(ctx, id)
+		existing, findErr := r.findOne(ctx, bson.M{"uploadKey": uploadKey})
 		if findErr != nil {
 			return nil, findErr
 		}
@@ -60,6 +67,7 @@ func (r *MediaRepository) CreateLocal(ctx context.Context, id, actorID, name, pu
 		if existing.State == domainmedia.StateReady {
 			return existing, nil
 		}
+		id = existing.ID
 	}
 	if err := r.StoreBlob(ctx, id, source, contentType, size, digest); err != nil {
 		_ = r.MarkFailed(ctx, id, "store local upload")
@@ -76,8 +84,12 @@ func NewMediaRepository(db *mongo.Database) *MediaRepository {
 }
 
 func (r *MediaRepository) FindByID(ctx context.Context, id string) (*domainmedia.Media, error) {
+	return r.findOne(ctx, bson.M{"$or": bson.A{bson.M{"_id": id}, bson.M{"legacyIds": id}}})
+}
+
+func (r *MediaRepository) findOne(ctx context.Context, filter bson.M) (*domainmedia.Media, error) {
 	var doc mediaDocument
-	if err := r.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&doc); err != nil {
+	if err := r.collection.FindOne(ctx, filter).Decode(&doc); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
@@ -90,19 +102,29 @@ func (r *MediaRepository) UpsertPending(ctx context.Context, originalURL, public
 	if originalURL == "" || publicURL == "" {
 		return nil, fmt.Errorf("media original and public urls are required")
 	}
-	id := domainmedia.IDForURL(originalURL)
+	existing, err := r.findOne(ctx, bson.M{"originalUrl": originalURL})
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate remote media id: %w", err)
+	}
+	publicURL = strings.TrimRight(publicURL, "/") + "/" + id
 	now := time.Now().UTC()
-	_, err := r.collection.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{"originalUrl": originalURL}, bson.M{
 		"$setOnInsert": bson.M{
 			"_id": id, "originalUrl": originalURL, "publicUrl": publicURL,
 			"state": domainmedia.StatePending, "createdAt": now,
 		},
-		"$set": bson.M{"publicUrl": publicURL},
 	}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
-	return r.FindByID(ctx, id)
+	return r.findOne(ctx, bson.M{"originalUrl": originalURL})
 }
 
 func (r *MediaRepository) StoreBlob(ctx context.Context, id string, source io.Reader, contentType string, size int64, digest string) error {

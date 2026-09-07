@@ -60,6 +60,7 @@ type Attachment struct {
 }
 
 type Repository interface {
+	NewID(context.Context) (string, error)
 	FindByID(context.Context, string) (*Note, error)
 	FindAnyByID(context.Context, string) (*Note, error)
 	FindByURI(context.Context, string) (*Note, error)

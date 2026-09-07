@@ -317,9 +317,10 @@ func (f *fakeMediaRepo) FindByID(_ context.Context, id string) (*domainmedia.Med
 
 func (f *fakeMediaRepo) UpsertPending(_ context.Context, originalURL, publicURL string) (*domainmedia.Media, error) {
 	if f.record == nil {
+		const id = "507f1f77bcf86cd799439011"
 		f.record = &domainmedia.Media{
-			ID: domainmedia.IDForURL(originalURL), OriginalURL: originalURL,
-			PublicURL: publicURL, State: domainmedia.StatePending,
+			ID: id, OriginalURL: originalURL,
+			PublicURL: strings.TrimRight(publicURL, "/") + "/" + id, State: domainmedia.StatePending,
 		}
 	}
 	return f.record, nil
@@ -433,7 +434,7 @@ func TestScheduleMediaRejectsUnsafeURLAndSkipsReadyMedia(t *testing.T) {
 		t.Fatalf("unsafe task was enqueued: %+v", queued.tasks)
 	}
 	repo.record = &domainmedia.Media{
-		ID:          domainmedia.IDForURL("https://remote.example/file.png"),
+		ID:          "507f1f77bcf86cd799439011",
 		OriginalURL: "https://remote.example/file.png", State: domainmedia.StateReady,
 	}
 	if err := h.ScheduleMedia(context.Background(), repo.record.OriginalURL); err != nil {
@@ -644,6 +645,10 @@ func (f *fakeBlockRepo) Delete(ctx context.Context, blockerID, blockeeID, remote
 
 type fakeNoteRepo struct {
 	notes map[string]*domainnotes.Note
+}
+
+func (f *fakeNoteRepo) NewID(context.Context) (string, error) {
+	return bson.NewObjectID().Hex(), nil
 }
 
 type fakeNotificationRepo struct {
@@ -2874,10 +2879,13 @@ func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePost returned error: %v", err)
 	}
-	if post.ActorID != "relay" || post.NoteID != "note-1" || post.URI != "https://rosmarinus.example/notes/note-1" {
+	if post.ActorID != "relay" || post.NoteID == "" || post.URI != "https://rosmarinus.example/notes/"+post.NoteID {
 		t.Fatalf("unexpected post payload: %+v", post)
 	}
-	note, err := noteRepo.FindByID(context.Background(), "note-1")
+	if _, err := bson.ObjectIDFromHex(post.NoteID); err != nil {
+		t.Fatalf("generated Note ID is not ObjectID hex: %q: %v", post.NoteID, err)
+	}
+	note, err := noteRepo.FindByID(context.Background(), post.NoteID)
 	if err != nil {
 		t.Fatalf("FindByID returned error: %v", err)
 	}
@@ -2930,14 +2938,14 @@ func TestCreatePostStoresAndDeliversLocalQuestion(t *testing.T) {
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
 		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	h.SetPollRepository(pollRepo)
-	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID: local.ID, NoteID: "local-poll", Text: "choose",
 		Poll: &connector.PollCreateCommand{Choices: []string{"cats", "dogs"}},
 	})
 	if err != nil {
 		t.Fatalf("CreatePost returned error: %v", err)
 	}
-	poll := pollRepo.polls["local-poll"]
+	poll := pollRepo.polls[created.NoteID]
 	if poll == nil || poll.AuthorHost != nil || len(poll.Choices) != 2 {
 		t.Fatalf("unexpected stored poll: %+v", poll)
 	}
@@ -3358,7 +3366,7 @@ func TestCreatePostDeliversSpecifiedPostToRemoteActorInbox(t *testing.T) {
 		PublicURL:    "https://rosmarinus.example",
 		DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
 	}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
-	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID:    local.ID,
 		NoteID:     "specified-note",
 		Text:       "hello Bob",
@@ -3389,7 +3397,7 @@ func TestCreatePostDeliversSpecifiedPostToRemoteActorInbox(t *testing.T) {
 	if !ok || len(to) != 1 || to[0] != remote.URI {
 		t.Fatalf("object audience = %#v", object["to"])
 	}
-	note, err := noteRepo.FindByID(context.Background(), "specified-note")
+	note, err := noteRepo.FindByID(context.Background(), created.NoteID)
 	if err != nil || note == nil {
 		t.Fatalf("stored note = %#v, err=%v", note, err)
 	}
@@ -3451,7 +3459,7 @@ func TestCreatePostResolvesAndDeliversReplyAndQuoteTargets(t *testing.T) {
 		&fakeRepo{local: local, remotes: map[string]*actors.Actor{replyAuthor.URI: replyAuthor, quoteAuthor.URI: quoteAuthor}},
 		noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 
-	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID: local.ID, NoteID: "reply-and-quote", Text: "both",
 		InReplyToURI: " " + replyTarget.URI + " ", QuoteURI: quoteTarget.URI,
 		Visibility: string(domainnotes.VisibilityPublic),
@@ -3459,7 +3467,7 @@ func TestCreatePostResolvesAndDeliversReplyAndQuoteTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePost returned error: %v", err)
 	}
-	stored, err := noteRepo.FindByID(context.Background(), "reply-and-quote")
+	stored, err := noteRepo.FindByID(context.Background(), created.NoteID)
 	if err != nil || stored == nil {
 		t.Fatalf("stored note = %#v, err=%v", stored, err)
 	}
@@ -3502,14 +3510,14 @@ func TestCreateSpecifiedReplyUsesTargetAsVisibleRecipient(t *testing.T) {
 	h := New(config.Config{PublicURL: "https://rosmarinus.example"}, nil,
 		&fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 
-	_, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
+	created, err := h.CreatePost(context.Background(), connector.PostCreateCommand{
 		ActorID: local.ID, NoteID: "specified-reply", Text: "private reply",
 		InReplyToURI: target.URI, Visibility: string(domainnotes.VisibilitySpecified),
 	})
 	if err != nil {
 		t.Fatalf("CreatePost returned error: %v", err)
 	}
-	stored, _ := noteRepo.FindByID(context.Background(), "specified-reply")
+	stored, _ := noteRepo.FindByID(context.Background(), created.NoteID)
 	if stored == nil || len(stored.MentionURIs) != 0 || len(stored.VisibleUserURIs) != 1 || stored.VisibleUserURIs[0] != remote.URI {
 		t.Fatalf("stored specified reply = %#v", stored)
 	}

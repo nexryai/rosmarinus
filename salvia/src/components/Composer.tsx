@@ -63,7 +63,7 @@ const visibilityOptions = [
     { value: "followers", label: "フォロワー", description: "フォロワーだけに公開" },
 ] satisfies DropdownOption<Visibility>[];
 
-export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit }: { actor: Actor; actorSettings?: ActorSettings; csrf: string; intent: ComposerIntent; onClose: () => void; onSubmit: (input: CreatePostInput, intentKey: string, noteID: string) => Promise<void> }) {
+export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit }: { actor: Actor; actorSettings?: ActorSettings; csrf: string; intent: ComposerIntent; onClose: () => void; onSubmit: (input: CreatePostInput, intentKey: string) => Promise<void> }) {
     const [text, setText] = useState("");
     const [visibility, setVisibility] = useState<Visibility>(actorSettings?.default_visibility || "public");
     const [useCW, setUseCW] = useState(false);
@@ -80,7 +80,6 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const postIntentKey = useRef<string>(crypto.randomUUID());
-    const noteID = useRef<string>(crypto.randomUUID());
     const imagesRef = useRef(images);
     imagesRef.current = images;
     useEffect(() => {
@@ -127,7 +126,6 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                     emoji_names: emojis.filter((emoji) => text.includes(`:${emoji.name}:`)).map((emoji) => emoji.name),
                 },
                 postIntentKey.current,
-                noteID.current,
             );
             onClose();
         } catch (reason) {

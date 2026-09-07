@@ -261,8 +261,8 @@ func (h *Handler) ScheduleMedia(ctx context.Context, rawURL string) error {
 	if err := h.mediaFetcher.ValidateURL(target); err != nil {
 		return err
 	}
-	publicBase := strings.TrimRight(h.cfg.PublicURL, "/") + "/media/"
-	mediaRecord, err := h.media.UpsertPending(ctx, target.String(), publicBase+domainmedia.IDForURL(target.String()))
+	publicBase := strings.TrimRight(h.cfg.PublicURL, "/") + "/media"
+	mediaRecord, err := h.media.UpsertPending(ctx, target.String(), publicBase)
 	if err != nil {
 		return err
 	}
@@ -2125,7 +2125,11 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 	if err != nil {
 		return connector.PostCreated{}, err
 	}
-	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
+	noteID, err := h.notes.NewID(ctx)
+	if err != nil {
+		return connector.PostCreated{}, fmt.Errorf("generate note id: %w", err)
+	}
+	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(noteID)
 	inReplyToURI, replyID := "", ""
 	if replyTarget != nil {
 		inReplyToURI, replyID = replyTarget.URI, replyTarget.ID
@@ -2135,7 +2139,7 @@ func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCo
 		quoteURI, quoteID = quoteTarget.URI, quoteTarget.ID
 	}
 	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
-		ID:              command.NoteID,
+		ID:              noteID,
 		URI:             noteURI,
 		AttributedTo:    actor.URI,
 		AuthorID:        actor.ID,
@@ -2224,9 +2228,6 @@ func (h *Handler) resolveLocalPostReference(ctx context.Context, actor *actors.A
 }
 
 func (h *Handler) createRenote(ctx context.Context, actor *actors.Actor, command connector.PostCreateCommand, visibility domainnotes.Visibility) (connector.PostCreated, error) {
-	if strings.TrimSpace(command.NoteID) == "" {
-		return connector.PostCreated{}, fmt.Errorf("note id is required")
-	}
 	if strings.TrimSpace(command.Text) != "" || command.ContentWarning != nil || command.Sensitive || command.InReplyToURI != "" || command.QuoteURI != "" || len(command.MentionURIs) != 0 || len(command.Hashtags) != 0 || len(command.EmojiNames) != 0 || command.Poll != nil {
 		return connector.PostCreated{}, fmt.Errorf("a pure renote cannot contain post content or metadata")
 	}
@@ -2262,9 +2263,13 @@ func (h *Handler) createRenote(ctx context.Context, actor *actors.Actor, command
 		return connector.PostCreated{}, err
 	}
 	now := time.Now().UTC()
-	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(command.NoteID)
+	noteID, err := h.notes.NewID(ctx)
+	if err != nil {
+		return connector.PostCreated{}, fmt.Errorf("generate note id: %w", err)
+	}
+	noteURI := strings.TrimRight(h.cfg.PublicURL, "/") + "/notes/" + url.PathEscape(noteID)
 	note, err := h.notes.CreateLocalNote(ctx, domainnotes.Note{
-		ID: command.NoteID, URI: noteURI, AttributedTo: actor.URI, AuthorID: actor.ID,
+		ID: noteID, URI: noteURI, AttributedTo: actor.URI, AuthorID: actor.ID,
 		RenoteID: target.ID, RenoteURI: target.URI, Visibility: visibility,
 		CreatedAt: now, PublishedAt: &now,
 	})

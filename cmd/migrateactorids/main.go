@@ -14,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/nexryai/rosmarinus/internal/idgen"
 )
 
 const migrationName = "actor_ids_objectid_hex_v1"
@@ -203,8 +205,16 @@ func migrate(ctx context.Context, client *mongo.Client, db *mongo.Database, mapp
 				}
 			}
 		}
-		_, err := db.Collection("migration_audits").InsertOne(tx, bson.M{
-			"_id": migrationName + "_" + bson.NewObjectID().Hex(), "name": migrationName,
+		audits := db.Collection("migration_audits")
+		auditID, err := idgen.NewUniqueObjectID(tx, func(ctx context.Context, id string) (bool, error) {
+			count, err := audits.CountDocuments(ctx, bson.M{"_id": id})
+			return count != 0, err
+		})
+		if err != nil {
+			return nil, err
+		}
+		_, err = audits.InsertOne(tx, bson.M{
+			"_id": auditID, "name": migrationName,
 			"mappings": mappings, "completedAt": time.Now().UTC(),
 		})
 		return nil, err

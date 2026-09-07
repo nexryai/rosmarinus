@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -21,6 +19,7 @@ type NoteRepository struct {
 
 type noteDocument struct {
 	ID              string                 `bson:"_id,omitempty"`
+	LegacyIDs       []string               `bson:"legacyIds,omitempty"`
 	URI             string                 `bson:"uri"`
 	AttributedTo    string                 `bson:"attributedTo"`
 	AuthorID        string                 `bson:"authorId"`
@@ -68,12 +67,18 @@ func NewNoteRepository(db *mongo.Database) *NoteRepository {
 	return &NoteRepository{collection: db.Collection("notes")}
 }
 
+func (r *NoteRepository) NewID(ctx context.Context) (string, error) {
+	return newDocumentID(ctx, r.collection)
+}
+
 func (r *NoteRepository) FindByID(ctx context.Context, id string) (*domainnotes.Note, error) {
-	return r.findOne(ctx, bson.M{"_id": id, "deletedAt": nil})
+	filter := noteIDFilter(id)
+	filter["deletedAt"] = nil
+	return r.findOne(ctx, filter)
 }
 
 func (r *NoteRepository) FindAnyByID(ctx context.Context, id string) (*domainnotes.Note, error) {
-	return r.findOne(ctx, bson.M{"_id": id})
+	return r.findOne(ctx, noteIDFilter(id))
 }
 
 func (r *NoteRepository) FindByURI(ctx context.Context, uri string) (*domainnotes.Note, error) {
@@ -134,8 +139,8 @@ func (r *NoteRepository) ListActiveReferenceAuthorURIsPage(ctx context.Context, 
 }
 
 func (r *NoteRepository) CreateLocalNote(ctx context.Context, note domainnotes.Note) (*domainnotes.Note, error) {
-	if note.ID == "" {
-		return nil, fmt.Errorf("note id is required")
+	if err := requireDocumentID("note id", note.ID); err != nil {
+		return nil, err
 	}
 	if note.URI == "" {
 		return nil, fmt.Errorf("note uri is required")
@@ -165,14 +170,22 @@ func (r *NoteRepository) UpsertRemoteNote(ctx context.Context, note domainnotes.
 	if note.URI == "" {
 		return nil, fmt.Errorf("note uri is required")
 	}
-	if note.ID == "" {
-		note.ID = remoteNoteID(note.URI)
+	existing, err := r.FindByURI(ctx, note.URI)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	note.ID, err = newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate remote note id: %w", err)
 	}
 	if note.CreatedAt.IsZero() {
 		note.CreatedAt = time.Now().UTC()
 	}
 	doc := fromNote(note)
-	_, err := r.collection.UpdateOne(ctx, bson.M{"uri": note.URI}, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{"uri": note.URI}, bson.M{
 		"$setOnInsert": doc,
 	}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
@@ -195,13 +208,16 @@ func (r *NoteRepository) DeleteRemoteNote(ctx context.Context, uri, authorID str
 
 func (r *NoteRepository) DeleteLocalNote(ctx context.Context, id, authorID string) error {
 	now := time.Now().UTC()
-	_, err := r.collection.UpdateOne(ctx, bson.M{
-		"_id":      id,
-		"authorId": authorID,
-	}, bson.M{
+	filter := noteIDFilter(id)
+	filter["authorId"] = authorID
+	_, err := r.collection.UpdateOne(ctx, filter, bson.M{
 		"$set": bson.M{"deletedAt": now},
 	})
 	return err
+}
+
+func noteIDFilter(id string) bson.M {
+	return bson.M{"$or": bson.A{bson.M{"_id": id}, bson.M{"legacyIds": id}}}
 }
 
 func (r *NoteRepository) findOne(ctx context.Context, filter bson.M) (*domainnotes.Note, error) {
@@ -339,11 +355,6 @@ func fromDomainAttachments(src []domainnotes.Attachment) []attachmentDocument {
 		})
 	}
 	return out
-}
-
-func remoteNoteID(uri string) string {
-	sum := sha256.Sum256([]byte(uri))
-	return "remote_note_" + hex.EncodeToString(sum[:])[:24]
 }
 
 func mapInterface(src map[string]any) map[string]interface{} {

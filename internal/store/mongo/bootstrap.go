@@ -112,6 +112,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	}
 	_, err = db.Collection("notes").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
+			Keys:    bson.D{{Key: "legacyIds", Value: 1}},
+			Options: options.Index().SetName("uniq_notes_legacy_ids").SetUnique(true).SetSparse(true),
+		},
+		{
 			Keys: bson.D{{Key: "uri", Value: 1}},
 			Options: options.Index().
 				SetName("uniq_notes_uri").
@@ -155,6 +159,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	}
 	_, err = db.Collection("polls").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
+			Keys:    bson.D{{Key: "noteId", Value: 1}},
+			Options: options.Index().SetName("uniq_polls_note_id").SetUnique(true).SetSparse(true),
+		},
+		{
 			Keys:    bson.D{{Key: "authorId", Value: 1}, {Key: "expiresAt", Value: 1}},
 			Options: options.Index().SetName("idx_polls_author_expires_at"),
 		},
@@ -167,6 +175,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		return err
 	}
 	_, err = db.Collection("poll_votes").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "scopeKey", Value: 1}},
+			Options: options.Index().SetName("uniq_poll_votes_scope_key").SetUnique(true).SetSparse(true),
+		},
 		{
 			Keys:    bson.D{{Key: "noteId", Value: 1}, {Key: "choice", Value: 1}},
 			Options: options.Index().SetName("idx_poll_votes_note_choice"),
@@ -184,6 +196,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		return err
 	}
 	_, err = db.Collection("reactions").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "legacyIds", Value: 1}},
+			Options: options.Index().SetName("uniq_reactions_legacy_ids").SetUnique(true).SetSparse(true),
+		},
 		{
 			Keys: bson.D{{Key: "noteId", Value: 1}, {Key: "actorId", Value: 1}},
 			Options: options.Index().
@@ -336,16 +352,29 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Collection("inbox_activity_receipts").Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "expiresAt", Value: 1}},
-		Options: options.Index().
-			SetName("ttl_inbox_activity_receipts_expires_at").
-			SetExpireAfterSeconds(0),
+	_, err = db.Collection("inbox_activity_receipts").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{{Key: "activityId", Value: 1}},
+			Options: options.Index().
+				SetName("uniq_inbox_activity_receipts_activity_id").
+				SetUnique(true).
+				SetSparse(true),
+		},
+		{
+			Keys: bson.D{{Key: "expiresAt", Value: 1}},
+			Options: options.Index().
+				SetName("ttl_inbox_activity_receipts_expires_at").
+				SetExpireAfterSeconds(0),
+		},
 	})
 	if err != nil {
 		return err
 	}
 	_, err = db.Collection("notifications").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "legacyIds", Value: 1}},
+			Options: options.Index().SetName("uniq_notifications_legacy_ids").SetUnique(true).SetSparse(true),
+		},
 		{
 			Keys:    bson.D{{Key: "recipientActorId", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
 			Options: options.Index().SetName("idx_notifications_recipient_created_at"),
@@ -371,6 +400,14 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 		return err
 	}
 	_, err = db.Collection("media").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "legacyIds", Value: 1}},
+			Options: options.Index().SetName("uniq_media_legacy_ids").SetUnique(true).SetSparse(true),
+		},
+		{
+			Keys:    bson.D{{Key: "uploadKey", Value: 1}},
+			Options: options.Index().SetName("uniq_media_upload_key").SetUnique(true).SetSparse(true),
+		},
 		{
 			Keys:    bson.D{{Key: "originalUrl", Value: 1}},
 			Options: options.Index().SetName("uniq_media_original_url").SetUnique(true),

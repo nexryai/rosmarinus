@@ -56,8 +56,12 @@ func (r *AccountRepository) ReserveInitial(ctx context.Context, value account.Ac
 	}); err != nil {
 		return nil, err
 	}
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate account id: %w", err)
+	}
 	doc := accountDocument{
-		ID: value.ID, Username: value.Username, UsernameLower: strings.ToLower(value.Username),
+		ID: id, Username: value.Username, UsernameLower: strings.ToLower(value.Username),
 		DisplayName: value.DisplayName, WebAuthnID: value.WebAuthnID,
 		Status: account.StatusPending, BootstrapSlot: "initial",
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, ExpiresAt: &expiresAt,

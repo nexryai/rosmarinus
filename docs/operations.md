@@ -20,21 +20,24 @@ replayed inbound activities from duplicating completed domain side effects.
 Never use broad key deletion or database flushes as routine queue maintenance;
 use the inspection and promotion commands below.
 
-## Actor ID migration
+## Database ID migration
 
-`go run ./cmd/migrateactorids` inventories Actor IDs and every known internal
-Actor-ID reference without writing. With a current backup available, rerun it
-as `go run ./cmd/migrateactorids --apply` to replace non-ObjectID IDs and
-references in one MongoDB transaction. The command reads `MONGO_URI` and
-`MONGO_DATABASE`, records the old-to-new mapping in `migration_audits`, and
-verifies that the migrated fields contain only ObjectID hexadecimal strings.
+`go run ./cmd/migrateids` inventories every Rosmarinus-owned MongoDB document
+ID and known internal Account, Actor, Note, media, settings, and GridFS
+reference without writing. With a current backup available and all Rosmarinus
+writers stopped, rerun it as `go run ./cmd/migrateids --apply`. The command
+uses `MONGO_URI` and `MONGO_DATABASE`, applies the re-keying in one transaction,
+backfills Poll and inbox-receipt natural keys, records a migration audit with a
+valid ObjectID-string ID, and verifies the stored ID and reference formats.
 
-The migration preserves public ActivityPub URIs. Migrated Actor documents keep
-their former IDs in the indexed `legacyIds` compatibility field so inbound
-requests to an established `/users/{oldId}` URI continue to resolve. Deploy the
-matching Rosmarinus build before migrating: it uses the new Actor cache
-namespace and understands these aliases. Do not remove `legacyIds`; remote
-servers may retain an Actor URI indefinitely.
+Deploy the matching Rosmarinus build before the migration. Public ActivityPub
+URIs and media URLs are preserved. Migrated Actor, Note, media, reaction, and
+notification documents retain former string IDs in indexed `legacyIds`
+aliases, while GridFS file and chunk references move to the canonical media
+ID. Do not remove legacy aliases: federated peers and browsers may retain
+established resource URLs indefinitely. The older `migrateactorids` command is
+retained only for deployments that have not yet applied its Actor-only v1
+migration; `migrateids` is the authoritative full-store migration.
 
 Rosmarinus verifies MongoDB and Redis connectivity before serving traffic.
 Shutdown allows up to 30 seconds for workers and network servers to stop. The

@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -21,6 +19,7 @@ type NotificationRepository struct {
 
 type notificationDocument struct {
 	ID                 string     `bson:"_id"`
+	LegacyIDs          []string   `bson:"legacyIds,omitempty"`
 	RecipientAccountID string     `bson:"recipientAccountId,omitempty"`
 	RecipientActorID   string     `bson:"recipientActorId"`
 	Kind               string     `bson:"kind"`
@@ -40,18 +39,25 @@ func (r *NotificationRepository) Upsert(ctx context.Context, notification notifi
 	if notification.RecipientActorID == "" || notification.Kind == "" || notification.RemoteActivityID == "" {
 		return nil, fmt.Errorf("notification recipient, kind, and remote activity id are required")
 	}
-	if notification.ID == "" {
-		notification.ID = notificationID(notification.RecipientActorID, notification.Kind, notification.RemoteActivityID)
+	generatedID, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate notification id: %w", err)
 	}
+	notification.ID = generatedID
 	if notification.CreatedAt.IsZero() {
 		notification.CreatedAt = time.Now().UTC()
 	}
 	doc := fromNotification(notification)
-	_, err := r.collection.UpdateOne(ctx, bson.M{"_id": doc.ID}, bson.M{"$setOnInsert": doc}, options.UpdateOne().SetUpsert(true))
+	key := bson.M{
+		"recipientActorId": doc.RecipientActorID,
+		"kind":             doc.Kind,
+		"remoteActivityId": doc.RemoteActivityID,
+	}
+	_, err = r.collection.UpdateOne(ctx, key, bson.M{"$setOnInsert": doc}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
-	return r.findOne(ctx, bson.M{"_id": doc.ID})
+	return r.findOne(ctx, key)
 }
 
 func (r *NotificationRepository) MarkRead(ctx context.Context, accountID, actorID, notificationID string) (*notifications.Notification, error) {
@@ -60,13 +66,17 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, accountID, actorI
 	}
 	now := time.Now().UTC()
 	_, err := r.collection.UpdateOne(ctx, bson.M{
-		"_id": notificationID, "recipientAccountId": accountID, "recipientActorId": actorID,
+		"$or":                bson.A{bson.M{"_id": notificationID}, bson.M{"legacyIds": notificationID}},
+		"recipientAccountId": accountID, "recipientActorId": actorID,
 		"isRead": bson.M{"$ne": true},
 	}, bson.M{"$set": bson.M{"isRead": true, "readAt": now}})
 	if err != nil {
 		return nil, err
 	}
-	return r.findOne(ctx, bson.M{"_id": notificationID, "recipientAccountId": accountID, "recipientActorId": actorID})
+	return r.findOne(ctx, bson.M{
+		"$or":                bson.A{bson.M{"_id": notificationID}, bson.M{"legacyIds": notificationID}},
+		"recipientAccountId": accountID, "recipientActorId": actorID,
+	})
 }
 
 func (r *NotificationRepository) findOne(ctx context.Context, filter bson.M) (*notifications.Notification, error) {
@@ -93,9 +103,4 @@ func fromNotification(notification notifications.Notification) notificationDocum
 		RemoteActivityID: notification.RemoteActivityID, CreatedAt: notification.CreatedAt,
 		IsRead: notification.IsRead, ReadAt: notification.ReadAt,
 	}
-}
-
-func notificationID(recipientActorID, kind, remoteActivityID string) string {
-	sum := sha256.Sum256([]byte(recipientActorID + "\x00" + kind + "\x00" + remoteActivityID))
-	return "notification_" + hex.EncodeToString(sum[:])[:24]
 }

@@ -24,7 +24,7 @@ describe("Composer", () => {
         await user.type(screen.getByLabelText("ノート本文"), "返信です");
         await user.click(screen.getByRole("button", { name: "投稿する" }));
 
-        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ in_reply_to_uri: target.uri, text: "返信です", visibility: "public" }), expect.any(String), expect.any(String));
+        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ in_reply_to_uri: target.uri, text: "返信です", visibility: "public" }), expect.any(String));
     });
 
     it("requires two populated choices for a poll-only post", async () => {
@@ -38,6 +38,6 @@ describe("Composer", () => {
         await user.type(screen.getByLabelText("選択肢 2"), "B");
         await user.click(screen.getByRole("button", { name: "投稿する" }));
 
-        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ poll: { choices: ["A", "B"], multiple: false } }), expect.any(String), expect.any(String));
+        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ poll: { choices: ["A", "B"], multiple: false } }), expect.any(String));
     });
 });

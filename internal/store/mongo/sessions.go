@@ -35,8 +35,12 @@ func (r *SessionRepository) Create(ctx context.Context, session appauth.Session)
 	if r == nil || r.collection == nil {
 		return fmt.Errorf("session collection is not configured")
 	}
-	_, err := r.collection.InsertOne(ctx, sessionDocument{
-		ID: session.ID, AccountID: session.AccountID, TokenHash: session.TokenHash,
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return fmt.Errorf("generate session id: %w", err)
+	}
+	_, err = r.collection.InsertOne(ctx, sessionDocument{
+		ID: id, AccountID: session.AccountID, TokenHash: session.TokenHash,
 		CSRFToken: session.CSRFToken, CreatedAt: session.CreatedAt, ExpiresAt: session.ExpiresAt,
 	})
 	return err

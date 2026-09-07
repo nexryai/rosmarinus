@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -49,14 +47,16 @@ func (r *BlockRepository) Upsert(ctx context.Context, block blocks.Block) (*bloc
 	if block.BlockerID == "" || block.BlockeeID == "" {
 		return nil, fmt.Errorf("blockerId and blockeeId are required")
 	}
-	if block.ID == "" {
-		block.ID = blockID(block.BlockerID, block.BlockeeID)
+	generatedID, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate block id: %w", err)
 	}
+	block.ID = generatedID
 	if block.CreatedAt.IsZero() {
 		block.CreatedAt = time.Now().UTC()
 	}
 	doc := fromBlock(block)
-	_, err := r.collection.UpdateOne(ctx, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{
 		"blockerId": doc.BlockerID,
 		"blockeeId": doc.BlockeeID,
 	}, bson.M{
@@ -126,9 +126,4 @@ func toBlock(doc blockDocument) *blocks.Block {
 		RemoteActivityID:     doc.RemoteActivityID,
 		RemoteUndoActivityID: doc.RemoteUndoActivityID,
 	}
-}
-
-func blockID(blockerID, blockeeID string) string {
-	sum := sha256.Sum256([]byte(blockerID + "\x00" + blockeeID))
-	return "block_" + hex.EncodeToString(sum[:])[:24]
 }

@@ -32,19 +32,26 @@ func NewWebAuthnCeremonyRepository(db *mongo.Database) *WebAuthnCeremonyReposito
 	return &WebAuthnCeremonyRepository{collection: db.Collection("webauthn_challenges")}
 }
 
-func (r *WebAuthnCeremonyRepository) Create(ctx context.Context, ceremony appauth.Ceremony) error {
+func (r *WebAuthnCeremonyRepository) Create(ctx context.Context, ceremony appauth.Ceremony) (*appauth.Ceremony, error) {
 	if r == nil || r.collection == nil {
-		return fmt.Errorf("WebAuthn ceremony collection is not configured")
+		return nil, fmt.Errorf("WebAuthn ceremony collection is not configured")
 	}
 	session, err := json.Marshal(ceremony.Session)
 	if err != nil {
-		return fmt.Errorf("encode WebAuthn ceremony: %w", err)
+		return nil, fmt.Errorf("encode WebAuthn ceremony: %w", err)
+	}
+	ceremony.ID, err = newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate WebAuthn ceremony id: %w", err)
 	}
 	_, err = r.collection.InsertOne(ctx, webAuthnCeremonyDocument{
 		ID: ceremony.ID, Type: ceremony.Type, AccountID: ceremony.AccountID,
 		Session: session, CreatedAt: ceremony.CreatedAt, ExpiresAt: ceremony.ExpiresAt,
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return &ceremony, nil
 }
 
 func (r *WebAuthnCeremonyRepository) Consume(ctx context.Context, id string, ceremonyType appauth.CeremonyType, now time.Time) (*appauth.Ceremony, error) {

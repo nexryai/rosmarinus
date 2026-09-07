@@ -852,6 +852,10 @@ type resolverNoteRepository struct {
 	notes map[string]*domainnotes.Note
 }
 
+func (r *resolverNoteRepository) NewID(context.Context) (string, error) {
+	return bson.NewObjectID().Hex(), nil
+}
+
 func (r *resolverNoteRepository) FindByID(_ context.Context, id string) (*domainnotes.Note, error) {
 	for _, note := range r.notes {
 		if note.ID == id {

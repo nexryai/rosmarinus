@@ -95,6 +95,11 @@ func (r *ActorRepository) EnsureLocalActor(ctx context.Context, actor actors.Act
 		}
 		return existing, nil
 	}
+	legacyID := strings.TrimSpace(actor.ID)
+	actor.ID, err = newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate system actor id: %w", err)
+	}
 	if actor.PublicKeyPEM == "" || actor.PrivateKeyPEM == "" {
 		publicKey, privateKey, err := generateRSAKeyPair()
 		if err != nil {
@@ -104,6 +109,9 @@ func (r *ActorRepository) EnsureLocalActor(ctx context.Context, actor actors.Act
 		actor.PrivateKeyPEM = privateKey
 	}
 	doc := fromActor(actor)
+	if legacyID != "" && legacyID != actor.ID {
+		doc.LegacyIDs = []string{legacyID}
+	}
 	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": actor.ID}, bson.M{"$setOnInsert": doc}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
@@ -191,6 +199,9 @@ func (r *ActorRepository) CreateOwnedLocalActor(ctx context.Context, actor actor
 	actor.URI = strings.TrimSpace(actor.URI)
 	if actor.ID == "" || actor.OwnerAccountID == "" || actor.Username == "" || actor.URI == "" {
 		return nil, fmt.Errorf("owned local actor id, owner, username, and uri are required")
+	}
+	if err := requireDocumentID("owned local actor id", actor.ID); err != nil {
+		return nil, err
 	}
 	if actor.Host != nil {
 		return nil, fmt.Errorf("owned actor must be local")
@@ -475,6 +486,9 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	}
 	if actor.Host == nil || *actor.Host == "" {
 		return nil, fmt.Errorf("remote actor host is required")
+	}
+	if err := requireDocumentID("remote actor id", actor.ID); err != nil {
+		return nil, err
 	}
 	actor.UsernameLower = strings.ToLower(actor.Username)
 	doc := fromActor(actor)

@@ -2,16 +2,9 @@ package media
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"time"
 )
-
-func IDForURL(originalURL string) string {
-	sum := sha256.Sum256([]byte(originalURL))
-	return "media_" + hex.EncodeToString(sum[:])[:32]
-}
 
 const (
 	StatePending = "pending"

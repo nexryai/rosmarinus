@@ -199,7 +199,7 @@ func mediaByID(mediaLookup MediaLookup) http.HandlerFunc {
 		}
 		var body io.ReadCloser
 		if r.Method == http.MethodGet {
-			body, err = mediaLookup.OpenBlob(r.Context(), id)
+			body, err = mediaLookup.OpenBlob(r.Context(), mediaRecord.ID)
 			if err != nil {
 				w.WriteHeader(http.StatusNotFound)
 				return

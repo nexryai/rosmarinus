@@ -38,6 +38,10 @@ part of the target architecture.
   MongoDB ObjectID hexadecimal strings while keeping IDs opaque to Salvia and
   using Actor `host` state, rather than an ID prefix, to determine locality.
 
+- Completed: extend collision-checked ObjectID-string allocation to every
+  Rosmarinus-owned persisted entity, move Note ID allocation out of Salvia,
+  and provide an offline migration for legacy IDs and internal references.
+
 - Completed: publish account-scoped `note.created` SSE invalidations for
   inbound remote Notes and Announces. Public Notes invalidate every local
   account; home/followers/direct Notes target only local Actors whose timeline

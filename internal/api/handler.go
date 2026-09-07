@@ -426,11 +426,10 @@ func (h *Handler) storeUploadPart(w http.ResponseWriter, r *http.Request, actorI
 		h.internalError(w, r, fmt.Errorf("rewind upload: %w", err))
 		return nil, false
 	}
-	idDigest := sha256.Sum256([]byte(accountScopedMediaKey(actorID, requestID, suffix)))
-	id := "media_" + hex.EncodeToString(idDigest[:])[:32]
-	publicURL := strings.TrimRight(h.instance.URL, "/") + "/media/" + id
+	uploadKey := accountScopedMediaKey(actorID, requestID, suffix)
+	publicBaseURL := strings.TrimRight(h.instance.URL, "/") + "/media"
 	name := filepath.Base(header.Filename)
-	stored, err := h.mediaUploads.CreateLocal(r.Context(), id, actorID, name, publicURL, contentType, size, hex.EncodeToString(hash.Sum(nil)), width, height, file)
+	stored, err := h.mediaUploads.CreateLocal(r.Context(), uploadKey, actorID, name, publicBaseURL, contentType, size, hex.EncodeToString(hash.Sum(nil)), width, height, file)
 	if err != nil {
 		h.internalError(w, r, fmt.Errorf("store %s upload: %w", suffix, err))
 		return nil, false

@@ -116,8 +116,8 @@ export const api = {
         const result = await request(`/timelines/${kind}${query({ actor_id: actorID, after, limit: "30" })}`, pageEnvelope(noteSchema), { signal });
         return { data: result.data, next: result.next };
     },
-    createPost: async (csrf: string, actorID: string, input: CreatePostInput, intentKey: string = crypto.randomUUID(), noteID: string = crypto.randomUUID()): Promise<void> => {
-        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: { note_id: noteID, ...input }, csrf, headers: { "Idempotency-Key": intentKey } });
+    createPost: async (csrf: string, actorID: string, input: CreatePostInput, intentKey: string = crypto.randomUUID()): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: input, csrf, headers: { "Idempotency-Key": intentKey } });
     },
     uploadImage: async (csrf: string, actorID: string, file: File, thumbnail: { blob: Blob; originalHeight: number; originalWidth: number }, intentKey: string): Promise<{ id: string; url: string; preview_url: string }> => {
         const form = new FormData();

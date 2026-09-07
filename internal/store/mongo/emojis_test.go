@@ -27,16 +27,6 @@ func TestEmojiRecordPreservesRemoteSource(t *testing.T) {
 	}
 }
 
-func TestEmojiIDIsStableAndHostScoped(t *testing.T) {
-	first := emojiID("remote.example", "party")
-	if first != emojiID("remote.example", "party") {
-		t.Fatal("emoji ID is not stable")
-	}
-	if first == emojiID("other.example", "party") {
-		t.Fatal("emoji ID must be scoped to the remote host")
-	}
-}
-
 func TestLocalEmojiRecordPreservesPublicURL(t *testing.T) {
 	doc := fromEmoji(emojis.Emoji{
 		Name: "party", OriginalURL: "https://origin.example/party.webp",

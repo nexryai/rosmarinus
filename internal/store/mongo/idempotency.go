@@ -17,7 +17,7 @@ type IdempotencyRepository struct {
 }
 
 type idempotencyDocument struct {
-	ID         bson.ObjectID      `bson:"_id,omitempty"`
+	ID         string             `bson:"_id"`
 	AccountID  string             `bson:"accountId"`
 	Key        string             `bson:"key"`
 	Operation  string             `bson:"operation"`
@@ -43,6 +43,11 @@ func (r *IdempotencyRepository) Claim(ctx context.Context, receipt idempotency.R
 		AccountID: receipt.AccountID, Key: receipt.Key, Operation: receipt.Operation,
 		ActorID: receipt.ActorID, IntentHash: receipt.IntentHash, Status: idempotency.StatusPending,
 		CreatedAt: receipt.CreatedAt, UpdatedAt: receipt.UpdatedAt, ExpiresAt: receipt.ExpiresAt,
+	}
+	var err error
+	doc.ID, err = newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, false, fmt.Errorf("generate idempotency receipt id: %w", err)
 	}
 	if _, err := r.collection.InsertOne(ctx, doc); err != nil {
 		if !mongo.IsDuplicateKeyError(err) {

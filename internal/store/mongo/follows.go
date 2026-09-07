@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -65,9 +63,11 @@ func (r *FollowRepository) Upsert(ctx context.Context, follow follows.Follow) (*
 	if follow.FollowerID == "" || follow.FolloweeID == "" {
 		return nil, fmt.Errorf("followerId and followeeId are required")
 	}
-	if follow.ID == "" {
-		follow.ID = followID(follow.FollowerID, follow.FolloweeID)
+	generatedID, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate follow id: %w", err)
 	}
+	follow.ID = generatedID
 	if follow.CreatedAt.IsZero() {
 		follow.CreatedAt = time.Now().UTC()
 	}
@@ -320,9 +320,4 @@ func acceptedFollowFilter(filter bson.M) bson.M {
 		{"status": bson.M{"$exists": false}},
 	}
 	return filter
-}
-
-func followID(followerID, followeeID string) string {
-	sum := sha256.Sum256([]byte(followerID + "\x00" + followeeID))
-	return "follow_" + hex.EncodeToString(sum[:])[:24]
 }

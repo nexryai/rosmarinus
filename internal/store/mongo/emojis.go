@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -50,15 +48,25 @@ func (r *EmojiRepository) UpsertLocal(ctx context.Context, emoji emojis.Emoji) (
 		emoji.OriginalURL = emoji.PublicURL
 	}
 	now := time.Now().UTC()
-	if emoji.ID == "" {
-		emoji.ID = emojiID("", emoji.Name)
+	existing, err := r.FindLocalByName(ctx, emoji.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		emoji.ID = existing.ID
+		emoji.CreatedAt = existing.CreatedAt
+	} else {
+		emoji.ID, err = newDocumentID(ctx, r.collection)
+		if err != nil {
+			return nil, fmt.Errorf("generate local emoji id: %w", err)
+		}
 	}
 	if emoji.CreatedAt.IsZero() {
 		emoji.CreatedAt = now
 	}
 	emoji.UpdatedAt = now
 	doc := fromEmoji(emoji)
-	_, err := r.collection.ReplaceOne(ctx, bson.M{"host": "", "name": emoji.Name}, doc, options.Replace().SetUpsert(true))
+	_, err = r.collection.ReplaceOne(ctx, bson.M{"host": "", "name": emoji.Name}, doc, options.Replace().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +130,18 @@ func (r *EmojiRepository) UpsertRemote(ctx context.Context, emoji emojis.Emoji) 
 		return nil, fmt.Errorf("remote emoji host, name, and original URL are required")
 	}
 	now := time.Now().UTC()
-	if emoji.ID == "" {
-		emoji.ID = emojiID(emoji.Host, emoji.Name)
+	existing, err := r.findOne(ctx, bson.M{"host": emoji.Host, "name": emoji.Name})
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		emoji.ID = existing.ID
+		emoji.CreatedAt = existing.CreatedAt
+	} else {
+		emoji.ID, err = newDocumentID(ctx, r.collection)
+		if err != nil {
+			return nil, fmt.Errorf("generate remote emoji id: %w", err)
+		}
 	}
 	if emoji.CreatedAt.IsZero() {
 		emoji.CreatedAt = now
@@ -131,7 +149,7 @@ func (r *EmojiRepository) UpsertRemote(ctx context.Context, emoji emojis.Emoji) 
 	emoji.UpdatedAt = now
 	doc := fromEmoji(emoji)
 	key := bson.M{"host": doc.Host, "name": doc.Name}
-	_, err := r.collection.UpdateOne(ctx, key, bson.M{"$setOnInsert": doc}, options.UpdateOne().SetUpsert(true))
+	_, err = r.collection.UpdateOne(ctx, key, bson.M{"$setOnInsert": doc}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
 	}
@@ -206,9 +224,4 @@ func validEmojiName(name string) bool {
 		}
 	}
 	return true
-}
-
-func emojiID(host, name string) string {
-	sum := sha256.Sum256([]byte(host + "\x00" + name))
-	return "emoji_" + hex.EncodeToString(sum[:])[:24]
 }

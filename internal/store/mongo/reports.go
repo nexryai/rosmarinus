@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -56,9 +54,11 @@ func (r *ReportRepository) Create(ctx context.Context, report reports.Report) (*
 	if report.CreatedAt.IsZero() {
 		report.CreatedAt = time.Now().UTC()
 	}
-	if report.ID == "" {
-		report.ID = reportID(report)
+	generatedID, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate report id: %w", err)
 	}
+	report.ID = generatedID
 	doc := fromReport(report)
 	if _, err := r.collection.InsertOne(ctx, doc); err != nil {
 		if mongo.IsDuplicateKeyError(err) && report.RemoteActivityID != "" {
@@ -110,13 +110,4 @@ func toReport(doc reportDocument) *reports.Report {
 		RemoteActivityID: doc.RemoteActivityID,
 		CreatedAt:        doc.CreatedAt,
 	}
-}
-
-func reportID(report reports.Report) string {
-	key := report.RemoteActivityID
-	if key == "" {
-		key = report.TargetUserID + "\x00" + report.ReporterID + "\x00" + report.CreatedAt.Format(time.RFC3339Nano)
-	}
-	sum := sha256.Sum256([]byte(key))
-	return "report_" + hex.EncodeToString(sum[:])[:24]
 }

@@ -46,8 +46,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 1: connect to the explicitly allowlisted private Docker federation
 	// network, load Rosmarinus's local Actor, and create two Misskey accounts for
-	// public and direct flows, verifying safe network policy still permits the
-	// controlled real-Misskey topology.
+	// public and direct flows, verifying the persisted local Actor uses an
+	// ObjectID-string ID and safe network policy permits the controlled topology.
 	cfg := config.Config{
 		Host:          "rosmarinus.test",
 		PublicURL:     "https://rosmarinus.test",
@@ -84,6 +84,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if err != nil || localActor == nil {
 		t.Fatalf("find local relay actor: actor=%+v err=%v", localActor, err)
 	}
+	assertObjectIDString(t, "local Actor", localActor.ID)
 	t.Logf("federation fixture ready local_actor_id=%s local_actor_uri=%s", localActor.ID, localActor.URI)
 
 	misskey := newMisskeyClient(t)
@@ -140,6 +141,12 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if err != nil || remoteActor == nil {
 		t.Fatalf("find resolved Misskey actor: actor=%+v err=%v", remoteActor, err)
 	}
+	assertObjectIDString(t, "remote Actor", remoteActor.ID)
+	storedFollow, err := followRepo.Find(ctx, localActor.ID, remoteActor.ID)
+	if err != nil || storedFollow == nil {
+		t.Fatalf("find outgoing Follow: follow=%+v err=%v", storedFollow, err)
+	}
+	assertObjectIDString(t, "Follow", storedFollow.ID)
 	followActivityURI := cfg.PublicURL + "/follows/" + url.PathEscape(localActor.ID) + "/" + url.PathEscape(remoteActor.ID)
 	var followActivity map[string]any
 	misskey.get(ctx, followActivityURI, &followActivity)
@@ -227,6 +234,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 			len(remoteNote.Attachments) == 1 && remoteNote.Attachments[0].URL != "" &&
 			remoteNote.Attachments[0].Width == 1 && remoteNote.Attachments[0].Height == 1
 	})
+	assertObjectIDString(t, "remote Note", remoteNote.ID)
 	home, err := mongostore.NewSalviaReader(db).ListHomeTimeline(ctx, localActor.ID, readmodel.Cursor{}, 30)
 	if err != nil {
 		t.Fatalf("read home timeline after Misskey Create: %v", err)
@@ -679,6 +687,7 @@ waitForRemoteNoteEvent:
 	if sharedBlock.BlockeeID != remoteActor.ID {
 		t.Fatalf("unexpected account-shared Block: %+v", sharedBlock)
 	}
+	assertObjectIDString(t, "Block", sharedBlock.BlockID)
 	for _, blockerID := range []string{ownedActor.ID, siblingActor.ID} {
 		if block, findErr := blockRepo.Find(ctx, blockerID, remoteActor.ID); findErr != nil || block == nil {
 			t.Fatalf("account-shared Block missing for %s: block=%+v err=%v", blockerID, block, findErr)
@@ -822,14 +831,14 @@ waitForRemoteNoteEvent:
 
 	// Phase 14: renote the stored Misskey Note from Rosmarinus, verify Misskey
 	// accepts the outbound Announce, then delete it and verify Undo(Announce).
-	const localRenoteID = "latest-misskey-outbound-renote"
 	createdLocalRenote, err := worker.CreatePost(ctx, connector.PostCreateCommand{
-		ActorID: localActor.ID, NoteID: localRenoteID, RenoteID: remoteNote.ID,
+		ActorID: localActor.ID, RenoteID: remoteNote.ID,
 		Visibility: string(domainnotes.VisibilityPublic),
 	})
 	if err != nil {
 		t.Fatalf("create local Rosmarinus renote: %v", err)
 	}
+	assertObjectIDString(t, "local renote", createdLocalRenote.NoteID)
 	var localAnnounce map[string]any
 	misskey.get(ctx, createdLocalRenote.URI+"/activity", &localAnnounce)
 	if localAnnounce["type"] != "Announce" || localAnnounce["actor"] != localActor.URI || localAnnounce["object"] != remoteNote.URI {
@@ -853,7 +862,7 @@ waitForRemoteNoteEvent:
 		}
 		return false
 	})
-	if _, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: localRenoteID}); err != nil {
+	if _, err := worker.DeletePost(ctx, connector.PostDeleteCommand{ActorID: localActor.ID, NoteID: createdLocalRenote.NoteID}); err != nil {
 		t.Fatalf("delete local Rosmarinus renote: %v", err)
 	}
 	waitFor(t, ctx, "Undo(Announce) applied by Misskey", func() bool {
@@ -875,14 +884,13 @@ waitForRemoteNoteEvent:
 	// MFM from Rosmarinus, verify the first Note keeps safe HTML and attachment
 	// metadata, the second retains its source, and current Misskey stores both
 	// delivered Create(Note)s.
-	const localNoteID = "latest-misskey-outbound-note"
 	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
 	const misskeyLocalNoteText = "Hello from Rosmarinus federation delivery \u200B:party:\u200B"
-	const localMediaID = "media_federation_fixture"
-	localMedia, err := mediaRepo.CreateLocal(ctx, localMediaID, localActor.ID, "salvia.png", cfg.PublicURL+"/media/"+localMediaID, "image/png", int64(len(avatarPNG)), "federation-fixture", 1, 1, bytes.NewReader(avatarPNG))
+	localMedia, err := mediaRepo.CreateLocal(ctx, "federation-fixture", localActor.ID, "salvia.png", cfg.PublicURL+"/media", "image/png", int64(len(avatarPNG)), "federation-fixture", 1, 1, bytes.NewReader(avatarPNG))
 	if err != nil || localMedia == nil {
 		t.Fatalf("store local Salvia upload: media=%+v err=%v", localMedia, err)
 	}
+	assertObjectIDString(t, "local media", localMedia.ID)
 	status, localMediaType, localMediaBody := misskey.getRaw(ctx, localMedia.PublicURL)
 	if status != http.StatusOK || localMediaType != "image/png" || !bytes.Equal(localMediaBody, avatarPNG) {
 		t.Fatalf("serve local Salvia upload: status=%d content_type=%q bytes=%d", status, localMediaType, len(localMediaBody))
@@ -890,7 +898,6 @@ waitForRemoteNoteEvent:
 	worker.SetMediaRepository(mediaRepo, nil)
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
-		NoteID:     localNoteID,
 		Text:       localNoteText,
 		EmojiNames: []string{"party"},
 		MediaIDs:   []string{localMedia.ID},
@@ -900,6 +907,8 @@ waitForRemoteNoteEvent:
 	if err != nil {
 		t.Fatalf("create local Rosmarinus post: %v", err)
 	}
+	assertObjectIDString(t, "local Note", createdLocal.NoteID)
+	localNoteID := createdLocal.NoteID
 	t.Logf("Rosmarinus local note created note_id=%s uri=%s", createdLocal.NoteID, createdLocal.URI)
 	var publicActivity map[string]any
 	misskey.get(ctx, createdLocal.URI+"/activity", &publicActivity)
@@ -982,10 +991,9 @@ waitForRemoteNoteEvent:
 		return false
 	})
 
-	const advancedNoteID = "latest-misskey-outbound-advanced-mfm"
 	const advancedNoteText = "**Hello from Rosmarinus** $[ruby 漢字 かんじ]"
 	advancedLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
-		ActorID: localActor.ID, NoteID: advancedNoteID, Text: advancedNoteText,
+		ActorID: localActor.ID, Text: advancedNoteText,
 		Visibility: string(domainnotes.VisibilityPublic),
 	})
 	if err != nil {
@@ -1033,8 +1041,8 @@ waitForRemoteNoteEvent:
 		return findErr == nil && poll != nil && len(poll.Votes) == 2 && poll.Votes[1] == 1
 	})
 
-	// Phase 17: react to the delivered Rosmarinus note from Misskey, verify
-	// Rosmarinus stores the federated reaction, and dereference its Like activity.
+	// Phase 17: react to the delivered Rosmarinus Note from Misskey, verify the
+	// stored Reaction has an ObjectID-string ID, and dereference its Like activity.
 	misskey.call(ctx, "notes/reactions/create", map[string]any{
 		"i":        admin.Token,
 		"noteId":   misskeyLocalNoteID,
@@ -1046,6 +1054,7 @@ waitForRemoteNoteEvent:
 		storedReaction, findErr = reactionRepo.Find(ctx, localNoteID, remoteActor.ID)
 		return findErr == nil && storedReaction != nil && storedReaction.Reaction == "👍"
 	})
+	assertObjectIDString(t, "Reaction", storedReaction.ID)
 	likeActivityURI := cfg.PublicURL + "/likes/" + url.PathEscape(storedReaction.ID)
 	var likeActivity map[string]any
 	misskey.get(ctx, likeActivityURI, &likeActivity)
@@ -1120,10 +1129,9 @@ waitForRemoteNoteEvent:
 		t.Fatalf("specified reply target creation returned no note id")
 	}
 	specifiedReplyTargetURI := "https://a.test/notes/" + specifiedReplyTarget.CreatedNote.ID
-	const specifiedNoteID = "latest-misskey-specified-note"
 	const specifiedNoteText = "Private hello from Rosmarinus"
 	createdSpecified, err := worker.CreatePost(ctx, connector.PostCreateCommand{
-		ActorID: localActor.ID, NoteID: specifiedNoteID, Text: specifiedNoteText,
+		ActorID: localActor.ID, Text: specifiedNoteText,
 		Visibility: string(domainnotes.VisibilitySpecified), InReplyToURI: specifiedReplyTargetURI,
 	})
 	if err != nil {
@@ -1133,7 +1141,7 @@ waitForRemoteNoteEvent:
 	if status := misskey.getStatus(ctx, createdSpecified.URI+"/activity"); status != http.StatusNotFound {
 		t.Fatalf("specified Create activity status = %d, want %d", status, http.StatusNotFound)
 	}
-	storedSpecified, err := noteRepo.FindByID(ctx, specifiedNoteID)
+	storedSpecified, err := noteRepo.FindByID(ctx, createdSpecified.NoteID)
 	if err != nil || storedSpecified == nil || storedSpecified.InReplyToURI != specifiedReplyTargetURI || storedSpecified.ReplyID == "" {
 		t.Fatalf("specified reply target was not resolved: note=%+v err=%v", storedSpecified, err)
 	}
@@ -1577,4 +1585,14 @@ func envRequired(t *testing.T, name string) string {
 		t.Fatalf("%s is required", name)
 	}
 	return value
+}
+
+func assertObjectIDString(t *testing.T, name, id string) {
+	t.Helper()
+	if id != strings.ToLower(id) {
+		t.Fatalf("%s id is not lowercase: %q", name, id)
+	}
+	if _, err := bson.ObjectIDFromHex(id); err != nil {
+		t.Fatalf("%s id is not an ObjectID string: %q: %v", name, id, err)
+	}
 }

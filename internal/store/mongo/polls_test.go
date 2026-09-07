@@ -18,15 +18,11 @@ func TestPollDocumentPreservesQuestionState(t *testing.T) {
 	}
 }
 
-func TestPollVoteIDEnforcesSingleAndMultipleChoiceUniqueness(t *testing.T) {
-	singleA := pollVoteID("note", "actor", 0, false)
-	singleB := pollVoteID("note", "actor", 1, false)
-	if singleA != singleB {
-		t.Fatalf("single-choice vote ids differ: %q %q", singleA, singleB)
+func TestPollVoteScopeEnforcesSingleAndMultipleChoiceUniqueness(t *testing.T) {
+	if pollVoteScope("note", "actor", 0, false) != pollVoteScope("note", "actor", 1, false) {
+		t.Fatal("single-choice votes must share a scope")
 	}
-	multipleA := pollVoteID("note", "actor", 0, true)
-	multipleB := pollVoteID("note", "actor", 1, true)
-	if multipleA == multipleB {
-		t.Fatalf("multiple-choice vote ids are equal: %q", multipleA)
+	if pollVoteScope("note", "actor", 0, true) == pollVoteScope("note", "actor", 1, true) {
+		t.Fatal("multiple-choice votes must have distinct scopes")
 	}
 }

@@ -24,13 +24,3 @@ func TestNotificationDocumentPreservesReadContract(t *testing.T) {
 		t.Fatalf("unexpected notification document: %+v", doc)
 	}
 }
-
-func TestNotificationIDIsStableAndRecipientScoped(t *testing.T) {
-	first := notificationID("actor-1", notifications.KindMention, "https://remote.example/activities/1")
-	if first != notificationID("actor-1", notifications.KindMention, "https://remote.example/activities/1") {
-		t.Fatal("notification ID is not stable")
-	}
-	if first == notificationID("actor-2", notifications.KindMention, "https://remote.example/activities/1") {
-		t.Fatal("notification ID must be scoped to the recipient Actor")
-	}
-}

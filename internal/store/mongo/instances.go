@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,7 +9,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/net/idna"
 
 	"github.com/nexryai/rosmarinus/internal/domain/instances"
@@ -79,20 +76,7 @@ func (r *InstanceRepository) Register(ctx context.Context, host string, now time
 	if err != nil {
 		return nil, false, err
 	}
-	now = now.UTC()
-	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, bson.M{
-		"$setOnInsert": bson.M{
-			"_id": instanceID(host), "host": host, "firstRetrievedAt": now,
-			"suspensionState": instances.SuspensionNone, "isNotResponding": false,
-			"usersCount": int64(0), "notesCount": int64(0),
-			"followingCount": int64(0), "followersCount": int64(0), "updatedAt": now,
-		},
-	}, options.UpdateOne().SetUpsert(true))
-	if err != nil {
-		return nil, false, err
-	}
-	instance, err := r.FindByHost(ctx, host)
-	return instance, result.UpsertedCount > 0, err
+	return r.ensureInstance(ctx, host, now.UTC())
 }
 
 func (r *InstanceRepository) RecordReceived(ctx context.Context, host string, now time.Time) (*instances.Instance, error) {
@@ -116,6 +100,9 @@ func (r *InstanceRepository) RecordDeliveryFailure(ctx context.Context, host str
 		return nil, err
 	}
 	now = now.UTC()
+	if _, _, err := r.ensureInstance(ctx, host, now); err != nil {
+		return nil, err
+	}
 	cutoff := now.Add(-instanceAutoSuspendAfter)
 	state := bson.M{"$ifNull": bson.A{"$suspensionState", instances.SuspensionNone}}
 	notRespondingSince := bson.M{"$ifNull": bson.A{"$notRespondingSince", now}}
@@ -136,7 +123,7 @@ func (r *InstanceRepository) RecordDeliveryFailure(ctx context.Context, host str
 			"updatedAt": now,
 		}}},
 	}
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, pipeline, options.UpdateOne().SetUpsert(true))
+	_, err = r.collection.UpdateOne(ctx, bson.M{"host": host}, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -173,13 +160,12 @@ func (r *InstanceRepository) UpdateMetadata(ctx context.Context, host string, me
 	setNonEmpty(set, "iconUrl", metadata.IconURL)
 	setNonEmpty(set, "faviconUrl", metadata.FaviconURL)
 	setNonEmpty(set, "themeColor", metadata.ThemeColor)
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, bson.M{
+	if _, _, err := r.ensureInstance(ctx, host, now); err != nil {
+		return nil, err
+	}
+	_, err = r.collection.UpdateOne(ctx, bson.M{"host": host}, bson.M{
 		"$set": set,
-		"$setOnInsert": bson.M{
-			"_id": instanceID(host), "host": host, "firstRetrievedAt": now,
-			"suspensionState": instances.SuspensionNone, "isNotResponding": false,
-		},
-	}, options.UpdateOne().SetUpsert(true))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -196,18 +182,16 @@ func (r *InstanceRepository) RefreshRelationshipCounts(ctx context.Context, host
 		return nil, err
 	}
 	now = now.UTC()
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, bson.M{
+	if _, _, err := r.ensureInstance(ctx, host, now); err != nil {
+		return nil, err
+	}
+	_, err = r.collection.UpdateOne(ctx, bson.M{"host": host}, bson.M{
 		"$set": bson.M{
 			"followingCount": followingCount,
 			"followersCount": followersCount,
 			"updatedAt":      now,
 		},
-		"$setOnInsert": bson.M{
-			"_id": instanceID(host), "host": host, "firstRetrievedAt": now,
-			"suspensionState": instances.SuspensionNone, "isNotResponding": false,
-			"usersCount": int64(0), "notesCount": int64(0),
-		},
-	}, options.UpdateOne().SetUpsert(true))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +230,9 @@ func (r *InstanceRepository) updateContact(ctx context.Context, host string, now
 		return nil, err
 	}
 	now = now.UTC()
+	if _, _, err := r.ensureInstance(ctx, host, now); err != nil {
+		return nil, err
+	}
 	set["updatedAt"] = now
 	if unsuspendAuto {
 		set["suspensionState"] = bson.M{"$cond": bson.A{
@@ -253,25 +240,17 @@ func (r *InstanceRepository) updateContact(ctx context.Context, host string, now
 			instances.SuspensionNone,
 			bson.M{"$ifNull": bson.A{"$suspensionState", instances.SuspensionNone}},
 		}}
-		pipeline := mongo.Pipeline{{{Key: "$set", Value: mergeInstanceContactDefaults(set, host, now)}}}
-		_, err = r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, pipeline, options.UpdateOne().SetUpsert(true))
+		defaults := mergeInstanceContactDefaults(set, host, now)
+		pipeline := mongo.Pipeline{{{Key: "$set", Value: defaults}}}
+		_, err = r.collection.UpdateOne(ctx, bson.M{"host": host}, pipeline)
 		if err != nil {
 			return nil, err
 		}
 		return r.FindByHost(ctx, host)
 	}
-	setOnInsert := bson.M{
-		"_id": instanceID(host), "host": host, "firstRetrievedAt": now,
-		"usersCount": int64(0), "notesCount": int64(0),
-		"followingCount": int64(0), "followersCount": int64(0),
-	}
-	if _, setsSuspensionState := set["suspensionState"]; !setsSuspensionState {
-		setOnInsert["suspensionState"] = instances.SuspensionNone
-	}
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": instanceID(host)}, bson.M{
-		"$set":         set,
-		"$setOnInsert": setOnInsert,
-	}, options.UpdateOne().SetUpsert(true))
+	_, err = r.collection.UpdateOne(ctx, bson.M{"host": host}, bson.M{
+		"$set": set,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -303,9 +282,30 @@ func normalizeInstanceHost(host string) (string, error) {
 	return host, nil
 }
 
-func instanceID(host string) string {
-	sum := sha256.Sum256([]byte(host))
-	return "instance_" + hex.EncodeToString(sum[:])[:24]
+func (r *InstanceRepository) ensureInstance(ctx context.Context, host string, now time.Time) (*instances.Instance, bool, error) {
+	existing, err := r.FindByHost(ctx, host)
+	if err != nil {
+		return nil, false, err
+	}
+	if existing != nil {
+		return existing, false, nil
+	}
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, false, fmt.Errorf("generate instance id: %w", err)
+	}
+	doc := instanceDocument{
+		ID: id, Host: host, SuspensionState: instances.SuspensionNone,
+		FirstRetrievedAt: now, UpdatedAt: now,
+	}
+	if _, err := r.collection.InsertOne(ctx, doc); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			existing, findErr := r.FindByHost(ctx, host)
+			return existing, false, findErr
+		}
+		return nil, false, err
+	}
+	return toInstance(doc), true, nil
 }
 
 func toInstance(doc instanceDocument) *instances.Instance {

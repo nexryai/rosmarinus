@@ -112,13 +112,18 @@ client-provided ownership field as authorization evidence. Actor creation
 derives `ownerAccountId` from the authenticated session. Ordinary API calls do
 not transfer ownership.
 
-Actor IDs are opaque strings at the REST and SSE boundary. Newly generated
-local and remote Actor IDs are 24-character MongoDB ObjectID hexadecimal
-strings, stored as BSON strings rather than BSON ObjectID values. Salvia must
-not parse their timestamp component, infer whether an Actor is local or remote
-from the ID shape, or construct IDs. Rosmarinus determines locality from Actor
-state such as `host` and continues to accept stable legacy IDs where they have
-not been explicitly migrated.
+All Rosmarinus-owned entity IDs are opaque strings at the REST and SSE
+boundary. New Account, Actor, Note, media, relationship, reaction,
+notification, poll, vote, session, receipt, and other persisted record IDs are
+collision-checked MongoDB ObjectIDs encoded as 24 lowercase hexadecimal
+characters and stored as BSON strings rather than BSON ObjectID values.
+Protocol-owned identifiers such as ActivityPub URIs and WebAuthn credential
+IDs remain in their protocol representation and are not database entity IDs.
+Salvia must not parse ObjectID timestamps, infer locality or resource type from
+an ID, or construct IDs. Rosmarinus determines locality from Actor state such
+as `host`; migrated public Actor, Note, reaction, notification, and media
+lookups continue to accept indexed legacy aliases where those IDs were part of
+an established route.
 
 Account suspension immediately revokes effective REST and SSE access
 and triggers Rosmarinus's reversible Actor suspension policy. Account deletion
@@ -211,6 +216,11 @@ Canvas flow; `file` remains the unmodified original. Rosmarinus validates byte
 limits and detected media types, stores both blobs without decoding or
 transforming them, and returns an Actor-owned media ID. Note creation accepts
 at most four `media_ids` and rejects IDs not owned by the posting Actor.
+
+`POST /api/v1/actors/{actorId}/posts` does not accept `note_id`. Rosmarinus
+allocates the Note ID, checks it against the Note collection, derives the local
+ActivityPub URI from it, and returns the stored ID as `data.note_id`. The
+idempotency key identifies a logical retry; it is not used as the Note ID.
 
 ### Implemented read and settings endpoints
 
@@ -371,8 +381,11 @@ no secret may enter the SPA bundle.
 2. The versioned REST API, passkey/session endpoints, authenticated SSE, and
    Redis Pub/Sub fan-out are implemented; Ably code, SDKs, configuration, and
    cross-service MongoDB roles have been removed.
-3. Deployments with legacy Salvia data must migrate stable account IDs,
-   passkeys, settings, and Actor ownership references offline before cutover.
+3. Deployments with legacy Rosmarinus data must run `go run ./cmd/migrateids`
+   as a dry run and then, with a current backup and writers stopped,
+   `go run ./cmd/migrateids --apply`. The migration converts persisted entity
+   IDs and internal references to ObjectID strings while retaining public
+   protocol URIs and route aliases.
 4. Move the React SPA to the HTTP/event contracts and verify feature parity for
    every user-facing workflow.
 5. Remove the old Next.js deployment only after the static SPA and integrated

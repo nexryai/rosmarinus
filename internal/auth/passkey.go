@@ -57,7 +57,7 @@ type Ceremony struct {
 }
 
 type CeremonyStore interface {
-	Create(context.Context, Ceremony) error
+	Create(context.Context, Ceremony) (*Ceremony, error)
 	Consume(context.Context, string, CeremonyType, time.Time) (*Ceremony, error)
 }
 
@@ -121,6 +121,7 @@ func (s *PasskeyService) BeginInitialRegistration(ctx context.Context, username,
 	if err != nil {
 		return CeremonyOptions{}, err
 	}
+	accountID = user.Account.ID
 	creation, session, err := s.webauthn.BeginMediatedRegistration(user, protocol.MediationDefault,
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 	)
@@ -133,14 +134,15 @@ func (s *PasskeyService) BeginInitialRegistration(ctx context.Context, username,
 		_ = s.accounts.DeletePending(ctx, accountID)
 		return CeremonyOptions{}, err
 	}
-	if err := s.ceremonies.Create(ctx, Ceremony{
+	ceremony, err := s.ceremonies.Create(ctx, Ceremony{
 		ID: ceremonyID, Type: CeremonyInitialRegistration, AccountID: accountID,
 		Session: *session, CreatedAt: now, ExpiresAt: now.Add(s.ceremonyTTL),
-	}); err != nil {
+	})
+	if err != nil {
 		_ = s.accounts.DeletePending(ctx, accountID)
 		return CeremonyOptions{}, fmt.Errorf("store registration ceremony: %w", err)
 	}
-	return CeremonyOptions{CeremonyID: ceremonyID, PublicKey: creation}, nil
+	return CeremonyOptions{CeremonyID: ceremony.ID, PublicKey: creation}, nil
 }
 
 func (s *PasskeyService) FinishInitialRegistration(ctx context.Context, ceremonyID string, response *http.Request) (SessionCredentials, error) {
@@ -175,13 +177,14 @@ func (s *PasskeyService) BeginLogin(ctx context.Context) (CeremonyOptions, error
 		return CeremonyOptions{}, err
 	}
 	now := s.now()
-	if err := s.ceremonies.Create(ctx, Ceremony{
+	ceremony, err := s.ceremonies.Create(ctx, Ceremony{
 		ID: ceremonyID, Type: CeremonyLogin, Session: *session,
 		CreatedAt: now, ExpiresAt: now.Add(s.ceremonyTTL),
-	}); err != nil {
+	})
+	if err != nil {
 		return CeremonyOptions{}, fmt.Errorf("store login ceremony: %w", err)
 	}
-	return CeremonyOptions{CeremonyID: ceremonyID, PublicKey: assertion}, nil
+	return CeremonyOptions{CeremonyID: ceremony.ID, PublicKey: assertion}, nil
 }
 
 func (s *PasskeyService) FinishLogin(ctx context.Context, ceremonyID string, response *http.Request) (SessionCredentials, error) {

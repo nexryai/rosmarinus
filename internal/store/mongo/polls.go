@@ -2,8 +2,6 @@ package mongostore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -21,7 +19,8 @@ type PollRepository struct {
 }
 
 type pollDocument struct {
-	NoteID     string     `bson:"_id"`
+	ID         string     `bson:"_id"`
+	NoteID     string     `bson:"noteId"`
 	AuthorID   string     `bson:"authorId"`
 	AuthorHost *string    `bson:"authorHost"`
 	Choices    []string   `bson:"choices"`
@@ -34,9 +33,11 @@ type pollDocument struct {
 
 type pollVoteDocument struct {
 	ID        string    `bson:"_id"`
+	ScopeKey  string    `bson:"scopeKey"`
 	NoteID    string    `bson:"noteId"`
 	ActorID   string    `bson:"actorId"`
 	Choice    int       `bson:"choice"`
+	Multiple  bool      `bson:"multiple"`
 	CreatedAt time.Time `bson:"createdAt"`
 }
 
@@ -46,7 +47,7 @@ func NewPollRepository(db *mongo.Database) *PollRepository {
 
 func (r *PollRepository) FindByNoteID(ctx context.Context, noteID string) (*polls.Poll, error) {
 	var doc pollDocument
-	if err := r.collection.FindOne(ctx, bson.M{"_id": noteID}).Decode(&doc); err != nil {
+	if err := r.collection.FindOne(ctx, bson.M{"noteId": noteID}).Decode(&doc); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
@@ -78,8 +79,21 @@ func (r *PollRepository) upsert(ctx context.Context, poll polls.Poll) (*polls.Po
 	if poll.UpdatedAt.IsZero() {
 		poll.UpdatedAt = now
 	}
-	_, err := r.collection.UpdateOne(ctx, bson.M{"_id": poll.NoteID}, bson.M{
-		"$setOnInsert": fromPoll(poll),
+	existing, err := r.FindByNoteID(ctx, poll.NoteID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	id, err := newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate poll id: %w", err)
+	}
+	doc := fromPoll(poll)
+	doc.ID = id
+	_, err = r.collection.UpdateOne(ctx, bson.M{"noteId": poll.NoteID}, bson.M{
+		"$setOnInsert": doc,
 	}, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return nil, err
@@ -104,12 +118,29 @@ func (r *PollRepository) RecordVote(ctx context.Context, noteID, actorID string,
 	if poll.ExpiresAt != nil && !time.Now().UTC().Before(*poll.ExpiresAt) {
 		return nil, poll, polls.ErrExpired
 	}
-	voteID := pollVoteID(noteID, actorID, choice, poll.Multiple)
-	doc := pollVoteDocument{ID: voteID, NoteID: noteID, ActorID: actorID, Choice: choice, CreatedAt: createdAt}
 	votesCollection := r.collection.Database().Collection("poll_votes")
+	scopeKey := pollVoteScope(noteID, actorID, choice, poll.Multiple)
+	duplicateFilter := bson.M{"scopeKey": scopeKey}
+	var doc pollVoteDocument
+	err = votesCollection.FindOne(ctx, duplicateFilter).Decode(&doc)
+	if err == nil {
+		if repairErr := r.repairVoteCount(ctx, noteID, doc.Choice); repairErr != nil {
+			return nil, poll, repairErr
+		}
+		poll, err = r.FindByNoteID(ctx, noteID)
+		return toVote(doc), poll, polls.ErrAlreadyVoted
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, poll, err
+	}
+	voteID, err := newDocumentID(ctx, votesCollection)
+	if err != nil {
+		return nil, poll, fmt.Errorf("generate poll vote id: %w", err)
+	}
+	doc = pollVoteDocument{ID: voteID, ScopeKey: scopeKey, NoteID: noteID, ActorID: actorID, Choice: choice, Multiple: poll.Multiple, CreatedAt: createdAt}
 	_, err = votesCollection.InsertOne(ctx, doc)
 	if mongo.IsDuplicateKeyError(err) {
-		if findErr := votesCollection.FindOne(ctx, bson.M{"_id": voteID}).Decode(&doc); findErr != nil {
+		if findErr := votesCollection.FindOne(ctx, duplicateFilter).Decode(&doc); findErr != nil {
 			return nil, poll, findErr
 		}
 		if repairErr := r.repairVoteCount(ctx, noteID, doc.Choice); repairErr != nil {
@@ -119,13 +150,13 @@ func (r *PollRepository) RecordVote(ctx context.Context, noteID, actorID string,
 		if findErr != nil {
 			return nil, nil, findErr
 		}
-		return &polls.Vote{ID: doc.ID, NoteID: noteID, ActorID: actorID, Choice: doc.Choice, CreatedAt: doc.CreatedAt}, poll, polls.ErrAlreadyVoted
+		return toVote(doc), poll, polls.ErrAlreadyVoted
 	}
 	if err != nil {
 		return nil, poll, err
 	}
 	path := "votes." + strconv.Itoa(choice)
-	if _, err := r.collection.UpdateOne(ctx, bson.M{"_id": noteID}, bson.M{
+	if _, err := r.collection.UpdateOne(ctx, bson.M{"noteId": noteID}, bson.M{
 		"$inc": bson.M{path: 1}, "$set": bson.M{"updatedAt": time.Now().UTC()},
 	}); err != nil {
 		return nil, poll, err
@@ -134,7 +165,7 @@ func (r *PollRepository) RecordVote(ctx context.Context, noteID, actorID string,
 	if err != nil {
 		return nil, nil, err
 	}
-	return &polls.Vote{ID: voteID, NoteID: noteID, ActorID: actorID, Choice: choice, CreatedAt: createdAt}, poll, nil
+	return toVote(doc), poll, nil
 }
 
 func (r *PollRepository) repairVoteCount(ctx context.Context, noteID string, choice int) error {
@@ -143,7 +174,7 @@ func (r *PollRepository) repairVoteCount(ctx context.Context, noteID string, cho
 		return err
 	}
 	path := "votes." + strconv.Itoa(choice)
-	_, err = r.collection.UpdateOne(ctx, bson.M{"_id": noteID}, bson.M{
+	_, err = r.collection.UpdateOne(ctx, bson.M{"noteId": noteID}, bson.M{
 		"$max": bson.M{path: count}, "$set": bson.M{"updatedAt": time.Now().UTC()},
 	})
 	return err
@@ -198,7 +229,7 @@ func (r *PollRepository) UpdateRemoteVotes(ctx context.Context, noteID, authorID
 			return nil, fmt.Errorf("poll votes must not be negative")
 		}
 	}
-	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": noteID, "authorId": authorID}, bson.M{
+	result, err := r.collection.UpdateOne(ctx, bson.M{"noteId": noteID, "authorId": authorID}, bson.M{
 		"$set": bson.M{"votes": votes, "updatedAt": time.Now().UTC()},
 	})
 	if err != nil {
@@ -226,11 +257,13 @@ func toPoll(doc pollDocument) *polls.Poll {
 	}
 }
 
-func pollVoteID(noteID, actorID string, choice int, multiple bool) string {
-	value := noteID + "\x00" + actorID
+func toVote(doc pollVoteDocument) *polls.Vote {
+	return &polls.Vote{ID: doc.ID, NoteID: doc.NoteID, ActorID: doc.ActorID, Choice: doc.Choice, CreatedAt: doc.CreatedAt}
+}
+
+func pollVoteScope(noteID, actorID string, choice int, multiple bool) string {
 	if multiple {
-		value += "\x00" + strconv.Itoa(choice)
+		return noteID + ":" + actorID + ":" + strconv.Itoa(choice)
 	}
-	sum := sha256.Sum256([]byte(value))
-	return "poll_vote_" + hex.EncodeToString(sum[:])[:24]
+	return noteID + ":" + actorID
 }

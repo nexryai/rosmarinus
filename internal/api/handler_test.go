@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,11 +42,12 @@ type fakeMediaUploadStore struct {
 	items []*domainmedia.Media
 }
 
-func (s *fakeMediaUploadStore) CreateLocal(_ context.Context, id, actorID, name, publicURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
+func (s *fakeMediaUploadStore) CreateLocal(_ context.Context, _ string, actorID, name, publicBaseURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
 	if _, err := io.Copy(io.Discard, source); err != nil {
 		return nil, err
 	}
-	item := &domainmedia.Media{ID: id, OwnerActorID: actorID, Name: name, PublicURL: publicURL, ContentType: contentType, Size: size, SHA256: digest, Width: width, Height: height, State: domainmedia.StateReady}
+	id := fmt.Sprintf("%024x", len(s.items)+1)
+	item := &domainmedia.Media{ID: id, OwnerActorID: actorID, Name: name, PublicURL: strings.TrimRight(publicBaseURL, "/") + "/" + id, ContentType: contentType, Size: size, SHA256: digest, Width: width, Height: height, State: domainmedia.StateReady}
 	s.items = append(s.items, item)
 	return item, nil
 }
@@ -313,14 +316,14 @@ func TestHandlerRejectsCrossAccountActor(t *testing.T) {
 	handler, _, store := testHandler()
 	store.actors = append(store.actors, actors.Actor{ID: "actor-2", OwnerAccountID: "account-2"})
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-2/posts", `{"note_id":"note-1","text":"hello"}`))
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-2/posts", `{"text":"hello"}`))
 	assertError(t, recorder, http.StatusNotFound, "actor_not_found")
 }
 
 func TestHandlerMapsRESTPostToDomainCommand(t *testing.T) {
 	handler, executor, _ := testHandler()
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello"}`))
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"hello"}`))
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -345,7 +348,7 @@ func TestHandlerMapsRemoteFollowToOwnedActor(t *testing.T) {
 
 func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 	handler, executor, _ := testHandler()
-	first := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello"}`)
+	first := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"hello"}`)
 	first.Header.Set("Idempotency-Key", "same-request-key")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, first)
@@ -354,7 +357,7 @@ func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 	}
 
 	executor.command = ""
-	second := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello"}`)
+	second := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"hello"}`)
 	second.Header.Set("Idempotency-Key", "same-request-key")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, second)
@@ -362,7 +365,7 @@ func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 		t.Fatalf("replay status=%d execution=%q body=%s", recorder.Code, executor.command, recorder.Body.String())
 	}
 
-	differentIntent := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-2","text":"different"}`)
+	differentIntent := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"different"}`)
 	differentIntent.Header.Set("Idempotency-Key", "same-request-key")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, differentIntent)
@@ -378,7 +381,7 @@ func TestHandlerReplaysIdempotentResultAndRejectsKeyReuse(t *testing.T) {
 func TestHandlerRejectsUnknownJSONFields(t *testing.T) {
 	handler, _, _ := testHandler()
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello","account_id":"account-2"}`))
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"hello","account_id":"account-2"}`))
 	assertError(t, recorder, http.StatusBadRequest, "invalid_json")
 }
 
@@ -434,7 +437,7 @@ func TestHandlerDoesNotExposeInternalErrors(t *testing.T) {
 	handler, executor, _ := testHandler()
 	executor.err = errors.New("database password was logged")
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"note_id":"note-1","text":"hello"}`))
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/posts", `{"text":"hello"}`))
 	if recorder.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d", recorder.Code)
 	}

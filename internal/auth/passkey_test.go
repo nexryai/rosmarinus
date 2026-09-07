@@ -47,9 +47,9 @@ type fakeCeremonies struct {
 	ceremony *Ceremony
 }
 
-func (s *fakeCeremonies) Create(_ context.Context, ceremony Ceremony) error {
+func (s *fakeCeremonies) Create(_ context.Context, ceremony Ceremony) (*Ceremony, error) {
 	s.ceremony = &ceremony
-	return nil
+	return &ceremony, nil
 }
 
 func (s *fakeCeremonies) Consume(_ context.Context, id string, ceremonyType CeremonyType, now time.Time) (*Ceremony, error) {
