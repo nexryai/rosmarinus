@@ -487,6 +487,20 @@ func (r *ActorRepository) UpsertRemoteActor(ctx context.Context, actor actors.Ac
 	if actor.Host == nil || *actor.Host == "" {
 		return nil, fmt.Errorf("remote actor host is required")
 	}
+	if actor.ID == "" {
+		existing, err := r.FindByURI(ctx, actor.URI)
+		if err != nil {
+			return nil, fmt.Errorf("find remote actor before upsert: %w", err)
+		}
+		if existing != nil {
+			actor.ID = existing.ID
+		} else {
+			actor.ID, err = newDocumentID(ctx, r.collection)
+			if err != nil {
+				return nil, fmt.Errorf("generate remote actor id: %w", err)
+			}
+		}
+	}
 	if err := requireDocumentID("remote actor id", actor.ID); err != nil {
 		return nil, err
 	}

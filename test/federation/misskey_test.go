@@ -1211,7 +1211,7 @@ waitForRemoteNoteEvent:
 	// Phase 21: inspect a completed receipt from authenticated Misskey traffic
 	// and verify the MongoDB claim rejects its Activity URI as a duplicate.
 	var receipt struct {
-		ActivityID string `bson:"_id"`
+		ActivityID string `bson:"activityId"`
 		ActorURI   string `bson:"actorUri"`
 		Status     string `bson:"status"`
 	}

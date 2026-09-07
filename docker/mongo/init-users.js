@@ -30,6 +30,7 @@ const rosmarinusCollections = [
   "abuse_reports",
   "notifications",
   "api_idempotency_receipts",
+  "migration_audits",
 ];
 
 const rosmarinusInternalCollections = [
