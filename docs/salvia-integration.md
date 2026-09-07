@@ -299,6 +299,11 @@ Events use a small versioned envelope:
   status during long-lived connections.
 - Publish only to the authenticated account. Include an Actor ID where it
   narrows invalidation; never trust a client-supplied subscription account.
+- Emit `note.created` after both local Note creation and a newly accepted
+  ActivityPub `Create(Note)` or `Announce`. Public remote Notes invalidate each
+  account with no `actor_id`; non-public remote Notes are sent only to accounts
+  whose active local Actor can receive them, with that local Actor ID. The
+  `data.note_id` value is the stored Rosmarinus Note ID.
 - Keep payloads minimal and browser-safe. Prefer resource IDs and projection
   invalidation over copying federation documents into Pub/Sub.
 - Use per-account Redis channel derivation exclusively inside Rosmarinus. Do

@@ -411,6 +411,7 @@ func TestScheduleMediaRejectsUnsafeURLAndSkipsReadyMedia(t *testing.T) {
 
 type fakeConnectorPublisher struct {
 	post         *connector.PostCreated
+	posts        []connector.PostCreated
 	notification *connector.NotificationCreated
 	requested    *connector.FollowApproval
 	requestedErr error
@@ -427,6 +428,7 @@ func (f *fakeConnectorPublisher) PublishNotificationCreated(_ context.Context, p
 func (f *fakeConnectorPublisher) PublishPostCreated(ctx context.Context, payload connector.PostCreated) error {
 	_ = ctx
 	f.post = &payload
+	f.posts = append(f.posts, payload)
 	return nil
 }
 
@@ -1481,6 +1483,89 @@ func TestPerformCreatePersistsReplyNotificationWithoutDuplicateMention(t *testin
 	}
 	if len(notificationRepo.notifications) != 1 || connectorPublisher.notification == nil || connectorPublisher.notification.Kind != notifications.KindReply {
 		t.Fatalf("reply notification was not deduplicated: stored=%+v event=%+v", notificationRepo.notifications, connectorPublisher.notification)
+	}
+}
+
+func TestPerformCreatePublishesRemotePublicNoteToOwnedAccounts(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &host, LastFetchedAt: time.Now()}
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{PublicURL: "https://local.example"}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/create-public", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/notes/public", "type": "Note", "attributedTo": remote.URI,
+			"content": "public note", "to": apnotes.PublicAudience,
+		},
+	})
+	if err != nil || result != "ok: note created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(publisher.posts) != 1 {
+		t.Fatalf("note.created events = %+v, want one", publisher.posts)
+	}
+	event := publisher.posts[0]
+	if event.AccountID != local.OwnerAccountID || event.ActorID != "" || event.NoteID != "note-id" || event.URI != "https://remote.example/notes/public" {
+		t.Fatalf("unexpected public note.created event: %+v", event)
+	}
+}
+
+func TestPerformCreatePublishesRemoteHomeNoteToLocalFollowers(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &host, LastFetchedAt: time.Now()}
+	followRepo := &fakeFollowRepo{follows: map[string]*follows.Follow{
+		local.ID + "\x00" + remote.ID: {
+			ID: "follow-1", FollowerID: local.ID, FolloweeID: remote.ID,
+			FollowerURI: local.URI, FolloweeURI: remote.URI, FolloweeHost: &host, Status: follows.StatusAccepted,
+		},
+	}}
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{PublicURL: "https://local.example"}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/create-home", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/notes/home", "type": "Note", "attributedTo": remote.URI,
+			"content": "home note", "to": remote.URI + "/followers", "cc": apnotes.PublicAudience,
+		},
+	})
+	if err != nil || result != "ok: note created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(publisher.posts) != 1 {
+		t.Fatalf("note.created events = %+v, want one", publisher.posts)
+	}
+	event := publisher.posts[0]
+	if event.AccountID != local.OwnerAccountID || event.ActorID != local.ID || event.NoteID != "note-id" || event.URI != "https://remote.example/notes/home" {
+		t.Fatalf("unexpected home note.created event: %+v", event)
+	}
+}
+
+func TestPerformCreateDoesNotPublishRemoteHomeNoteToNonFollowers(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", URI: "https://local.example/users/alice"}
+	remote := &actors.Actor{ID: "remote", URI: "https://remote.example/users/bob", Host: &host, LastFetchedAt: time.Now()}
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{PublicURL: "https://local.example"}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+
+	result, err := h.performActivity(context.Background(), remote, map[string]any{
+		"id": "https://remote.example/activities/create-home", "type": "Create", "actor": remote.URI,
+		"object": map[string]any{
+			"id": "https://remote.example/notes/home", "type": "Note", "attributedTo": remote.URI,
+			"content": "home note", "to": remote.URI + "/followers", "cc": apnotes.PublicAudience,
+		},
+	})
+	if err != nil || result != "ok: note created" {
+		t.Fatalf("result=%q err=%v", result, err)
+	}
+	if len(publisher.posts) != 0 {
+		t.Fatalf("home note event leaked to a non-follower: %+v", publisher.posts)
 	}
 }
 
@@ -4790,8 +4875,10 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 		PublicKeyID:  "https://remote.example/users/alice#main-key",
 		PublicKeyPEM: publicKeyPEM(&privateKey.PublicKey),
 	}
+	local := &actors.Actor{ID: "local", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/local"}
 	noteRepo := &fakeNoteRepo{}
-	h := New(config.Config{}, nil, &fakeRepo{remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{
 		objects: map[string]map[string]any{
 			"https://remote.example/notes/1": {
 				"id":           "https://remote.example/notes/1",
@@ -4802,6 +4889,7 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 			},
 		},
 	}, nil)
+	h.SetConnectorPublisher(publisher)
 	result, err := h.ProcessInbox(context.Background(), queue.InboxPayload{
 		Version: 1,
 		Activity: map[string]any{
@@ -4842,6 +4930,9 @@ func TestProcessInboxAnnounceStoresRenote(t *testing.T) {
 	}
 	if announce.Visibility != domainnotes.VisibilityPublic {
 		t.Fatalf("visibility = %q", announce.Visibility)
+	}
+	if len(publisher.posts) != 1 || publisher.posts[0].AccountID != local.OwnerAccountID || publisher.posts[0].NoteID != announce.ID {
+		t.Fatalf("announce note.created event = %+v", publisher.posts)
 	}
 }
 

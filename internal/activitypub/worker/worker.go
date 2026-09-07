@@ -1615,6 +1615,9 @@ func (h *Handler) performCreate(ctx context.Context, actor *actors.Actor, activi
 	if err := h.createNoteNotifications(ctx, actor, stored, reply, activityID); err != nil {
 		return "", err
 	}
+	if err := h.publishRemoteNoteCreated(ctx, actor, stored); err != nil && h.logger != nil {
+		h.logger.Printf("realtime: publish remote note created uri=%s: %v", stored.URI, err)
+	}
 	return "ok: note created", nil
 }
 
@@ -3547,7 +3550,7 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 		CreatedAt:    time.Now().UTC(),
 		PublishedAt:  announcedAt,
 	}
-	_, err = h.notes.UpsertRemoteNote(ctx, note)
+	stored, err := h.notes.UpsertRemoteNote(ctx, note)
 	if err != nil {
 		return "", err
 	}
@@ -3557,6 +3560,9 @@ func (h *Handler) performAnnounce(ctx context.Context, actor *actors.Actor, acti
 	}
 	if err := h.createNotification(ctx, recipient, notifications.KindRenote, actor, target.ID, activityID); err != nil {
 		return "", err
+	}
+	if err := h.publishRemoteNoteCreated(ctx, actor, stored); err != nil && h.logger != nil {
+		h.logger.Printf("realtime: publish remote announce created uri=%s: %v", stored.URI, err)
 	}
 	return "ok: announce created", nil
 }
@@ -3657,6 +3663,94 @@ func (h *Handler) createNotification(ctx context.Context, recipient *actors.Acto
 			SourceActorID:    notification.SourceActorID,
 			NoteID:           notification.NoteID,
 		})
+	}
+	return nil
+}
+
+func (h *Handler) publishRemoteNoteCreated(ctx context.Context, author *actors.Actor, note *domainnotes.Note) error {
+	if h.connector == nil || author == nil || author.Host == nil || note == nil {
+		return nil
+	}
+	publish := func(accountID, actorID string) error {
+		if strings.TrimSpace(accountID) == "" {
+			return nil
+		}
+		return h.connector.PublishPostCreated(ctx, connector.PostCreated{
+			AccountID: accountID,
+			ActorID:   actorID,
+			NoteID:    note.ID,
+			URI:       note.URI,
+		})
+	}
+	if note.Visibility == domainnotes.VisibilityPublic {
+		accountIDs, err := h.repo.ListOwnedAccountIDs(ctx)
+		if err != nil {
+			return fmt.Errorf("list accounts for remote public note event: %w", err)
+		}
+		seen := make(map[string]struct{}, len(accountIDs))
+		for _, accountID := range accountIDs {
+			accountID = strings.TrimSpace(accountID)
+			if accountID == "" {
+				continue
+			}
+			if _, exists := seen[accountID]; exists {
+				continue
+			}
+			seen[accountID] = struct{}{}
+			// An empty Actor ID invalidates the public timeline for every selected
+			// Actor owned by this account.
+			if err := publish(accountID, ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	recipients := make(map[string]*actors.Actor)
+	if note.Visibility == domainnotes.VisibilityHome || note.Visibility == domainnotes.VisibilityFollowers {
+		if h.follows == nil {
+			return fmt.Errorf("follow repository is not configured")
+		}
+		afterID := ""
+		for {
+			page, err := h.follows.ListFollowersPage(ctx, author.ID, afterID, postDeliveryFollowerLimit)
+			if err != nil {
+				return fmt.Errorf("list local followers for remote note event: %w", err)
+			}
+			for _, relationship := range page {
+				recipient, err := h.repo.FindLocalByID(ctx, relationship.FollowerID)
+				if err != nil {
+					return fmt.Errorf("find local follower for remote note event: %w", err)
+				}
+				if recipient != nil && recipient.OwnerAccountID != "" {
+					recipients[recipient.ID] = recipient
+				}
+			}
+			if len(page) < postDeliveryFollowerLimit {
+				break
+			}
+			next := page[len(page)-1].ID
+			if next == "" || next <= afterID {
+				return fmt.Errorf("remote note follower pagination did not advance")
+			}
+			afterID = next
+		}
+	}
+	if note.Visibility == domainnotes.VisibilitySpecified {
+		for _, uri := range note.VisibleUserURIs {
+			recipient, err := h.repo.FindByURI(ctx, uri)
+			if err != nil {
+				return fmt.Errorf("find direct recipient for remote note event: %w", err)
+			}
+			if recipient != nil && recipient.Host == nil && recipient.OwnerAccountID != "" {
+				recipients[recipient.ID] = recipient
+			}
+		}
+	}
+	for _, recipient := range recipients {
+		if err := publish(recipient.OwnerAccountID, recipient.ID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

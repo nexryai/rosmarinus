@@ -485,9 +485,10 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		return shown.IsFollowing
 	})
 
-	// Phase 12: create an account-owned Actor, let Misskey follow it, and update
-	// its profile, verifying Rosmarinus delivers a full Update(Person) that
-	// refreshes Misskey's name, cat flag, and bot Actor type.
+	// Phase 12: create an account-owned Actor, exercise follows in both
+	// directions, and update its profile. Verify Rosmarinus delivers a full
+	// Update(Person), then verify an inbound Misskey home Note publishes a
+	// note.created SSE invalidation to the following Actor's owning account.
 	const ownedUsername = "ownedprofile"
 	const ownedUpdatedName = "Updated Rosmarinus profile"
 	ownedCreated, err := worker.CreateActor(ctx, "federation-account", connector.ActorCreateCommand{
@@ -569,6 +570,68 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}, &ownedOnMisskey)
 		return ownedOnMisskey.Name == ownedUpdatedName && ownedOnMisskey.IsBot && ownedOnMisskey.IsCat
 	})
+	if _, err := worker.CreateFollow(ctx, ownedActor.ID, remoteActorURI); err != nil {
+		t.Fatalf("create account-owned Actor outgoing Follow: %v", err)
+	}
+	waitFor(t, ctx, "account-owned Actor Follow accepted by Misskey", func() bool {
+		relationship, findErr := followRepo.Find(ctx, ownedActor.ID, remoteActor.ID)
+		return findErr == nil && relationship != nil && relationship.Status == follows.StatusAccepted
+	})
+	eventRedis := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
+	defer eventRedis.Close()
+	eventSubscription, err := realtime.NewRedisBroker(eventRedis).Subscribe(ctx, "federation-account")
+	if err != nil {
+		t.Fatalf("subscribe account-owned Actor SSE channel: %v", err)
+	}
+	defer eventSubscription.Close()
+	var sseRemoteNote struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i": admin.Token, "text": "Remote home note for Salvia SSE", "visibility": "home",
+	}, &sseRemoteNote)
+	if sseRemoteNote.CreatedNote.ID == "" {
+		t.Fatal("Misskey SSE fixture note has an empty ID")
+	}
+	sseNoteURI := "https://a.test/notes/" + sseRemoteNote.CreatedNote.ID
+	timer := time.NewTimer(20 * time.Second)
+	defer timer.Stop()
+	receivedRemoteNoteID := ""
+waitForRemoteNoteEvent:
+	for {
+		select {
+		case payload, open := <-eventSubscription.Channel():
+			if !open {
+				t.Fatal("account-owned Actor SSE subscription closed before note.created")
+			}
+			var event realtime.Event
+			if err := json.Unmarshal(payload, &event); err != nil {
+				t.Fatalf("decode remote note SSE event: %v", err)
+			}
+			data, _ := event.Data.(map[string]any)
+			noteID, _ := data["note_id"].(string)
+			if event.Type == "note.created" && event.ActorID == ownedActor.ID && noteID != "" {
+				receivedRemoteNoteID = noteID
+				break waitForRemoteNoteEvent
+			}
+		case <-timer.C:
+			t.Fatal("timed out waiting for remote note.created SSE event")
+		}
+	}
+	var storedSSENote *domainnotes.Note
+	waitFor(t, ctx, "SSE fixture Note stored by Rosmarinus", func() bool {
+		var findErr error
+		storedSSENote, findErr = noteRepo.FindByURI(ctx, sseNoteURI)
+		return findErr == nil && storedSSENote != nil && storedSSENote.Text == "Remote home note for Salvia SSE"
+	})
+	if receivedRemoteNoteID != storedSSENote.ID {
+		t.Fatalf("remote note.created ID = %q, stored Note ID = %q", receivedRemoteNoteID, storedSSENote.ID)
+	}
+	if _, err := worker.DeleteFollow(ctx, connector.FollowDeleteCommand{ActorID: ownedActor.ID, Target: remoteActorURI}); err != nil {
+		t.Fatalf("remove account-owned Actor outgoing Follow fixture: %v", err)
+	}
 
 	// Phase 13: block the Misskey Actor from Rosmarinus, verify Misskey removes
 	// its local Follow and exposes the blocked relationship, then undo the Block

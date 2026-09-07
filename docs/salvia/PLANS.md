@@ -38,6 +38,11 @@ part of the target architecture.
   MongoDB ObjectID hexadecimal strings while keeping IDs opaque to Salvia and
   using Actor `host` state, rather than an ID prefix, to determine locality.
 
+- Completed: publish account-scoped `note.created` SSE invalidations for
+  inbound remote Notes and Announces. Public Notes invalidate every local
+  account; home/followers/direct Notes target only local Actors whose timeline
+  projection can include them.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct
