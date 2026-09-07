@@ -1939,6 +1939,41 @@ func (h *Handler) RejectFollow(ctx context.Context, followerID, followeeID strin
 	return "ok: follow rejected delivery enqueued", nil
 }
 
+func (h *Handler) RejectAndBlockFollow(ctx context.Context, followerID, followeeID string) (connector.BlockCreated, error) {
+	if h.follows == nil || h.blocks == nil || h.queue == nil {
+		return connector.BlockCreated{}, fmt.Errorf("follow repository, block repository, and queue are required")
+	}
+	follow, err := h.follows.Find(ctx, strings.TrimSpace(followerID), strings.TrimSpace(followeeID))
+	if err != nil {
+		return connector.BlockCreated{}, err
+	}
+	if follow == nil {
+		return connector.BlockCreated{}, fmt.Errorf("follow request not found")
+	}
+	if follow.Status != follows.StatusPending {
+		return connector.BlockCreated{}, fmt.Errorf("follow request is not pending")
+	}
+	follower, err := h.repo.FindAnyByID(ctx, follow.FollowerID)
+	if err != nil {
+		return connector.BlockCreated{}, err
+	}
+	if follower == nil || follower.Host == nil || follower.URI != follow.FollowerURI {
+		return connector.BlockCreated{}, fmt.Errorf("follow requester is not a matching remote actor")
+	}
+	result, err := h.RejectFollow(ctx, follow.FollowerID, follow.FolloweeID)
+	if err != nil {
+		return connector.BlockCreated{}, err
+	}
+	if !strings.HasPrefix(result, "ok:") {
+		return connector.BlockCreated{}, fmt.Errorf("reject follow request: %s", result)
+	}
+	created, err := h.CreateBlock(ctx, connector.BlockCreateCommand{ActorID: follow.FolloweeID, Target: follower.URI})
+	if err != nil {
+		return connector.BlockCreated{}, fmt.Errorf("block rejected follower: %w", err)
+	}
+	return created, nil
+}
+
 func (h *Handler) CreatePost(ctx context.Context, command connector.PostCreateCommand) (connector.PostCreated, error) {
 	if h.notes == nil {
 		return connector.PostCreated{}, fmt.Errorf("note repository is not configured")

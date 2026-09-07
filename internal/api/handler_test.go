@@ -132,6 +132,11 @@ func (e *fakeExecutor) RejectFollow(_ context.Context, followerID, followeeID st
 	return "follow-1", err
 }
 
+func (e *fakeExecutor) RejectAndBlockFollow(_ context.Context, followerID, followeeID string) (connector.BlockCreated, error) {
+	err := e.record(connector.CommandFollowRejectAndBlock, followeeID, followerID)
+	return connector.BlockCreated{BlockID: "block-1", BlockeeID: followerID}, err
+}
+
 func (e *fakeExecutor) CreatePost(_ context.Context, command connector.PostCreateCommand) (connector.PostCreated, error) {
 	err := e.record(connector.CommandPostCreate, command.ActorID, command)
 	return connector.PostCreated{NoteID: command.NoteID}, err
@@ -386,6 +391,7 @@ func TestHandlerMapsFollowApprovalAndNotificationRead(t *testing.T) {
 		command string
 	}{
 		{http.MethodPatch, "/api/v1/actors/actor-1/follow-requests/remote-1", `{"status":"accepted"}`, connector.CommandFollowApprove},
+		{http.MethodPatch, "/api/v1/actors/actor-1/follow-requests/remote-1", `{"status":"rejected_and_blocked"}`, connector.CommandFollowRejectAndBlock},
 		{http.MethodPatch, "/api/v1/actors/actor-1/notifications/notification-1", `{"is_read":true}`, connector.CommandNotificationMarkRead},
 	}
 	for _, test := range tests {

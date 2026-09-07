@@ -53,6 +53,21 @@ describe("social inbox mutations", () => {
         expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "rejected");
     });
 
+    it("rejects and blocks a follow requester after confirmation", async () => {
+        const item = { id: "follow-3", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
+        vi.spyOn(api, "followRequests").mockResolvedValue([item]);
+        const decide = vi.spyOn(api, "decideFollowRequest").mockResolvedValue(undefined);
+        vi.spyOn(window, "confirm").mockReturnValue(true);
+        const user = userEvent.setup();
+        render(<FollowRequestsPage actorID="alice" csrf="csrf" refreshKey={0} />);
+
+        await user.click(await screen.findByRole("button", { name: "拒否してブロック" }));
+
+        expect(window.confirm).toHaveBeenCalledWith("Bobを拒否してブロックしますか？");
+        expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "rejected_and_blocked");
+        expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+    });
+
     it("renders empty and error states without losing the page controls", async () => {
         vi.spyOn(api, "followRequests").mockResolvedValue([]);
         vi.spyOn(api, "notifications").mockRejectedValue(new Error("offline"));

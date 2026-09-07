@@ -2677,6 +2677,55 @@ func TestRejectFollowSkipsAcceptedFollow(t *testing.T) {
 	}
 }
 
+func TestRejectAndBlockFollowDeliversBothActivities(t *testing.T) {
+	host := "remote.example"
+	local := &actors.Actor{
+		ID: "local-alice", OwnerAccountID: "account-1", URI: "https://rosmarinus.example/users/alice",
+	}
+	remote := &actors.Actor{
+		ID: "remote-bob", URI: "https://remote.example/users/bob", Host: &host,
+		Inbox: "https://remote.example/users/bob/inbox", SharedInbox: "https://remote.example/inbox",
+	}
+	followRepo := &fakeFollowRepo{}
+	_, _ = followRepo.Upsert(context.Background(), follows.Follow{
+		FollowerID: remote.ID, FolloweeID: local.ID, FollowerURI: remote.URI, FolloweeURI: local.URI,
+		FollowerHost: remote.Host, FollowerInbox: remote.Inbox, FollowerSharedInbox: remote.SharedInbox,
+		Status: follows.StatusPending, RemoteActivityID: "https://remote.example/activities/follow",
+	})
+	blockRepo := &fakeBlockRepo{}
+	q := &fakeQueue{}
+	publisher := &fakeConnectorPublisher{}
+	h := New(config.Config{
+		PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute},
+	}, nil, &fakeRepo{local: local, remote: remote}, &fakeNoteRepo{}, followRepo, blockRepo, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	h.SetConnectorPublisher(publisher)
+
+	created, err := h.RejectAndBlockFollow(context.Background(), remote.ID, local.ID)
+	if err != nil {
+		t.Fatalf("RejectAndBlockFollow returned error: %v", err)
+	}
+	if created.BlockID != "block-id" || created.BlockeeID != remote.ID {
+		t.Fatalf("created block = %+v", created)
+	}
+	if follow, _ := followRepo.Find(context.Background(), remote.ID, local.ID); follow != nil {
+		t.Fatalf("pending follow remains: %+v", follow)
+	}
+	if block, _ := blockRepo.Find(context.Background(), local.ID, remote.ID); block == nil {
+		t.Fatal("remote follower was not blocked")
+	}
+	if len(q.tasks) != 2 {
+		t.Fatalf("delivery tasks = %d, want Reject and Block", len(q.tasks))
+	}
+	reject, rejectOK := q.tasks[0].Payload.(queue.DeliverPayload)
+	block, blockOK := q.tasks[1].Payload.(queue.DeliverPayload)
+	if !rejectOK || reject.Object["type"] != "Reject" || !blockOK || block.Object["type"] != "Block" {
+		t.Fatalf("unexpected Reject and Block deliveries: %+v", q.tasks)
+	}
+	if publisher.rejected == nil || publisher.rejected.FollowerID != remote.ID {
+		t.Fatalf("follow rejection event = %+v", publisher.rejected)
+	}
+}
+
 func TestCreatePostStoresLocalNoteAndPublishesConnectorEvent(t *testing.T) {
 	local := &actors.Actor{
 		ID:       "relay",

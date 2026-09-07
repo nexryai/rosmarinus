@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
-import { IconUserCheck } from "@tabler/icons-react";
+import { IconBan, IconUserCheck } from "@tabler/icons-react";
 
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { api } from "../lib/api";
@@ -40,7 +40,7 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
         void refreshKey;
         void load();
     }, [load, refreshKey]);
-    const decide = async (item: Connection, status: "accepted" | "rejected") => {
+    const decide = async (item: Connection, status: "accepted" | "rejected" | "rejected_and_blocked") => {
         setBusyID(item.id);
         try {
             await api.decideFollowRequest(csrf, actorID, item.actor.id, status);
@@ -74,6 +74,16 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
                                 </Button>
                                 <Button disabled={busyID === item.id} onClick={() => void decide(item, "rejected")} variant="ghost">
                                     拒否
+                                </Button>
+                                <Button
+                                    disabled={busyID === item.id}
+                                    onClick={() => {
+                                        if (window.confirm(`${item.actor.name || item.actor.username}を拒否してブロックしますか？`)) void decide(item, "rejected_and_blocked");
+                                    }}
+                                    variant="danger"
+                                >
+                                    <IconBan />
+                                    拒否してブロック
                                 </Button>
                             </div>
                         </article>

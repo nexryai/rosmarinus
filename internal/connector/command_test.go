@@ -22,6 +22,9 @@ func (e *recordingExecutor) ApproveFollow(context.Context, string, string) (stri
 func (e *recordingExecutor) RejectFollow(context.Context, string, string) (string, error) {
 	return "follow-1", nil
 }
+func (e *recordingExecutor) RejectAndBlockFollow(context.Context, string, string) (BlockCreated, error) {
+	return BlockCreated{}, nil
+}
 func (e *recordingExecutor) CreatePost(_ context.Context, command PostCreateCommand) (PostCreated, error) {
 	e.post = command
 	return PostCreated{NoteID: command.NoteID}, nil

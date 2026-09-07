@@ -529,8 +529,10 @@ func (h *Handler) followRequest(w http.ResponseWriter, r *http.Request, accountI
 		h.execute(w, r, accountID, connector.CommandFollowApprove, actorID, data, http.StatusOK)
 	case "rejected":
 		h.execute(w, r, accountID, connector.CommandFollowReject, actorID, connector.FollowRejectData{FollowerID: segments[0]}, http.StatusOK)
+	case "rejected_and_blocked":
+		h.execute(w, r, accountID, connector.CommandFollowRejectAndBlock, actorID, connector.FollowRejectData{FollowerID: segments[0]}, http.StatusOK)
 	default:
-		h.writeError(w, http.StatusUnprocessableEntity, "invalid_status", "status must be accepted or rejected")
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_status", "status must be accepted, rejected, or rejected_and_blocked")
 	}
 }
 
@@ -655,6 +657,8 @@ func (h *Handler) publishMutationEvent(ctx context.Context, accountID, actorID, 
 		eventType = "follow.approval.completed"
 	case connector.CommandFollowReject:
 		eventType = "follow.approval.rejected"
+	case connector.CommandFollowRejectAndBlock:
+		eventType = "block.changed"
 	case connector.CommandFollowCreate, connector.CommandFollowDelete:
 		eventType = "follow.changed"
 	case connector.CommandBlockCreate, connector.CommandBlockDelete:

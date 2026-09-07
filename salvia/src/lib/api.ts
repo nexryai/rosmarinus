@@ -147,7 +147,7 @@ export const api = {
     },
     followRequests: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/follow-requests?limit=50`, pageEnvelope(connectionSchema))).data,
     following: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/following?limit=100`, pageEnvelope(connectionSchema))).data,
-    decideFollowRequest: async (csrf: string, actorID: string, followerID: string, status: "accepted" | "rejected"): Promise<void> => {
+    decideFollowRequest: async (csrf: string, actorID: string, followerID: string, status: "accepted" | "rejected" | "rejected_and_blocked"): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
     },
     profile: async (viewerID: string, actorID: string, signal?: AbortSignal): Promise<Profile> => (await request(`/profiles/${encodeURIComponent(actorID)}${query({ actor_id: viewerID })}`, envelope(profileSchema), { signal })).data,

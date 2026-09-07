@@ -179,7 +179,7 @@ stored in MongoDB.
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/follows` | Follow or unfollow the body `target` |
 | `POST` | `/api/v1/actors/{actorId}/profiles/resolve` | Resolve a remote Actor handle or URL and return its safe profile |
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/blocks` | Block or unblock the body `target` |
-| `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted` or `rejected` |
+| `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted`, `rejected`, or `rejected_and_blocked` |
 | `PATCH` | `/api/v1/actors/{actorId}/notifications/{notificationId}` | Set `is_read` to `true` |
 
 Every endpoint is session-scoped. Mutations require `X-CSRF-Token` and an

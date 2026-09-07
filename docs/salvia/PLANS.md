@@ -43,6 +43,10 @@ part of the target architecture.
   account; home/followers/direct Notes target only local Actors whose timeline
   projection can include them.
 
+- Completed: allow an owned Actor to reject and block a pending remote follow
+  requester through one idempotent REST mutation, with an explicit confirmation
+  action in Salvia.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

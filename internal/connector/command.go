@@ -13,6 +13,7 @@ import (
 const (
 	CommandFollowApprove        = "follow.approve"
 	CommandFollowReject         = "follow.reject"
+	CommandFollowRejectAndBlock = "follow.reject_and_block"
 	CommandFollowCreate         = "follow.create"
 	CommandFollowDelete         = "follow.delete"
 	CommandPostCreate           = "post.create"
@@ -38,6 +39,7 @@ type CommandExecutor interface {
 	DeleteFollow(context.Context, FollowDeleteCommand) (FollowDeleted, error)
 	ApproveFollow(context.Context, string, string) (string, error)
 	RejectFollow(context.Context, string, string) (string, error)
+	RejectAndBlockFollow(context.Context, string, string) (BlockCreated, error)
 	CreatePost(context.Context, PostCreateCommand) (PostCreated, error)
 	DeletePost(context.Context, PostDeleteCommand) (PostDeleted, error)
 	VotePoll(context.Context, PollVoteCommand) (PollVoted, error)
@@ -529,6 +531,16 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 			return nil, actorID, fmt.Errorf("follower_id is required")
 		}
 		result, err := executor.RejectFollow(ctx, command.FollowerID, actorID)
+		return result, actorID, err
+	case CommandFollowRejectAndBlock:
+		var command FollowRejectData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.FollowerID) == "" {
+			return nil, actorID, fmt.Errorf("follower_id is required")
+		}
+		result, err := executor.RejectAndBlockFollow(ctx, command.FollowerID, actorID)
 		return result, actorID, err
 	case CommandPostCreate:
 		var command PostCreateData

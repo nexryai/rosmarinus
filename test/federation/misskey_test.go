@@ -634,8 +634,9 @@ waitForRemoteNoteEvent:
 	}
 
 	// Phase 13: block the Misskey Actor from Rosmarinus, verify Misskey removes
-	// its local Follow and exposes the blocked relationship, then undo the Block
-	// and prove the Misskey Actor can follow Rosmarinus again.
+	// its local Follow and exposes the blocked relationship, then undo the Block.
+	// Have Misskey request another Follow, reject and block it in one operation,
+	// verify both effects, then undo and prove the Actor can follow again.
 	createdBlock, err := worker.CreateBlock(ctx, connector.BlockCreateCommand{
 		ActorID: localActor.ID,
 		Target:  remoteActorURI,
@@ -682,10 +683,49 @@ waitForRemoteNoteEvent:
 		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
 		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
 	})
-	if _, err := worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID); err != nil {
-		t.Fatalf("approve post-unblock Follow: %v", err)
+	rejectedBlock, err := worker.RejectAndBlockFollow(ctx, remoteActor.ID, localActor.ID)
+	if err != nil {
+		t.Fatalf("reject and block inbound Follow: %v", err)
 	}
-	waitFor(t, ctx, "post-unblock Follow accepted by Misskey", func() bool {
+	if rejectedBlock.BlockeeID != remoteActor.ID || rejectedBlock.URI == "" {
+		t.Fatalf("unexpected reject-and-block result: %+v", rejectedBlock)
+	}
+	waitFor(t, ctx, "Reject and Block applied by Misskey", func() bool {
+		var shown struct {
+			IsFollowing bool `json:"isFollowing"`
+			IsBlocked   bool `json:"isBlocked"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID,
+		}, &shown)
+		return !shown.IsFollowing && shown.IsBlocked
+	})
+	if pending, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID); findErr != nil || pending != nil {
+		t.Fatalf("rejected Follow remains: follow=%+v err=%v", pending, findErr)
+	}
+	if _, err := worker.DeleteBlock(ctx, connector.BlockDeleteCommand{ActorID: localActor.ID, Target: remoteActorURI}); err != nil {
+		t.Fatalf("delete reject-and-block Block: %v", err)
+	}
+	waitFor(t, ctx, "reject-and-block Undo(Block) applied by Misskey", func() bool {
+		var shown struct {
+			IsBlocked bool `json:"isBlocked"`
+		}
+		misskey.call(ctx, "users/show", map[string]any{
+			"i": admin.Token, "userId": relayOnMisskey.ID,
+		}, &shown)
+		return !shown.IsBlocked
+	})
+	misskey.call(ctx, "following/create", map[string]any{
+		"i": admin.Token, "userId": relayOnMisskey.ID,
+	}, nil)
+	waitFor(t, ctx, "post-reject-and-block Follow stored as pending", func() bool {
+		inbound, findErr := followRepo.Find(ctx, remoteActor.ID, localActor.ID)
+		return findErr == nil && inbound != nil && inbound.Status == follows.StatusPending
+	})
+	if _, err := worker.ApproveFollow(ctx, remoteActor.ID, localActor.ID); err != nil {
+		t.Fatalf("approve post-reject-and-block Follow: %v", err)
+	}
+	waitFor(t, ctx, "post-reject-and-block Follow accepted by Misskey", func() bool {
 		var shown struct {
 			IsFollowing bool `json:"isFollowing"`
 		}
