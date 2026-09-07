@@ -333,9 +333,9 @@ func applyPlan(ctx context.Context, client *mongo.Client, db *mongo.Database, pl
 }
 
 func rewriteReferences(ctx context.Context, db *mongo.Database, mappings map[string]idMapping, refs []fieldRef) error {
+	writesByCollection := make(map[string][]mongo.WriteModel)
 	for _, mapping := range mappings {
 		for _, ref := range refs {
-			collection := db.Collection(ref.collection)
 			if ref.field == "_id" {
 				continue
 			}
@@ -345,14 +345,24 @@ func rewriteReferences(ctx context.Context, db *mongo.Database, mappings map[str
 						bson.M{"$eq": bson.A{"$$id", mapping.Old}}, mapping.New, "$$id",
 					}},
 				}}}}}}
-				if _, err := collection.UpdateMany(ctx, bson.M{ref.field: mapping.Old}, pipeline); err != nil && !isNamespaceNotFound(err) {
-					return fmt.Errorf("rewrite %s.%s: %w", ref.collection, ref.field, err)
-				}
+				writesByCollection[ref.collection] = append(writesByCollection[ref.collection], mongo.NewUpdateManyModel().
+					SetFilter(bson.M{ref.field: mapping.Old}).
+					SetUpdate(pipeline))
 				continue
 			}
-			if _, err := collection.UpdateMany(ctx, bson.M{ref.field: mapping.Old}, bson.M{"$set": bson.M{ref.field: mapping.New}}); err != nil && !isNamespaceNotFound(err) {
-				return fmt.Errorf("rewrite %s.%s: %w", ref.collection, ref.field, err)
-			}
+			writesByCollection[ref.collection] = append(writesByCollection[ref.collection], mongo.NewUpdateManyModel().
+				SetFilter(bson.M{ref.field: mapping.Old}).
+				SetUpdate(bson.M{"$set": bson.M{ref.field: mapping.New}}))
+		}
+	}
+	collections := make([]string, 0, len(writesByCollection))
+	for collection := range writesByCollection {
+		collections = append(collections, collection)
+	}
+	sort.Strings(collections)
+	for _, name := range collections {
+		if _, err := db.Collection(name).BulkWrite(ctx, writesByCollection[name], options.BulkWrite().SetOrdered(false)); err != nil && !isNamespaceNotFound(err) {
+			return fmt.Errorf("rewrite references in %s: %w", name, err)
 		}
 	}
 	return nil
