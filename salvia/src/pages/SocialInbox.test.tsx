@@ -32,7 +32,7 @@ describe("social inbox mutations", () => {
     });
 
     it("marks an Actor notification read", async () => {
-        const item = { id: "notification-1", actor_id: "alice", kind: "follow", created_at: "2026-01-01T00:00:00Z", is_read: false, read_at: null, source: remote } as Notification;
+        const item = { id: "notification-1", actor_id: "alice", kind: "followRequest", created_at: "2026-01-01T00:00:00Z", is_read: false, read_at: null, source: remote } as Notification;
         vi.spyOn(api, "notifications").mockResolvedValue([item]);
         const markRead = vi.spyOn(api, "markNotificationRead").mockResolvedValue(undefined);
         const onOpenProfile = vi.fn();
@@ -45,6 +45,31 @@ describe("social inbox mutations", () => {
         expect(onOpenProfile).toHaveBeenCalledWith("bob");
         expect(markRead).toHaveBeenCalledWith("csrf", "alice", "notification-1");
         expect(screen.queryByRole("button", { name: "既読" })).not.toBeInTheDocument();
+    });
+
+    it("shows Misskey-style notification context and opens its note", async () => {
+        const item = {
+            id: "notification-2",
+            actor_id: "alice",
+            kind: "renote",
+            note_id: "note-1",
+            created_at: new Date().toISOString(),
+            is_read: true,
+            read_at: new Date().toISOString(),
+            source: remote,
+            note: { id: "note-1", text: "Rosemaryへようこそ" },
+        } as Notification;
+        vi.spyOn(api, "notifications").mockResolvedValue([item]);
+        const onOpenNote = vi.fn();
+        const user = userEvent.setup();
+        render(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        expect(await screen.findByText("がリノートしました")).toBeInTheDocument();
+        expect(screen.getByText("“Rosemaryへようこそ”")).toBeInTheDocument();
+        expect(screen.getByRole("img", { name: "リノートしました" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "ノートを開く" }));
+
+        expect(onOpenNote).toHaveBeenCalledWith("note-1");
     });
 
     it("rejects a mandatory follow request", async () => {

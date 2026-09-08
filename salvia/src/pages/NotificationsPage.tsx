@@ -1,13 +1,30 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
-import { IconBellCheck } from "@tabler/icons-react";
+import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserPlus } from "@tabler/icons-react";
 
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Notification } from "../lib/schema";
 
-const labels: Record<string, string> = { follow: "フォローされました", reaction: "リアクションが届きました", mention: "メンションされました", reply: "返信が届きました", poll_vote: "投票されました" };
+const notificationKinds = {
+    followRequest: { color: "#36aed2", icon: IconUserPlus, message: "からフォローリクエストがあります" },
+    reaction: { color: "#e99a0b", icon: IconBell, message: "がリアクションしました" },
+    renote: { color: "#36b982", icon: IconRepeat, message: "がリノートしました" },
+    reply: { color: "#4389e8", icon: IconMessageReply, message: "から返信がありました" },
+    mention: { color: "#7f96a5", icon: IconAt, message: "があなたに言及しました" },
+    pollEnded: { color: "#7f96a5", icon: IconChartBar, message: "のアンケートが終了しました" },
+} as const;
+
+const notificationDetails = (kind: string) => notificationKinds[kind as keyof typeof notificationKinds] ?? { color: "#7f96a5", icon: IconBell, message: "から通知が届きました" };
+
+const relativeTime = (value: string) => {
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+    if (seconds < 60) return `${seconds}秒`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間`;
+    return new Intl.DateTimeFormat("ja", { month: "short", day: "numeric" }).format(new Date(value));
+};
 
 const styles = {
     headerIcon: {
@@ -34,29 +51,71 @@ const styles = {
         background: "var(--accent-soft)",
     },
     notification: {
-        paddingBlock: "1.25rem",
+        position: "relative",
+        paddingBlock: "1rem",
         display: "flex",
         alignItems: "flex-start",
-        gap: "0.75rem",
+        gap: "0.625rem",
+    },
+    avatar: {
+        position: "relative",
+        flexShrink: 0,
+        width: "2.75rem",
+        height: "2.75rem",
+    },
+    kindIcon: {
+        position: "absolute",
+        right: "-0.125rem",
+        bottom: "-0.125rem",
+        width: "1.25rem",
+        height: "1.25rem",
+        display: "grid",
+        placeItems: "center",
+        border: "3px solid var(--panel)",
+        borderRadius: "9999px",
+        color: "white",
+        pointerEvents: "none",
+    },
+    kindIconSvg: {
+        width: "0.6875rem",
+        height: "0.6875rem",
+        strokeWidth: 2.5,
     },
     body: {
         minWidth: 0,
         flex: 1,
     },
-    kind: {
+    header: {
+        display: "flex",
+        alignItems: "baseline",
+        gap: "0.375rem",
+        minWidth: 0,
+        lineHeight: 1.35,
+    },
+    actorName: {
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    message: {
         color: "var(--muted)",
         fontSize: "0.875rem",
     },
+    time: {
+        marginLeft: "auto",
+        flexShrink: 0,
+        color: "var(--muted)",
+        fontSize: "0.75rem",
+    },
     quote: {
-        marginTop: "0.5rem",
-        padding: "0.75rem",
+        marginTop: "0.25rem",
         display: "-webkit-box",
         overflow: "hidden",
         WebkitBoxOrient: "vertical",
-        WebkitLineClamp: 2,
-        borderRadius: "0.75rem",
-        background: "var(--panel-muted)",
+        WebkitLineClamp: 1,
+        color: "var(--text)",
         fontSize: "0.875rem",
+        opacity: 0.72,
     },
     context: {
         marginTop: "0.5rem",
@@ -67,16 +126,19 @@ const styles = {
         fontWeight: 700,
         textDecoration: "underline",
     },
-    time: {
-        marginTop: "0.5rem",
-        display: "block",
-        color: "var(--muted)",
+    readButton: {
+        minHeight: "1.75rem",
+        paddingInline: "0.625rem",
         fontSize: "0.75rem",
     },
-    readButton: {
-        minHeight: "2rem",
-        paddingInline: "0.75rem",
-        fontSize: "0.75rem",
+    unreadDot: {
+        position: "absolute",
+        top: "0.625rem",
+        left: "0.625rem",
+        width: "0.4375rem",
+        height: "0.4375rem",
+        borderRadius: "9999px",
+        background: "var(--accent-hover)",
     },
 } satisfies Record<string, CSSProperties>;
 
@@ -156,32 +218,47 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, on
                 <Empty>新しい通知はありません。</Empty>
             ) : (
                 <DividedList>
-                    {items.map((item) => (
-                        <article className={`${rules.notification} ${!item.is_read ? rules.unread : ""}`} key={item.id} style={styles.notification}>
-                            <Avatar actor={item.source} onOpenProfile={onOpenProfile} />
-                            <div style={styles.body}>
-                                <strong>{item.source?.name || item.source?.username || "Fediverse"}</strong>
-                                <p style={styles.kind}>{labels[item.kind] || item.kind}</p>
-                                {item.note?.text && <blockquote style={styles.quote}>{item.note.text}</blockquote>}
-                                {scope === "account" && item.actor_id !== actorID && (
-                                    <button onClick={() => onActorChange(item.actor_id)} style={styles.context} type="button">
-                                        この通知のActorへ切り替え
-                                    </button>
+                    {items.map((item) => {
+                        const details = notificationDetails(item.kind);
+                        const KindIcon = details.icon;
+                        const sourceName = item.source?.name || item.source?.username || "Fediverse";
+                        return (
+                            <article className={`${rules.notification} ${!item.is_read ? rules.unread : ""}`} key={item.id} style={styles.notification}>
+                                {!item.is_read && <span aria-hidden="true" style={styles.unreadDot} />}
+                                <div style={styles.avatar}>
+                                    <Avatar actor={item.source} onOpenProfile={onOpenProfile} />
+                                    <span aria-label={details.message.replace(/^[がかの]/, "")} role="img" style={{ ...styles.kindIcon, background: details.color }}>
+                                        <KindIcon aria-hidden="true" style={styles.kindIconSvg} />
+                                    </span>
+                                </div>
+                                <div style={styles.body}>
+                                    <div style={styles.header}>
+                                        <strong style={styles.actorName}>{sourceName}</strong>
+                                        <span style={styles.message}>{details.message}</span>
+                                        <time dateTime={item.created_at} style={styles.time} title={new Date(item.created_at).toLocaleString("ja")}>
+                                            {relativeTime(item.created_at)}
+                                        </time>
+                                    </div>
+                                    {item.note?.text && <blockquote style={styles.quote}>“{item.note.text}”</blockquote>}
+                                    {scope === "account" && item.actor_id !== actorID && (
+                                        <button onClick={() => onActorChange(item.actor_id)} style={styles.context} type="button">
+                                            この通知のActorへ切り替え
+                                        </button>
+                                    )}
+                                    {item.note_id && (
+                                        <button onClick={() => onOpenNote(item.note_id || "")} style={styles.context} type="button">
+                                            ノートを開く
+                                        </button>
+                                    )}
+                                </div>
+                                {!item.is_read && (
+                                    <Button disabled={busyID === item.id} onClick={() => void markRead(item)} style={styles.readButton} variant="secondary">
+                                        既読
+                                    </Button>
                                 )}
-                                {item.note_id && (
-                                    <button onClick={() => onOpenNote(item.note_id || "")} style={styles.context} type="button">
-                                        ノートを開く
-                                    </button>
-                                )}
-                                <time style={styles.time}>{new Intl.DateTimeFormat("ja", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.created_at))}</time>
-                            </div>
-                            {!item.is_read && (
-                                <Button disabled={busyID === item.id} onClick={() => void markRead(item)} style={styles.readButton} variant="secondary">
-                                    既読
-                                </Button>
-                            )}
-                        </article>
-                    ))}
+                            </article>
+                        );
+                    })}
                 </DividedList>
             )}
         </>
