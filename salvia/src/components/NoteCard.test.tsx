@@ -66,6 +66,34 @@ describe("NoteCard social actions", () => {
         expect(screen.queryByRole("dialog", { name: "画像ビューアー" })).not.toBeInTheDocument();
     });
 
+    it("renders a Twitter-style quoted note with its author identity", () => {
+        const onOpenNote = vi.fn();
+        const quoted = {
+            ...note,
+            quote: {
+                id: "quote-1",
+                uri: "https://remote.test/notes/quote-1",
+                text: "引用された本文",
+                sensitive: false,
+                visibility: "public",
+                created_at: "2026-09-01T00:00:00Z",
+                author: {
+                    ...author,
+                    avatar_url: "https://remote.test/avatar.jpg",
+                    uri: "https://remote.test/users/bob",
+                },
+            },
+        } as Note;
+        render(<NoteCard note={quoted} ownActorID="alice" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getByAltText("Bobのアバター")).toHaveAttribute("src", "https://remote.test/avatar.jpg");
+        expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
+        expect(screen.getByText("引用された本文")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "引用ノートを開く: Bob" }));
+
+        expect(onOpenNote).toHaveBeenCalledWith("quote-1");
+    });
+
     it("votes in a poll and confirms deletion of an owned note", async () => {
         vi.spyOn(window, "confirm").mockReturnValue(true);
         const onVote = vi.fn().mockResolvedValue(undefined);

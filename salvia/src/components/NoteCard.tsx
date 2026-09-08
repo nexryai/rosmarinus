@@ -5,6 +5,7 @@ import { IconMessageCircle, IconQuote, IconRepeat, IconTrash } from "@tabler/ico
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
 import { ImageViewer } from "./ImageViewer";
+import { QuotedNoteCard } from "./QuotedNoteCard";
 import { Avatar, Button } from "./ui";
 
 const styles = {
@@ -126,17 +127,6 @@ const styles = {
         borderRadius: "0.75rem",
         fontSize: "0.875rem",
         textDecoration: "underline",
-    },
-    quote: {
-        marginTop: "0.75rem",
-        padding: "0.75rem",
-        border: "1px solid var(--border)",
-        borderRadius: "1rem",
-        fontSize: "0.875rem",
-    },
-    quoteText: {
-        marginTop: "0.25rem",
-        whiteSpace: "pre-wrap",
     },
     poll: {
         marginTop: "0.75rem",
@@ -406,12 +396,7 @@ export function NoteCard({
                         )}
                     </div>
                 )}
-                {note.quote && (
-                    <div style={styles.quote}>
-                        <strong>{note.quote.author?.name || note.quote.author?.username}</strong>
-                        <p style={styles.quoteText}>{note.quote.text}</p>
-                    </div>
-                )}
+                {note.quote && <QuotedNoteCard onOpen={onOpenNote} quote={note.quote} />}
                 {note.poll && (
                     <div style={styles.poll}>
                         {note.poll.choices.map((choice) => (
