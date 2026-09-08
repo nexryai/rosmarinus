@@ -101,6 +101,8 @@ secret-bearing dependency.
 - [x] Build responsive navigation with mobile settings and Actor switching,
       timeline layout, forms, menus, dialogs, avatars, loading states, empty
       states, and error boundaries.
+- [x] Present dropdown choices and modal content in animated bottom drawers on
+      mobile while retaining anchored menus and centered dialogs on desktop.
 - [x] Keep account identity and active Actor visibly separate in the shell.
 - [x] Persist theme and non-authoritative display preferences through the
       Rosmarinus settings API; use local storage only as a non-sensitive render

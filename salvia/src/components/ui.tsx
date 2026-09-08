@@ -3,7 +3,9 @@ import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInf
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 
 import { css, keyframes } from "../lib/css";
+import { useIsMobile } from "../lib/responsive";
 import type { Actor } from "../lib/schema";
+import { DrawerFrame } from "./ui/Drawer";
 
 const spin = keyframes({
     to: {
@@ -493,6 +495,7 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
 export function Modal({ children, label, onClose }: PropsWithChildren<{ label: string; onClose: () => void }>) {
     const [phase, setPhase] = useState<"open" | "closing">("open");
     const closeTimer = useRef<number | undefined>(undefined);
+    const isMobile = useIsMobile();
 
     const requestClose = useCallback(() => {
         if (phase === "closing") return;
@@ -505,6 +508,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
     }, [onClose, phase]);
 
     useEffect(() => {
+        if (isMobile) return;
         const onKeyDown = (event: globalThis.KeyboardEvent) => {
             if (event.key !== "Escape") return;
             event.preventDefault();
@@ -512,7 +516,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
         };
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [requestClose]);
+    }, [isMobile, requestClose]);
 
     useEffect(
         () => () => {
@@ -520,6 +524,23 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
         },
         [],
     );
+
+    const content = (
+        <>
+            <button aria-label="閉じる" className={rules.modalClose} onClick={requestClose} style={styles.modalClose} type="button">
+                <IconX />
+            </button>
+            {children}
+        </>
+    );
+
+    if (isMobile) {
+        return (
+            <DrawerFrame label={label} onDismiss={requestClose} phase={phase}>
+                {content}
+            </DrawerFrame>
+        );
+    }
 
     return (
         <div
@@ -545,10 +566,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
                     animation: `${phase === "open" ? modalOpen : modalClose} ${phase === "open" ? 160 : modalCloseDuration}ms cubic-bezier(.2,.8,.2,1) both`,
                 }}
             >
-                <button aria-label="閉じる" className={rules.modalClose} onClick={requestClose} style={styles.modalClose} type="button">
-                    <IconX />
-                </button>
-                {children}
+                {content}
             </section>
         </div>
     );

@@ -35,6 +35,10 @@ Carry these decisions forward from old Salvia:
   distinct.
 - Keep settings and active-Actor switching directly reachable in both desktop
   and mobile shells; do not hide either capability behind desktop-only layout.
+- Present dropdown options and modal content as bottom drawers below the
+  `64rem` mobile breakpoint. Preserve anchored dropdowns and centered dialogs
+  on desktop, and share dismissal, motion-reduction, scroll-lock, and safe-area
+  behavior through the common drawer primitive.
 - Use a substantially simplified, Misskey-inspired experience. Widgets, Deck,
   and unrelated Misskey compatibility are out of scope.
 - Use a yellow-based default theme and allow supported theme selection.

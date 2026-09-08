@@ -3,6 +3,8 @@ import { type CSSProperties, type KeyboardEvent, type ReactNode, useCallback, us
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 
 import { css, keyframes } from "../../lib/css";
+import { useIsMobile } from "../../lib/responsive";
+import { DrawerFrame } from "./Drawer";
 
 const openAnimation = keyframes({
     from: {
@@ -120,6 +122,18 @@ const styles = {
         flexShrink: 0,
         color: "var(--accent-hover)",
     },
+    drawerTitle: {
+        margin: "0 0 0.75rem",
+        fontSize: "1rem",
+        fontWeight: 900,
+    },
+    drawerListbox: {
+        maxHeight: "min(24rem, calc(100dvh - 8rem))",
+        display: "grid",
+        gap: "0.25rem",
+        overflowY: "auto",
+        outline: "none",
+    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
@@ -190,6 +204,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
     const menuRef = useRef<HTMLDivElement>(null);
     const closeTimer = useRef<number | undefined>(undefined);
     const listboxID = useId();
+    const isMobile = useIsMobile();
     const isOpen = phase === "open";
     const selectedIndex = Math.max(
         0,
@@ -218,6 +233,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
         },
         [clearCloseTimer, phase],
     );
+    const dismissDrawer = useCallback(() => close(true), [close]);
 
     const open = (index = selectedIndex) => {
         clearCloseTimer();
@@ -226,14 +242,18 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
     };
 
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || isMobile) return;
         menuRef.current?.focus();
         const onPointerDown = (event: PointerEvent) => {
-            if (!rootRef.current?.contains(event.target as Node)) close();
+            if (!rootRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) close();
         };
         document.addEventListener("pointerdown", onPointerDown);
         return () => document.removeEventListener("pointerdown", onPointerDown);
-    }, [close, isOpen]);
+    }, [close, isMobile, isOpen]);
+
+    useEffect(() => {
+        if (isOpen && isMobile) menuRef.current?.focus();
+    }, [isMobile, isOpen]);
 
     useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
 
@@ -286,6 +306,55 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
         }
     };
 
+    const listbox = phase !== "closed" && (
+        <div
+            aria-activedescendant={`${listboxID}-option-${activeIndex}`}
+            aria-hidden={phase === "closing" ? true : undefined}
+            aria-label={label}
+            className={isMobile ? undefined : rules.menu}
+            id={listboxID}
+            onKeyDown={onMenuKeyDown}
+            ref={menuRef}
+            role="listbox"
+            style={
+                isMobile
+                    ? styles.drawerListbox
+                    : {
+                          ...styles.menu,
+                          ...(placement === "top" ? styles.menuTop : styles.menuBottom),
+                          animation: `${phase === "open" ? openAnimation : closeAnimation} ${phase === "open" ? 180 : closeDuration}ms cubic-bezier(.2,.8,.2,1) both`,
+                          pointerEvents: phase === "closing" ? "none" : "auto",
+                      }
+            }
+            tabIndex={-1}
+        >
+            {options.map((option, index) => (
+                <button
+                    aria-selected={option.value === value}
+                    className={rules.option}
+                    data-active={isOpen && index === activeIndex}
+                    disabled={option.disabled}
+                    id={`${listboxID}-option-${index}`}
+                    key={option.value}
+                    onClick={() => choose(index)}
+                    onPointerMove={() => {
+                        if (!option.disabled) setActiveIndex(index);
+                    }}
+                    role="option"
+                    style={styles.option}
+                    tabIndex={-1}
+                    type="button"
+                >
+                    <span style={styles.optionText}>
+                        <span style={styles.optionLabel}>{option.label}</span>
+                        {option.description && <span style={styles.description}>{option.description}</span>}
+                    </span>
+                    {option.value === value && <IconCheck aria-hidden="true" style={styles.check} />}
+                </button>
+            ))}
+        </div>
+    );
+
     return (
         <div className={className} ref={rootRef} style={{ ...styles.root, ...style }}>
             <button
@@ -304,50 +373,15 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
                 <span style={styles.value}>{selected && (renderValue ? renderValue(selected) : selected.label)}</span>
                 <IconChevronDown aria-hidden="true" style={{ ...styles.chevron, transform: isOpen ? "rotate(180deg)" : "rotate(0)" }} />
             </button>
-            {phase !== "closed" && (
-                <div
-                    aria-activedescendant={`${listboxID}-option-${activeIndex}`}
-                    aria-hidden={phase === "closing" ? true : undefined}
-                    aria-label={label}
-                    className={rules.menu}
-                    id={listboxID}
-                    onKeyDown={onMenuKeyDown}
-                    ref={menuRef}
-                    role="listbox"
-                    style={{
-                        ...styles.menu,
-                        ...(placement === "top" ? styles.menuTop : styles.menuBottom),
-                        animation: `${phase === "open" ? openAnimation : closeAnimation} ${phase === "open" ? 180 : closeDuration}ms cubic-bezier(.2,.8,.2,1) both`,
-                        pointerEvents: phase === "closing" ? "none" : "auto",
-                    }}
-                    tabIndex={-1}
-                >
-                    {options.map((option, index) => (
-                        <button
-                            aria-selected={option.value === value}
-                            className={rules.option}
-                            data-active={isOpen && index === activeIndex}
-                            disabled={option.disabled}
-                            id={`${listboxID}-option-${index}`}
-                            key={option.value}
-                            onClick={() => choose(index)}
-                            onPointerMove={() => {
-                                if (!option.disabled) setActiveIndex(index);
-                            }}
-                            role="option"
-                            style={styles.option}
-                            tabIndex={-1}
-                            type="button"
-                        >
-                            <span style={styles.optionText}>
-                                <span style={styles.optionLabel}>{option.label}</span>
-                                {option.description && <span style={styles.description}>{option.description}</span>}
-                            </span>
-                            {option.value === value && <IconCheck aria-hidden="true" style={styles.check} />}
-                        </button>
-                    ))}
-                </div>
-            )}
+            {phase !== "closed" &&
+                (isMobile ? (
+                    <DrawerFrame label={`${label}の選択`} onDismiss={dismissDrawer} phase={phase}>
+                        <h2 style={styles.drawerTitle}>{label}</h2>
+                        {listbox}
+                    </DrawerFrame>
+                ) : (
+                    listbox
+                ))}
         </div>
     );
 }

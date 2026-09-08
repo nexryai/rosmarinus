@@ -4,10 +4,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Button, Modal } from "./ui";
 import { Dropdown } from "./ui/Dropdown";
 
+const useMobileViewport = () => {
+    vi.stubGlobal(
+        "matchMedia",
+        vi.fn((query: string) => ({
+            matches: query === "(width < 64rem)",
+            media: query,
+            onchange: null,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        })),
+    );
+};
+
 describe("Button ripple", () => {
     afterEach(() => {
         cleanup();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
         delete document.documentElement.dataset.reduceMotion;
     });
 
@@ -42,6 +59,7 @@ describe("Modal", () => {
     afterEach(() => {
         cleanup();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
         delete document.documentElement.dataset.reduceMotion;
     });
 
@@ -81,6 +99,27 @@ describe("Modal", () => {
 
         expect(onClose).toHaveBeenCalledOnce();
     });
+
+    it("uses a bottom drawer on mobile", () => {
+        vi.useFakeTimers();
+        useMobileViewport();
+        const onClose = vi.fn();
+        render(
+            <Modal label="投稿" onClose={onClose}>
+                本文
+            </Modal>,
+        );
+
+        const drawer = screen.getByRole("dialog", { name: "投稿" });
+        expect(drawer).toHaveAttribute("data-drawer", "bottom");
+        expect(drawer.style.animation).toContain("180ms");
+        expect(drawer.querySelector("[data-drawer-handle]")).toBeInTheDocument();
+        expect(document.body).toHaveStyle({ overflow: "hidden" });
+
+        fireEvent.pointerDown(drawer.parentElement as HTMLElement);
+        act(() => vi.advanceTimersByTime(110));
+        expect(onClose).toHaveBeenCalledOnce();
+    });
 });
 
 describe("Dropdown", () => {
@@ -93,6 +132,7 @@ describe("Dropdown", () => {
     afterEach(() => {
         cleanup();
         vi.useRealTimers();
+        vi.unstubAllGlobals();
         delete document.documentElement.dataset.reduceMotion;
     });
 
@@ -157,5 +197,23 @@ describe("Dropdown", () => {
         expect(trigger).toHaveAttribute("aria-expanded", "false");
         act(() => vi.advanceTimersByTime(130));
         expect(screen.queryByRole("listbox", { hidden: true })).not.toBeInTheDocument();
+    });
+
+    it("shows mobile options in a bottom drawer", () => {
+        vi.useFakeTimers();
+        useMobileViewport();
+        const onChange = vi.fn();
+        render(<Dropdown label="公開範囲" onChange={onChange} options={options} value="public" />);
+
+        fireEvent.click(screen.getByRole("button", { name: "公開範囲" }));
+
+        const drawer = screen.getByRole("dialog", { name: "公開範囲の選択" });
+        expect(drawer).toHaveAttribute("data-drawer", "bottom");
+        expect(screen.getByRole("listbox", { name: "公開範囲" })).toHaveFocus();
+        fireEvent.click(screen.getByRole("option", { name: "ホーム" }));
+
+        expect(onChange).toHaveBeenCalledWith("home");
+        act(() => vi.advanceTimersByTime(130));
+        expect(screen.queryByRole("dialog", { hidden: true })).not.toBeInTheDocument();
     });
 });
