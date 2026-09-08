@@ -185,7 +185,6 @@ const styles = {
         zIndex: 20,
         top: "var(--shell-header-height, 0px)",
         height: "5rem",
-        display: "flex",
         alignItems: "center",
         borderBottom: "1px solid var(--border)",
         backdropFilter: "blur(24px)",
@@ -333,6 +332,7 @@ const rules = {
         },
     }),
     pageHeader: css({
+        display: "none",
         paddingInline: "1.25rem",
         background: "var(--panel)",
         "@supports (color: color-mix(in lab, red, red))": {
@@ -340,6 +340,9 @@ const rules = {
         },
         "@media (width >= 40rem)": {
             paddingInline: "1.75rem",
+        },
+        "@media (width >= 64rem)": {
+            display: "flex",
         },
     }),
     roundButton: css({

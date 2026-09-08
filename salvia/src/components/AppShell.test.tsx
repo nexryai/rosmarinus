@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Actor, Session } from "../lib/schema";
 import { AppShell } from "./AppShell";
+import { PageHeader } from "./ui";
 
 const actors = [
     { id: "alice", username: "alice", name: "Alice" },
@@ -30,5 +31,16 @@ describe("AppShell mobile account controls", () => {
 
         expect(onActorChange).toHaveBeenCalledWith("bob");
         expect(onNavigate).toHaveBeenCalledWith("/settings");
+    });
+
+    it("hides page headers beneath the mobile shell header", () => {
+        render(
+            <AppShell actors={actors} onActorChange={vi.fn()} onCompose={vi.fn()} onLogout={vi.fn()} onNavigate={vi.fn()} page="home" selectedActor={actors[0]} session={session}>
+                <PageHeader eyebrow="タイムライン" title="ホーム" />
+            </AppShell>,
+        );
+
+        expect(document.querySelector("main > header")).not.toBeVisible();
+        expect(screen.getByRole("banner", { name: "モバイルアカウント操作" })).toBeVisible();
     });
 });
