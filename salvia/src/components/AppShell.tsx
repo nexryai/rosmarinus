@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { IconBell, IconHome, IconLeaf2, IconLogout, IconPlus, IconSettings, IconUserSearch, IconUsersPlus, IconWorld } from "@tabler/icons-react";
+import { IconBell, IconHome, IconLogout, IconPlus, IconSettings, IconUserSearch, IconUsersPlus, IconWorld } from "@tabler/icons-react";
 
 import type { Page } from "../lib/api";
 import { css } from "../lib/css";
 import type { Actor, Session } from "../lib/schema";
+import { BrandMark } from "./BrandMark";
 import { Avatar, Button } from "./ui";
 import { Dropdown } from "./ui/Dropdown";
 
@@ -55,7 +56,7 @@ const styles = {
         display: "grid",
         placeItems: "center",
         borderRadius: "1rem",
-        color: "var(--accent-ink)",
+        color: "#315c2b",
         background: "linear-gradient(135deg, #f8d56a, var(--accent))",
         boxShadow: "0 8px 22px #e9a91d3d",
     },
@@ -148,7 +149,7 @@ const styles = {
         placeItems: "center",
         flexShrink: 0,
         borderRadius: "0.875rem",
-        color: "var(--accent-ink)",
+        color: "#315c2b",
         background: "linear-gradient(135deg, #f8d56a, var(--accent))",
     },
     mobileActor: {
@@ -351,9 +352,9 @@ export function AppShell({
             <aside className={rules.sidebar} style={styles.sidebar}>
                 <button className={rules.wordmark} onClick={() => onNavigate("/")} style={styles.wordmark} type="button">
                     <span style={styles.mark}>
-                        <IconLeaf2 />
+                        <BrandMark />
                     </span>
-                    Salvia
+                    Rosemary
                 </button>
                 <nav aria-label="メインナビゲーション" className={rules.nav}>
                     {navigation.map((item) => (
@@ -381,7 +382,7 @@ export function AppShell({
             </aside>
             <header aria-label="モバイルアカウント操作" className={rules.mobileHeader} style={styles.mobileHeader}>
                 <button aria-label="ホームへ移動" className={rules.mobileBrand} onClick={() => onNavigate("/")} style={styles.mobileBrand} type="button">
-                    <IconLeaf2 />
+                    <BrandMark />
                 </button>
                 <Dropdown
                     label="モバイルで操作するActor"

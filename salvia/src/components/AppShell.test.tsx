@@ -25,6 +25,7 @@ describe("AppShell mobile account controls", () => {
             </AppShell>,
         );
 
+        expect(screen.getByText("Rosemary")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "モバイルで操作するActor" }));
         await user.click(screen.getByRole("option", { name: /@bob/ }));
         await user.click(screen.getByRole("button", { name: "設定を開く" }));

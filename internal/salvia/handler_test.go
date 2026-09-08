@@ -15,11 +15,35 @@ func TestHandlerServesIndexAndHistoryFallback(t *testing.T) {
 		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
 		request.Header.Set("Accept", "text/html")
 		handler.ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<title>Salvia</title>") {
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "<title>Rosemary</title>") {
 			t.Fatalf("path=%s status=%d body=%q", requestPath, recorder.Code, recorder.Body.String())
 		}
 		if recorder.Header().Get("Cache-Control") != "no-cache" {
 			t.Fatalf("path=%s cache-control=%q", requestPath, recorder.Header().Get("Cache-Control"))
+		}
+	}
+}
+
+func TestHandlerServesPWAConfigurationWithoutStaleCaching(t *testing.T) {
+	handler := NewHandler()
+	tests := []struct {
+		path        string
+		contentType string
+	}{
+		{path: "/manifest.webmanifest", contentType: "application/manifest+json"},
+		{path: "/sw.js", contentType: "text/javascript"},
+	}
+	for _, test := range tests {
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("path=%s status=%d", test.path, recorder.Code)
+		}
+		if got := recorder.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Fatalf("path=%s cache-control=%q", test.path, got)
+		}
+		if got := recorder.Header().Get("Content-Type"); !strings.HasPrefix(got, test.contentType) {
+			t.Fatalf("path=%s content-type=%q", test.path, got)
 		}
 	}
 }

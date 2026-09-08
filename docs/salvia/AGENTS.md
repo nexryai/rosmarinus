@@ -28,6 +28,9 @@ edit it or carry its Next.js and Ably architecture into the current app.
 
 Carry these decisions forward from old Salvia:
 
+- Use **Rosemary** for every user-visible product name, including page titles,
+  loading and error states, theme labels, install metadata, and icons.
+  Rosmarinus and Salvia remain internal backend and frontend code names only.
 - Passkeys are the only authentication method. Do not add passwords, password
   reset, recovery passwords, or TOTP.
 - One authenticated account may create, own, select, and manage multiple local
@@ -45,6 +48,10 @@ Carry these decisions forward from old Salvia:
 - Render Misskey-style custom emoji reactions rather than reducing reactions to
   a generic like or favorite.
 - Use Tabler Icons when an appropriate icon exists.
+- Keep Rosemary installable as a PWA without adding a framework dependency.
+  The service worker may cache only the static application shell and assets;
+  it must never cache or synthesize REST, SSE, ActivityPub, WebFinger, NodeInfo,
+  inbox, Actor, Note, or media responses.
 - Put reusable UI primitives in `src/components/ui`, reusable domain
   components in `src/components`, and name component files in PascalCase.
 

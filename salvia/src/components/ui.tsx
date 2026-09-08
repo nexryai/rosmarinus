@@ -398,7 +398,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     }
 
     componentDidCatch(error: Error, info: ErrorInfo) {
-        console.error("Salvia render failed", error, info.componentStack);
+        console.error("Rosemary render failed", error, info.componentStack);
     }
 
     render() {

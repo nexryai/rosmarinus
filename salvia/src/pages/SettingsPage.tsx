@@ -164,7 +164,7 @@ const rules = {
 };
 
 const themeOptions = [
-    { value: "yellow", label: "Salvia Yellow", description: "あたたかな黄色の標準テーマ" },
+    { value: "yellow", label: "Rosemary Yellow", description: "あたたかな黄色の標準テーマ" },
     { value: "light", label: "ライト", description: "明るくニュートラルな配色" },
     { value: "dark", label: "ダーク", description: "暗い場所でも見やすい配色" },
     { value: "system", label: "システム", description: "端末の外観設定に合わせる" },

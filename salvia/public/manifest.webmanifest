@@ -1,0 +1,32 @@
+{
+    "id": "/",
+    "name": "Rosemary",
+    "short_name": "Rosemary",
+    "description": "軽やかなソーシャルクライアント",
+    "lang": "ja",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#fffaf0",
+    "theme_color": "#f4bd36",
+    "icons": [
+        {
+            "src": "/icons/rosemary-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icons/rosemary-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/icons/rosemary-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

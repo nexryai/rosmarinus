@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
-  <title>Salvia</title>
+  <title>Rosemary</title>
   <rect width="64" height="64" rx="18" fill="#f4bd36"/>
-  <path d="M32 49V28m0 8c-10 0-16-6-17-16 10 0 16 5 17 16Zm0-4c9 0 15-5 17-14-9 0-15 5-17 14Z" fill="none" stroke="#4b3908" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M19 51C26 42 32 32 42 13" fill="none" stroke="#315c2b" stroke-linecap="round" stroke-width="3"/>
+  <path d="m24 45-12 1m14-6-11-5m14 0-11-7m14 2-9-10m12 5-6-10m9 5-3-9M25 42l6 10m-3-14 12 8m-9-13 13 5M33 28h14M36 23l13-5M39 17l9-7" fill="none" stroke="#315c2b" stroke-linecap="round" stroke-width="2.7"/>
+  <circle cx="42" cy="13" r="2" fill="#315c2b"/>
 </svg>

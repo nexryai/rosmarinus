@@ -50,7 +50,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if data, err := fs.ReadFile(h.assets, name); err == nil {
-		if strings.HasPrefix(name, "assets/") {
+		if name == "sw.js" || name == "manifest.webmanifest" {
+			w.Header().Set("Cache-Control", "no-cache")
+		} else if strings.HasPrefix(name, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=3600")
@@ -71,7 +73,11 @@ func (h *handler) serveIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveContent(w http.ResponseWriter, r *http.Request, name string, data []byte) {
-	if contentType := mime.TypeByExtension(path.Ext(name)); contentType != "" {
+	contentType := mime.TypeByExtension(path.Ext(name))
+	if path.Ext(name) == ".webmanifest" {
+		contentType = "application/manifest+json"
+	}
+	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))

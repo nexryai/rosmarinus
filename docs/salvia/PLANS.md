@@ -65,6 +65,8 @@ part of the target architecture.
   the selected Actor is UI state, not authorization proof.
 - Preserve old Salvia's simplified Misskey-inspired design, yellow default
   theme, theme selection, custom emoji reactions, and Tabler Icons.
+- Present the application to users exclusively as Rosemary; keep Rosmarinus
+  and Salvia as internal implementation names.
 - Keep widgets, Deck, and public Misskey API compatibility out of scope.
 - Treat SSE messages as invalidation hints and reconcile through the REST API
   after reconnects or ambiguous mutations.
@@ -104,6 +106,8 @@ secret-bearing dependency.
 - [x] Present dropdown choices and modal content in animated bottom drawers on
       mobile while retaining anchored menus and centered dialogs on desktop.
 - [x] Keep account identity and active Actor visibly separate in the shell.
+- [x] Add Rosemary install metadata, responsive application icons, and an
+      authenticated-data-safe service worker for PWA installation.
 - [x] Persist theme and non-authoritative display preferences through the
       Rosmarinus settings API; use local storage only as a non-sensitive render
       optimization.

@@ -1,9 +1,10 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 
-import { IconLeaf2, IconPlus } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
 
 import { AppShell } from "./components/AppShell";
 import { AuthScreen } from "./components/AuthScreen";
+import { BrandMark } from "./components/BrandMark";
 import { Composer, type ComposerIntent } from "./components/Composer";
 import { Button, ErrorBanner, Loading } from "./components/ui";
 import { ApiError, api, type Page } from "./lib/api";
@@ -48,7 +49,7 @@ const styles = {
         display: "grid",
         placeItems: "center",
         borderRadius: "1rem",
-        color: "var(--accent-ink)",
+        color: "#315c2b",
         background: "linear-gradient(135deg, #f8d56a, var(--accent))",
         boxShadow: "0 8px 22px #e9a91d3d",
     },
@@ -167,10 +168,10 @@ function App() {
                     await loadWorkspace();
                 } catch (reason) {
                     if (reason instanceof ApiError && reason.status === 401) setAuthState("login");
-                    else setError(reason instanceof Error ? reason.message : "Salviaを起動できませんでした");
+                    else setError(reason instanceof Error ? reason.message : "Rosemaryを起動できませんでした");
                 }
             })
-            .catch((reason) => setError(reason instanceof Error ? reason.message : "Rosmarinusに接続できませんでした"));
+            .catch((reason) => setError(reason instanceof Error ? reason.message : "Rosemaryに接続できませんでした"));
     }, [loadWorkspace]);
 
     useEffect(() => {
@@ -284,9 +285,9 @@ function App() {
         return (
             <main style={{ ...styles.fullPage, ...styles.fatalPage }}>
                 <span className={rules.mark} style={styles.mark}>
-                    <IconLeaf2 />
+                    <BrandMark />
                 </span>
-                <h1 style={styles.fatalTitle}>Rosmarinusに接続できません</h1>
+                <h1 style={styles.fatalTitle}>Rosemaryに接続できません</h1>
                 <ErrorBanner message={error} />
                 <Button onClick={() => window.location.reload()}>再読み込み</Button>
             </main>
@@ -295,9 +296,9 @@ function App() {
         return (
             <main style={{ ...styles.fullPage, ...styles.splash }}>
                 <span className={rules.mark} style={styles.mark}>
-                    <IconLeaf2 />
+                    <BrandMark />
                 </span>
-                <Loading label="Salviaを起動中" />
+                <Loading label="Rosemaryを起動中" />
             </main>
         );
     if (authState === "setup" || authState === "login") return <AuthScreen mode={authState} onAuthenticated={loadWorkspace} />;
@@ -392,7 +393,7 @@ function NoActor({ csrf, onCreated, onLogout }: { csrf: string; onCreated: () =>
                 style={styles.noActor}
             >
                 <span className={rules.mark} style={{ ...styles.mark, ...styles.noActorMark }}>
-                    <IconLeaf2 />
+                    <BrandMark />
                 </span>
                 <h1 style={styles.fatalTitle}>最初のActorを作成</h1>
                 <p style={styles.noActorText}>投稿やフォローに使う公開アイデンティティです。</p>

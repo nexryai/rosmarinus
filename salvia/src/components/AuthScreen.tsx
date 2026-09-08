@@ -1,10 +1,11 @@
 import { type CSSProperties, type FormEvent, useState } from "react";
 
-import { IconArrowRight, IconKey, IconLeaf2, IconShieldCheck } from "@tabler/icons-react";
+import { IconArrowRight, IconKey, IconShieldCheck } from "@tabler/icons-react";
 
 import { ApiError, api } from "../lib/api";
 import { css } from "../lib/css";
 import { createPasskey, getPasskey } from "../lib/webauthn";
+import { BrandMark } from "./BrandMark";
 import { Button, ErrorBanner } from "./ui";
 
 const styles = {
@@ -32,7 +33,7 @@ const styles = {
         display: "grid",
         placeItems: "center",
         borderRadius: "1rem",
-        color: "var(--accent-ink)",
+        color: "#315c2b",
         background: "linear-gradient(135deg, #f8d56a, var(--accent))",
         boxShadow: "0 8px 22px #e9a91d3d",
     },
@@ -165,10 +166,10 @@ export function AuthScreen({ mode, onAuthenticated }: { mode: "login" | "setup";
             <div style={styles.wrap}>
                 <header style={styles.intro}>
                     <span className={rules.mark} style={styles.mark}>
-                        <IconLeaf2 />
+                        <BrandMark />
                     </span>
-                    <h1 style={styles.title}>Salvia</h1>
-                    <p style={styles.tagline}>Rosmarinusのための、軽やかなソーシャルクライアント</p>
+                    <h1 style={styles.title}>Rosemary</h1>
+                    <p style={styles.tagline}>軽やかにつながる、ソーシャルクライアント</p>
                 </header>
                 <form onSubmit={submit} style={styles.card}>
                     <div style={styles.heading}>
