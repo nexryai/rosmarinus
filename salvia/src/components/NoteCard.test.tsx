@@ -141,7 +141,7 @@ describe("NoteCard social actions", () => {
         expect(screen.getByRole("button", { name: "画像を表示: 元ノートの画像" })).toBeInTheDocument();
         expect(screen.getByText("引用元の本文")).toBeInTheDocument();
 
-        await user.click(screen.getByRole("button", { name: "詳細" }));
+        await user.click(screen.getByRole("button", { name: /ノートの詳細を開く/ }));
         await user.click(screen.getByRole("button", { name: "返信" }));
         await user.click(screen.getByRole("button", { name: "Aliceさんがリノート" }));
         await user.click(screen.getByRole("button", { name: "引用ノートを開く: Carol" }));
@@ -158,6 +158,21 @@ describe("NoteCard social actions", () => {
 
         expect(screen.getByText("削除されたノート")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "返信" })).not.toBeInTheDocument();
+    });
+
+    it("uses the timestamp as the detail link and an icon for visibility", async () => {
+        const user = userEvent.setup();
+        const onOpenNote = vi.fn();
+        const followersNote = { ...note, created_at: "2026-09-01T00:00:00Z", visibility: "followers" } as Note;
+        const { container } = render(<NoteCard note={followersNote} ownActorID="alice" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        const timestamp = screen.getByRole("button", { name: /ノートの詳細を開く/ });
+        expect(timestamp).toContainElement(container.querySelector('time[datetime="2026-09-01T00:00:00Z"]'));
+        expect(screen.queryByText("詳細")).not.toBeInTheDocument();
+        expect(screen.getByRole("img", { name: "公開範囲: フォロワー" }).querySelector("svg")).toHaveClass("tabler-icon-lock");
+
+        await user.click(timestamp);
+        expect(onOpenNote).toHaveBeenCalledWith("note-1");
     });
 
     it("votes in a poll and confirms deletion of an owned note", async () => {

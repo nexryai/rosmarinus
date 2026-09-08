@@ -1,6 +1,6 @@
 import { type CSSProperties, useState } from "react";
 
-import { IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash } from "@tabler/icons-react";
+import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash, IconWorld } from "@tabler/icons-react";
 
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
@@ -42,17 +42,18 @@ const styles = {
         color: "var(--text)",
     },
     visibility: {
-        padding: "0.125rem 0.375rem",
-        borderRadius: "9999px",
-        background: "var(--panel-muted)",
-        fontSize: "10px",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0,
+        color: "var(--muted)",
     },
-    detail: {
+    timestamp: {
         marginLeft: "auto",
         padding: "0.25rem 0.5rem",
         borderRadius: "9999px",
+        color: "var(--muted)",
         fontSize: "0.75rem",
-        fontWeight: 700,
+        whiteSpace: "nowrap",
     },
     pinned: {
         paddingInline: "0.375rem",
@@ -267,11 +268,17 @@ const rules = {
             paddingBlock: "0.75rem",
         },
     }),
-    detail: css({
+    timestamp: css({
         color: "var(--muted)",
         "&:hover": {
             color: "var(--accent-hover)",
             background: "var(--accent-soft)",
+        },
+    }),
+    visibility: css({
+        "& > svg": {
+            width: "1rem",
+            height: "1rem",
         },
     }),
     pinned: css({
@@ -333,6 +340,13 @@ const relativeTime = (value: string) => {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}分`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間`;
     return new Intl.DateTimeFormat("ja", { month: "short", day: "numeric" }).format(new Date(value));
+};
+
+const visibilityDetails = (visibility: string) => {
+    if (visibility === "home") return { icon: IconHome, label: "ホーム" };
+    if (visibility === "followers") return { icon: IconLock, label: "フォロワー" };
+    if (visibility === "specified") return { icon: IconMail, label: "宛先指定" };
+    return { icon: IconWorld, label: "公開" };
 };
 
 const actorHandle = (actor: Note["author"]) => {
@@ -412,6 +426,8 @@ export function NoteCard({
     const [pickerOpen, setPickerOpen] = useState(false);
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
     const author = displayedNote.author;
+    const visibility = visibilityDetails(displayedNote.visibility);
+    const VisibilityIcon = visibility.icon;
     const imageAttachments = displayedNote.attachments.filter((attachment) => attachment.media_type?.startsWith("image/"));
     const maxPollVotes = Math.max(...(displayedNote.poll?.choices ?? []).map((item) => item.votes), 1);
     const act = async (operation: () => Promise<void>) => {
@@ -453,14 +469,18 @@ export function NoteCard({
                                 <strong style={styles.actorName}>{author?.name || author?.username || "Unknown"}</strong>
                                 <span>{isRenote ? actorHandle(author) : `@${author?.username || "unknown"}`}</span>
                             </button>
-                            <span>·</span>
-                            <time dateTime={displayedNote.created_at}>{relativeTime(displayedNote.created_at)}</time>
-                            <span style={styles.visibility}>{displayedNote.visibility === "followers" ? "フォロワー" : displayedNote.visibility === "home" ? "ホーム" : displayedNote.visibility === "specified" ? "宛先指定" : "公開"}</span>
-                            {onOpenNote && (
-                                <button className={rules.detail} onClick={() => onOpenNote(displayedNote.id)} style={styles.detail} type="button">
-                                    詳細
+                            {onOpenNote ? (
+                                <button aria-label={`ノートの詳細を開く: ${relativeTime(displayedNote.created_at)}`} className={rules.timestamp} onClick={() => onOpenNote(displayedNote.id)} style={styles.timestamp} title={new Date(displayedNote.created_at).toLocaleString("ja")} type="button">
+                                    <time dateTime={displayedNote.created_at}>{relativeTime(displayedNote.created_at)}</time>
                                 </button>
+                            ) : (
+                                <time dateTime={displayedNote.created_at} style={styles.timestamp} title={new Date(displayedNote.created_at).toLocaleString("ja")}>
+                                    {relativeTime(displayedNote.created_at)}
+                                </time>
                             )}
+                            <span aria-label={`公開範囲: ${visibility.label}`} className={rules.visibility} role="img" style={styles.visibility} title={visibility.label}>
+                                <VisibilityIcon aria-hidden="true" />
+                            </span>
                         </header>
                         {displayedNote.content_warning && (
                             <div style={styles.warning}>
