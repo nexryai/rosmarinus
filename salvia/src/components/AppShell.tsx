@@ -128,6 +128,61 @@ const styles = {
         flex: 1,
         background: "var(--panel)",
     },
+    mobileHeader: {
+        position: "fixed",
+        zIndex: 40,
+        top: 0,
+        right: 0,
+        left: 0,
+        height: "3.5rem",
+        paddingInline: "0.75rem",
+        alignItems: "center",
+        gap: "0.625rem",
+        borderBottom: "1px solid var(--border)",
+        backdropFilter: "blur(24px)",
+    },
+    mobileBrand: {
+        width: "2.5rem",
+        height: "2.5rem",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0,
+        borderRadius: "0.875rem",
+        color: "var(--accent-ink)",
+        background: "linear-gradient(135deg, #f8d56a, var(--accent))",
+    },
+    mobileActor: {
+        minWidth: 0,
+        maxWidth: "15rem",
+        flex: 1,
+    },
+    mobileActorTrigger: {
+        minHeight: "2.5rem",
+        padding: "0.25rem 0.625rem",
+        border: 0,
+        background: "transparent",
+        boxShadow: "none",
+    },
+    mobileActorValue: {
+        minWidth: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        overflow: "hidden",
+        fontSize: "0.8125rem",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    mobileSettings: {
+        width: "2.5rem",
+        height: "2.5rem",
+        marginLeft: "auto",
+        display: "grid",
+        placeItems: "center",
+        flexShrink: 0,
+        borderRadius: "0.875rem",
+        color: "var(--muted)",
+    },
     mobileNav: {
         position: "fixed",
         zIndex: 30,
@@ -161,6 +216,12 @@ const styles = {
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
+    layout: css({
+        "--shell-header-height": "3.5rem",
+        "@media (width >= 64rem)": {
+            "--shell-header-height": "0px",
+        },
+    }),
     sidebar: css({
         display: "none",
         background: "var(--panel)",
@@ -211,9 +272,41 @@ const rules = {
         },
     }),
     main: css({
+        paddingTop: "var(--shell-header-height)",
         paddingBottom: "5rem",
         "@media (width >= 64rem)": {
+            paddingTop: 0,
             paddingBottom: 0,
+        },
+    }),
+    mobileHeader: css({
+        display: "flex",
+        background: "var(--panel)",
+        "@supports (color: color-mix(in lab, red, red))": {
+            background: "color-mix(in srgb, var(--panel) 94%, transparent)",
+        },
+        "@media (width >= 64rem)": {
+            display: "none",
+        },
+    }),
+    mobileBrand: css({
+        "& > svg": {
+            width: "1.25rem",
+            height: "1.25rem",
+        },
+    }),
+    mobileSettings: css({
+        '&[aria-current="page"]': {
+            color: "var(--accent-ink)",
+            background: "var(--accent-soft)",
+        },
+        "&:hover": {
+            color: "var(--text)",
+            background: "var(--panel-muted)",
+        },
+        "& > svg": {
+            width: "1.25rem",
+            height: "1.25rem",
         },
     }),
     mobileNav: css({
@@ -254,7 +347,7 @@ export function AppShell({
     session: Session;
 }) {
     return (
-        <div style={styles.layout}>
+        <div className={rules.layout} style={styles.layout}>
             <aside className={rules.sidebar} style={styles.sidebar}>
                 <button className={rules.wordmark} onClick={() => onNavigate("/")} style={styles.wordmark} type="button">
                     <span style={styles.mark}>
@@ -286,6 +379,28 @@ export function AppShell({
                     ログアウト
                 </button>
             </aside>
+            <header aria-label="モバイルアカウント操作" className={rules.mobileHeader} style={styles.mobileHeader}>
+                <button aria-label="ホームへ移動" className={rules.mobileBrand} onClick={() => onNavigate("/")} style={styles.mobileBrand} type="button">
+                    <IconLeaf2 />
+                </button>
+                <Dropdown
+                    label="モバイルで操作するActor"
+                    onChange={onActorChange}
+                    options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))}
+                    renderValue={() => (
+                        <span style={styles.mobileActorValue}>
+                            <Avatar actor={selectedActor} size="xsmall" />
+                            <strong>@{selectedActor.username}</strong>
+                        </span>
+                    )}
+                    style={styles.mobileActor}
+                    triggerStyle={styles.mobileActorTrigger}
+                    value={selectedActor.id}
+                />
+                <button aria-current={page === "settings" ? "page" : undefined} aria-label="設定を開く" className={rules.mobileSettings} onClick={() => onNavigate("/settings")} style={styles.mobileSettings} type="button">
+                    <IconSettings />
+                </button>
+            </header>
             <main className={rules.main} style={styles.main}>
                 {children}
             </main>

@@ -183,7 +183,7 @@ const styles = {
     pageHeader: {
         position: "sticky",
         zIndex: 20,
-        top: 0,
+        top: "var(--shell-header-height, 0px)",
         height: "5rem",
         display: "flex",
         alignItems: "center",

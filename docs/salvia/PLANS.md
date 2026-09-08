@@ -98,8 +98,9 @@ secret-bearing dependency.
       retain Tabler Icons and the product-reference button ripple.
 - [ ] Build accessible primitives in `src/components/ui` and reusable domain
       components in `src/components`.
-- [x] Build responsive navigation, timeline layout, forms, menus, dialogs,
-      avatars, loading states, empty states, and error boundaries.
+- [x] Build responsive navigation with mobile settings and Actor switching,
+      timeline layout, forms, menus, dialogs, avatars, loading states, empty
+      states, and error boundaries.
 - [x] Keep account identity and active Actor visibly separate in the shell.
 - [x] Persist theme and non-authoritative display preferences through the
       Rosmarinus settings API; use local storage only as a non-sensitive render

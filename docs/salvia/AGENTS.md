@@ -33,6 +33,8 @@ Carry these decisions forward from old Salvia:
 - One authenticated account may create, own, select, and manage multiple local
   ActivityPub Actors. Account identity and the active Actor must remain visibly
   distinct.
+- Keep settings and active-Actor switching directly reachable in both desktop
+  and mobile shells; do not hide either capability behind desktop-only layout.
 - Use a substantially simplified, Misskey-inspired experience. Widgets, Deck,
   and unrelated Misskey compatibility are out of scope.
 - Use a yellow-based default theme and allow supported theme selection.
