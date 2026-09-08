@@ -139,6 +139,7 @@ function App() {
     const [composerIntent, setComposerIntent] = useState<ComposerIntent>();
     const [composerSettings, setComposerSettings] = useState<ActorSettings>();
     const [refreshKey, setRefreshKey] = useState(0);
+    const [liveTimelineKey, setLiveTimelineKey] = useState(0);
     const [error, setError] = useState("");
 
     const loadWorkspace = useCallback(async () => {
@@ -201,17 +202,23 @@ function App() {
         const source = new EventSource(api.eventURL, { withCredentials: true });
         const channel = "BroadcastChannel" in window ? new BroadcastChannel("salvia-projections") : undefined;
         let refreshTimer = 0;
-        const refresh = () => {
+        let animateTimeline = false;
+        const refresh = (liveUpdate = false) => {
+            animateTimeline ||= liveUpdate;
             window.clearTimeout(refreshTimer);
-            refreshTimer = window.setTimeout(() => setRefreshKey((value) => value + 1), 80);
+            refreshTimer = window.setTimeout(() => {
+                setRefreshKey((value) => value + 1);
+                if (animateTimeline) setLiveTimelineKey((value) => value + 1);
+                animateTimeline = false;
+            }, 80);
         };
         const refreshForEvent = (event: Event) => {
             try {
                 const actorID = JSON.parse((event as MessageEvent<string>).data).actor_id as string | undefined;
-                if (!actorID || actorID === selectedActorID) refresh();
+                if (!actorID || actorID === selectedActorID) refresh(true);
                 channel?.postMessage(actorID || "*");
             } catch {
-                refresh();
+                refresh(true);
             }
         };
         const refreshWorkspace = () => void loadWorkspace().catch((reason) => setError(reason instanceof Error ? reason.message : "Actor一覧を更新できませんでした"));
@@ -221,7 +228,7 @@ function App() {
         for (const type of projectionEventTypes) source.addEventListener(type, refreshForEvent);
         if (channel)
             channel.onmessage = (event: MessageEvent<string>) => {
-                if (event.data === "*" || event.data === selectedActorID) refresh();
+                if (event.data === "*" || event.data === selectedActorID) refresh(true);
             };
         const onVisible = () => {
             if (document.visibilityState === "visible") refresh();
@@ -314,6 +321,7 @@ function App() {
                     csrf={session.csrf_token}
                     emojis={emojis}
                     kind="home"
+                    liveRefreshKey={liveTimelineKey}
                     onCompose={(kind, note) => void openComposer({ kind, target: note })}
                     onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
                     onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
@@ -326,6 +334,7 @@ function App() {
                     csrf={session.csrf_token}
                     emojis={emojis}
                     kind="public"
+                    liveRefreshKey={liveTimelineKey}
                     onCompose={(kind, note) => void openComposer({ kind, target: note })}
                     onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
                     onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
