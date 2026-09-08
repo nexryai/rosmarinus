@@ -254,9 +254,12 @@ representation is a stable record ID or name.
 
 Note detail, timeline, profile Note, and thread responses project reply,
 quote, and renote references with the referenced author's safe profile fields
-plus the custom emoji and
-attachment metadata required for in-card rendering. Raw federation documents
+plus the custom emoji and attachment metadata required for in-card rendering.
+Raw federation documents
 and internal attachment URIs are never returned.
+Renote references include one visibility-checked `quote` reference when their
+target is itself a quote Note, allowing Salvia to retain the quoted card without
+an unbounded recursive projection.
 
 Profile projections include viewer-specific `follow_status` and
 `blocked_by_viewer`, plus `pinned_notes` in the Actor's featured order. Pinned

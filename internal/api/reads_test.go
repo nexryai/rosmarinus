@@ -152,6 +152,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 			URL: "https://remote.test/files/public.jpg", Name: "photo", Width: 1200, Height: 800,
 		}},
 		Raw: map[string]any{"private": "federation document"},
+	}, Quote: &readmodel.NoteReference{
+		Note:   notes.Note{ID: "quoted-note", URI: "https://remote.test/notes/quoted", Text: "quoted text", Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)},
+		Author: &actors.Actor{ID: "quoted-author", Username: "quoted"},
 	}}
 
 	view := projectNoteReference(reference)
@@ -160,6 +163,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 	}
 	if len(view.Attachments) != 1 || view.Attachments[0].URL != "https://remote.test/files/public.jpg" || view.Attachments[0].Width != 1200 {
 		t.Fatalf("attachment projection = %#v", view)
+	}
+	if view.Quote == nil || view.Quote.ID != "quoted-note" || view.Quote.Author == nil || view.Quote.Author.Username != "quoted" {
+		t.Fatalf("nested quote projection = %#v", view.Quote)
 	}
 	encoded, err := json.Marshal(view)
 	if err != nil {

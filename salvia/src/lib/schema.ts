@@ -41,7 +41,7 @@ export type Emoji = z.infer<typeof emojiSchema>;
 
 const attachmentSchema = z.object({ type: z.string().optional(), media_type: z.string().optional(), url: z.string(), name: z.string().optional(), width: z.number().optional(), height: z.number().optional(), sensitive: z.boolean() });
 
-const noteReferenceSchema = z.object({
+const noteReferenceBaseSchema = z.object({
     id: z.string(),
     uri: z.string(),
     text: z.string(),
@@ -58,6 +58,10 @@ const noteReferenceSchema = z.object({
         .array(attachmentSchema)
         .nullish()
         .transform((value) => value ?? []),
+});
+
+const noteReferenceSchema = noteReferenceBaseSchema.extend({
+    quote: noteReferenceBaseSchema.optional(),
 });
 
 export const noteSchema = z.object({

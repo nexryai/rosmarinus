@@ -306,7 +306,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 
 	// Phase 7: renote and quote the public Misskey note, verifying Rosmarinus
 	// accepts the delivered Announce and the Note containing Misskey's duplicate
-	// `_misskey_quote`/`quoteUrl` fields, then stores resolved target references.
+	// `_misskey_quote`/`quoteUrl` fields, then preserves that quote when the
+	// quoted Note itself is renoted.
 	var createdRenote struct {
 		CreatedNote struct {
 			ID string `json:"id"`
@@ -337,11 +338,38 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		t.Fatal("Misskey quote returned an empty note id")
 	}
 	quoteNoteURI := "https://a.test/notes/" + createdQuote.CreatedNote.ID
+	var quoteNote *domainnotes.Note
 	waitFor(t, ctx, "Misskey quote Note stored with resolved target", func() bool {
-		quote, findErr := noteRepo.FindByURI(ctx, quoteNoteURI)
-		return findErr == nil && quote != nil && quote.Text == "Quoted from latest Misskey federation test" &&
-			quote.QuoteID == remoteNote.ID && quote.QuoteURI == remoteNote.URI
+		var findErr error
+		quoteNote, findErr = noteRepo.FindByURI(ctx, quoteNoteURI)
+		return findErr == nil && quoteNote != nil && quoteNote.Text == "Quoted from latest Misskey federation test" &&
+			quoteNote.QuoteID == remoteNote.ID && quoteNote.QuoteURI == remoteNote.URI
 	})
+	var createdQuoteRenote struct {
+		CreatedNote struct {
+			ID string `json:"id"`
+		} `json:"createdNote"`
+	}
+	misskey.call(ctx, "notes/create", map[string]any{
+		"i": admin.Token, "renoteId": createdQuote.CreatedNote.ID,
+	}, &createdQuoteRenote)
+	if createdQuoteRenote.CreatedNote.ID == "" {
+		t.Fatal("Misskey quote renote returned an empty note id")
+	}
+	quoteAnnounceURI := "https://a.test/notes/" + createdQuoteRenote.CreatedNote.ID + "/activity"
+	var quoteAnnounce *domainnotes.Note
+	waitFor(t, ctx, "Announce of quoted Note stored by Rosmarinus", func() bool {
+		var findErr error
+		quoteAnnounce, findErr = noteRepo.FindByURI(ctx, quoteAnnounceURI)
+		return findErr == nil && quoteAnnounce != nil && quoteAnnounce.RenoteID == quoteNote.ID
+	})
+	quoteRenoteView, err := mongostore.NewSalviaReader(db).FindVisibleNote(ctx, localActor.ID, quoteAnnounce.ID)
+	if err != nil {
+		t.Fatalf("read renote of quoted Note: %v", err)
+	}
+	if quoteRenoteView == nil || quoteRenoteView.Renote == nil || quoteRenoteView.Renote.Quote == nil || quoteRenoteView.Renote.Quote.Note.ID != remoteNote.ID {
+		t.Fatalf("renote projection lost quoted Note: %+v", quoteRenoteView)
+	}
 
 	// Phase 8: publish a Misskey Question and verify Rosmarinus stores its
 	// ordered choices, initial vote counts, multiplicity, and expiration.

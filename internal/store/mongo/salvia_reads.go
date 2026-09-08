@@ -396,6 +396,11 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 }
 
 func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M) (*readmodel.NoteReference, error) {
+	// One nested quote preserves renoted quote cards without allowing cycles in API projections.
+	return r.findNoteReferenceWithQuote(ctx, noteID, visibility, true)
+}
+
+func (r *SalviaReader) findNoteReferenceWithQuote(ctx context.Context, noteID string, visibility bson.M, includeQuote bool) (*readmodel.NoteReference, error) {
 	if noteID == "" {
 		return nil, nil
 	}
@@ -411,7 +416,14 @@ func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, vis
 	if err != nil || author == nil {
 		return nil, err
 	}
-	return &readmodel.NoteReference{Note: *toNote(doc), Author: author}, nil
+	reference := &readmodel.NoteReference{Note: *toNote(doc), Author: author}
+	if includeQuote {
+		reference.Quote, err = r.findNoteReferenceWithQuote(ctx, doc.QuoteID, visibility, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return reference, nil
 }
 
 func (r *SalviaReader) visibleNoteFilter(ctx context.Context, viewerActorID string) (bson.M, error) {

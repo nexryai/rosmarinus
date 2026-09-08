@@ -357,10 +357,10 @@ const displayedNoteFor = (note: Note): Note => {
         reactions: [],
         poll: undefined,
         reply_id: undefined,
-        quote_id: undefined,
+        quote_id: note.renote.quote?.id,
         renote_id: undefined,
         reply: undefined,
-        quote: undefined,
+        quote: note.renote.quote,
         renote: undefined,
     };
 };

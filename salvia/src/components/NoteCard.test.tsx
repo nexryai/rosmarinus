@@ -120,6 +120,17 @@ describe("NoteCard social actions", () => {
                 author: originalAuthor,
                 emojis: [{ name: "salvia", url: "https://remote.test/salvia.webp", media_type: "image/webp" }],
                 attachments: [{ media_type: "image/jpeg", name: "元ノートの画像", sensitive: false, url: "https://remote.test/image.jpg" }],
+                quote: {
+                    id: "quoted-note",
+                    uri: "https://remote.test/notes/quoted",
+                    text: "引用元の本文",
+                    sensitive: false,
+                    visibility: "public",
+                    created_at: "2026-08-31T00:00:00Z",
+                    author: { ...author, id: "carol", name: "Carol", username: "carol", uri: "https://quoted.test/users/carol" },
+                    emojis: [],
+                    attachments: [],
+                },
             },
         } as Note;
         render(<NoteCard note={renote} ownActorID="carol" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={onReply} onVote={vi.fn()} />);
@@ -128,12 +139,15 @@ describe("NoteCard social actions", () => {
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
         expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "https://remote.test/salvia.webp");
         expect(screen.getByRole("button", { name: "画像を表示: 元ノートの画像" })).toBeInTheDocument();
+        expect(screen.getByText("引用元の本文")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: "詳細" }));
         await user.click(screen.getByRole("button", { name: "返信" }));
         await user.click(screen.getByRole("button", { name: "Aliceさんがリノート" }));
+        await user.click(screen.getByRole("button", { name: "引用ノートを開く: Carol" }));
 
         expect(onOpenNote).toHaveBeenCalledWith("original-1");
+        expect(onOpenNote).toHaveBeenCalledWith("quoted-note");
         expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ id: "original-1", author: originalAuthor }));
         expect(onOpenProfile).toHaveBeenCalledWith("alice");
     });

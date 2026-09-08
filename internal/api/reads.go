@@ -493,16 +493,17 @@ type reactionSummaryView struct {
 }
 
 type noteReferenceView struct {
-	ID             string           `json:"id"`
-	URI            string           `json:"uri"`
-	Text           string           `json:"text"`
-	ContentWarning *string          `json:"content_warning,omitempty"`
-	Sensitive      bool             `json:"sensitive"`
-	Visibility     string           `json:"visibility"`
-	CreatedAt      time.Time        `json:"created_at"`
-	Author         *actorView       `json:"author,omitempty"`
-	Emojis         []noteEmojiView  `json:"emojis"`
-	Attachments    []attachmentView `json:"attachments"`
+	ID             string             `json:"id"`
+	URI            string             `json:"uri"`
+	Text           string             `json:"text"`
+	ContentWarning *string            `json:"content_warning,omitempty"`
+	Sensitive      bool               `json:"sensitive"`
+	Visibility     string             `json:"visibility"`
+	CreatedAt      time.Time          `json:"created_at"`
+	Author         *actorView         `json:"author,omitempty"`
+	Emojis         []noteEmojiView    `json:"emojis"`
+	Attachments    []attachmentView   `json:"attachments"`
+	Quote          *noteReferenceView `json:"quote,omitempty"`
 }
 
 type connectionView struct {
@@ -600,6 +601,15 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
+	view.Quote = projectShallowNoteReference(reference.Quote)
+	return view
+}
+
+func projectShallowNoteReference(reference *readmodel.NoteReference) *noteReferenceView {
+	if reference == nil {
+		return nil
+	}
+	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author})
 	return view
 }
 
