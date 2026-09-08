@@ -369,7 +369,7 @@ export function AppShell({
                     ノート
                 </Button>
                 <div className={rules.accountSwitcher} style={styles.accountSwitcher}>
-                    <Avatar actor={selectedActor} size="small" />
+                    <Avatar actor={selectedActor} onOpenProfile={(id) => onNavigate(`/profiles/${encodeURIComponent(id)}`)} size="small" />
                     <div style={styles.accountLabel}>
                         <span style={styles.accountName}>{session.display_name || session.username}</span>
                         <Dropdown label="操作するActor" onChange={onActorChange} options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))} placement="top" style={styles.actorSelect} triggerStyle={styles.actorTrigger} value={selectedActor.id} />
@@ -384,13 +384,13 @@ export function AppShell({
                 <button aria-label="ホームへ移動" className={rules.mobileBrand} onClick={() => onNavigate("/")} style={styles.mobileBrand} type="button">
                     <BrandMark />
                 </button>
+                <Avatar actor={selectedActor} onOpenProfile={(id) => onNavigate(`/profiles/${encodeURIComponent(id)}`)} size="xsmall" />
                 <Dropdown
                     label="モバイルで操作するActor"
                     onChange={onActorChange}
                     options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))}
                     renderValue={() => (
                         <span style={styles.mobileActorValue}>
-                            <Avatar actor={selectedActor} size="xsmall" />
                             <strong>@{selectedActor.username}</strong>
                         </span>
                     )}

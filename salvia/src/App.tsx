@@ -333,8 +333,10 @@ function App() {
                 />
             )}
             {route.page === "users" && <UserSearchPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} />}
-            {route.page === "notifications" && <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} onActorChange={(id) => void chooseActor(id)} onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
-            {route.page === "follow-requests" && <FollowRequestsPage actorID={selectedActor.id} csrf={session.csrf_token} refreshKey={refreshKey} />}
+            {route.page === "notifications" && (
+                <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} onActorChange={(id) => void chooseActor(id)} onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />
+            )}
+            {route.page === "follow-requests" && <FollowRequestsPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
             {route.page === "settings" && <SettingsPage accountSettings={settings} actors={actors} csrf={session.csrf_token} onActorsChanged={loadWorkspace} onSettingsChanged={setSettings} selectedActor={selectedActor} />}
             {route.page === "profile" && route.profileID && (
                 <ProfilePage

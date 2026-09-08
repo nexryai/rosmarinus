@@ -64,7 +64,7 @@ describe("ProfilePage social actions", () => {
         expect(banner).toBeInTheDocument();
         expect(banner).toBeEmptyDOMElement();
         expect(banner).toHaveStyle({ background: "radial-gradient(circle at 18% 25%, var(--accent), transparent 32%), linear-gradient(135deg, var(--accent-soft), var(--panel-muted))" });
-        expect(screen.getByRole("img", { name: "Bobのアバター" }).parentElement?.style.top).toBe("-3rem");
+        expect(screen.getByRole("button", { name: "Bobのプロフィールを開く" }).parentElement?.style.top).toBe("-3rem");
     });
 
     it("renders the profile actor's visibility-filtered notes", async () => {

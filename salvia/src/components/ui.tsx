@@ -4,8 +4,9 @@ import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 
 import { css, keyframes } from "../lib/css";
 import { useIsMobile } from "../lib/responsive";
-import type { Actor } from "../lib/schema";
 import { DrawerFrame } from "./ui/Drawer";
+
+export { Avatar } from "./ui/Avatar";
 
 const spin = keyframes({
     to: {
@@ -111,21 +112,6 @@ const styles = {
         boxShadow: "0 0 0 0 rgb(0 0 0 / 10%)",
         animation: `${rippleAnimation} 500ms cubic-bezier(0,.5,0,1) forwards`,
     },
-    avatar: {
-        objectFit: "cover",
-        boxShadow: "0 1px 3px #0000001a, 0 1px 2px -1px #0000001a",
-        background: "var(--accent-soft)",
-        borderRadius: "9999px",
-        flexShrink: 0,
-    },
-    avatarFallback: {
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 900,
-        color: "var(--accent-ink)",
-        background: "linear-gradient(135deg, #f8d56a, var(--accent-hover))",
-    },
     stateMessage: {
         minHeight: "13rem",
         paddingInline: "1.5rem",
@@ -214,34 +200,6 @@ const styles = {
         placeItems: "center",
         borderRadius: "9999px",
         transition: "color 150ms, background-color 150ms",
-    },
-} satisfies Record<string, CSSProperties>;
-
-const avatarSizes = {
-    xsmall: {
-        width: "1.75rem",
-        height: "1.75rem",
-        fontSize: "0.6875rem",
-        lineHeight: 1.273,
-    },
-    small: {
-        width: "2.25rem",
-        height: "2.25rem",
-        fontSize: "0.75rem",
-        lineHeight: 1.333,
-    },
-    medium: {
-        width: "2.75rem",
-        height: "2.75rem",
-        fontSize: "0.875rem",
-        lineHeight: 1.429,
-    },
-    large: {
-        width: "6rem",
-        height: "6rem",
-        fontSize: "1.5rem",
-        lineHeight: 1.333,
-        boxShadow: "0 0 0 4px var(--panel), 0 1px 3px #0000001a",
     },
 } satisfies Record<string, CSSProperties>;
 
@@ -451,17 +409,6 @@ export function Button({ children, className = "", disableRipple = false, onMous
             ))}
             <span style={styles.buttonContent}>{children}</span>
         </button>
-    );
-}
-
-export function Avatar({ actor, size = "medium" }: { actor?: Pick<Actor, "avatar_url" | "name" | "username">; size?: "xsmall" | "small" | "medium" | "large" }) {
-    const label = actor?.name || actor?.username || "?";
-    return actor?.avatar_url ? (
-        <img alt={`${label}のアバター`} loading="lazy" referrerPolicy="no-referrer" src={actor.avatar_url} style={{ ...styles.avatar, ...avatarSizes[size] }} />
-    ) : (
-        <span aria-label={`${label}のアバター`} role="img" style={{ ...styles.avatar, ...styles.avatarFallback, ...avatarSizes[size] }}>
-            {label.slice(0, 1).toUpperCase()}
-        </span>
     );
 }
 

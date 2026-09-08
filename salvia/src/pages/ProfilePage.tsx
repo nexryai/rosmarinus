@@ -339,7 +339,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 </div>
                 <div className={rules.body} style={styles.body}>
                     <div className={rules.avatar} style={{ ...styles.avatar, top: "-3rem" }}>
-                        <Avatar actor={actor} size="large" />
+                        <Avatar actor={actor} onOpenProfile={onOpenProfile} size="large" />
                     </div>
                     <div className={rules.actions} style={styles.actions}>
                         {actor.id !== actorID && (

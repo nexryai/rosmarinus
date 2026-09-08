@@ -68,6 +68,7 @@ describe("NoteCard social actions", () => {
 
     it("renders a Twitter-style quoted note with its author identity", () => {
         const onOpenNote = vi.fn();
+        const onOpenProfile = vi.fn();
         const quoted = {
             ...note,
             quote: {
@@ -84,13 +85,15 @@ describe("NoteCard social actions", () => {
                 },
             },
         } as Note;
-        render(<NoteCard note={quoted} ownActorID="alice" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+        render(<NoteCard note={quoted} ownActorID="alice" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
         expect(screen.getByAltText("Bobのアバター")).toHaveAttribute("src", "https://remote.test/avatar.jpg");
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
         expect(screen.getByText("引用された本文")).toBeInTheDocument();
+        fireEvent.click(screen.getByAltText("Bobのアバター").closest("button") as HTMLButtonElement);
         fireEvent.click(screen.getByRole("button", { name: "引用ノートを開く: Bob" }));
 
+        expect(onOpenProfile).toHaveBeenCalledWith("bob");
         expect(onOpenNote).toHaveBeenCalledWith("quote-1");
     });
 

@@ -448,7 +448,7 @@ export function NoteCard({
             )}
             {isRenote && (
                 <div className={rules.renoteAttribution} style={styles.renoteAttribution}>
-                    <Avatar actor={renoter} size="xsmall" />
+                    <Avatar actor={renoter} onOpenProfile={onOpenProfile} size="xsmall" />
                     <IconRepeat />
                     <button disabled={!renoter} onClick={() => renoter && onOpenProfile(renoter.id)} style={styles.renoteActor} type="button">
                         {renoter?.name || renoter?.username || "Unknown"}さんがリノート
@@ -462,7 +462,7 @@ export function NoteCard({
                 <div style={styles.deleted}>削除されたノート</div>
             ) : (
                 <>
-                    <Avatar actor={author} />
+                    <Avatar actor={author} onOpenProfile={onOpenProfile} />
                     <div style={styles.body}>
                         <header style={styles.header}>
                             <button disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
@@ -506,7 +506,7 @@ export function NoteCard({
                                 )}
                             </div>
                         )}
-                        {displayedNote.quote && <QuotedNoteCard onOpen={onOpenNote} quote={displayedNote.quote} />}
+                        {displayedNote.quote && <QuotedNoteCard onOpen={onOpenNote} onOpenProfile={onOpenProfile} quote={displayedNote.quote} />}
                         {displayedNote.poll && (
                             <div style={styles.poll}>
                                 {displayedNote.poll.choices.map((choice) => (

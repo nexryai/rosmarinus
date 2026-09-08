@@ -11,7 +11,9 @@ const styles = {
         width: "100%",
         marginTop: "0.75rem",
         padding: "0.75rem",
-        display: "block",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "0.625rem",
         overflow: "hidden",
         border: "1px solid var(--border)",
         borderRadius: "1rem",
@@ -19,6 +21,13 @@ const styles = {
         background: "var(--panel)",
         textAlign: "left",
         transition: "border-color 140ms ease, background-color 140ms ease, transform 140ms ease",
+    },
+    content: {
+        minWidth: 0,
+        display: "block",
+        flex: 1,
+        color: "var(--text)",
+        textAlign: "left",
     },
     header: {
         minWidth: 0,
@@ -106,13 +115,12 @@ const quoteDate = (value: string) =>
         day: "numeric",
     }).format(new Date(value));
 
-export function QuotedNoteCard({ onOpen, quote }: { onOpen?: (noteID: string) => void; quote: Quote }) {
+export function QuotedNoteCard({ onOpen, onOpenProfile, quote }: { onOpen?: (noteID: string) => void; onOpenProfile?: (actorID: string) => void; quote: Quote }) {
     const author = quote.author;
     const authorName = author?.name || author?.username || "Unknown";
     const content: ReactNode = (
         <>
             <span style={styles.header}>
-                <Avatar actor={author} size="small" />
                 <span style={styles.identity}>
                     <strong style={styles.name}>{authorName}</strong>
                     <span style={styles.handle}>{actorHandle(author)}</span>
@@ -125,11 +133,16 @@ export function QuotedNoteCard({ onOpen, quote }: { onOpen?: (noteID: string) =>
         </>
     );
 
-    return onOpen ? (
-        <button aria-label={`引用ノートを開く: ${authorName}`} className={rules.card} onClick={() => onOpen(quote.id)} style={styles.card} type="button">
-            {content}
-        </button>
-    ) : (
-        <div style={styles.card}>{content}</div>
+    return (
+        <div className={rules.card} style={styles.card}>
+            <Avatar actor={author} onOpenProfile={onOpenProfile} size="small" />
+            {onOpen ? (
+                <button aria-label={`引用ノートを開く: ${authorName}`} onClick={() => onOpen(quote.id)} style={styles.content} type="button">
+                    {content}
+                </button>
+            ) : (
+                <div style={styles.content}>{content}</div>
+            )}
+        </div>
     );
 }

@@ -101,7 +101,7 @@ const rules = {
     }),
 };
 
-export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, refreshKey }: { actorID: string; csrf: string; onActorChange: (actorID: string) => void; onOpenNote: (noteID: string) => void; refreshKey: number }) {
+export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, onOpenProfile, refreshKey }: { actorID: string; csrf: string; onActorChange: (actorID: string) => void; onOpenNote: (noteID: string) => void; onOpenProfile: (actorID: string) => void; refreshKey: number }) {
     const [items, setItems] = useState<Notification[]>([]);
     const [scope, setScope] = useState<"actor" | "account">("actor");
     const [loading, setLoading] = useState(true);
@@ -158,7 +158,7 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, re
                 <DividedList>
                     {items.map((item) => (
                         <article className={`${rules.notification} ${!item.is_read ? rules.unread : ""}`} key={item.id} style={styles.notification}>
-                            <Avatar actor={item.source} />
+                            <Avatar actor={item.source} onOpenProfile={onOpenProfile} />
                             <div style={styles.body}>
                                 <strong>{item.source?.name || item.source?.username || "Fediverse"}</strong>
                                 <p style={styles.kind}>{labels[item.kind] || item.kind}</p>

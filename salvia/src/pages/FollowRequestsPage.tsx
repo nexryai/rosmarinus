@@ -62,7 +62,7 @@ const rules = {
     }),
 };
 
-export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: string; csrf: string; refreshKey: number }) {
+export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }: { actorID: string; csrf: string; onOpenProfile: (actorID: string) => void; refreshKey: number }) {
     const [items, setItems] = useState<Connection[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -104,7 +104,7 @@ export function FollowRequestsPage({ actorID, csrf, refreshKey }: { actorID: str
                 <DividedList>
                     {items.map((item) => (
                         <article className={rules.request} key={item.id} style={styles.request}>
-                            <Avatar actor={item.actor} />
+                            <Avatar actor={item.actor} onOpenProfile={onOpenProfile} />
                             <div style={styles.identity}>
                                 <strong style={styles.name}>{item.actor.name || item.actor.username}</strong>
                                 <span style={styles.handle}>@{item.actor.username}</span>
