@@ -119,6 +119,9 @@ Account
   Supply the selected owned Actor and expect Rosmarinus to reject a missing,
   suspended, deleted, or foreign Actor. Never use it as local authorization
   evidence.
+- Render `pinned_notes` from profile responses ahead of the regular profile
+  timeline. They are already ordered and visibility-filtered by Rosmarinus;
+  do not infer pin state from the paginated Note list.
 - Expect top-level `version: 1` JSON envelopes. Follow opaque `next` cursors
   without parsing or constructing them in the SPA.
 - Validate API responses at the client boundary and render structured error

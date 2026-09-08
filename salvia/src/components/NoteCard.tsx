@@ -1,6 +1,6 @@
 import { type CSSProperties, useState } from "react";
 
-import { IconMessageCircle, IconQuote, IconRepeat, IconTrash } from "@tabler/icons-react";
+import { IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash } from "@tabler/icons-react";
 
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
@@ -52,6 +52,16 @@ const styles = {
         padding: "0.25rem 0.5rem",
         borderRadius: "9999px",
         fontSize: "0.75rem",
+        fontWeight: 700,
+    },
+    pinned: {
+        paddingInline: "0.375rem",
+        gridColumn: "1 / -1",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.375rem",
+        color: "var(--pinned)",
+        fontSize: "0.8125rem",
         fontWeight: 700,
     },
     renoteAttribution: {
@@ -264,6 +274,12 @@ const rules = {
             background: "var(--accent-soft)",
         },
     }),
+    pinned: css({
+        "& > svg": {
+            width: "1rem",
+            height: "1rem",
+        },
+    }),
     renoteAttribution: css({
         "& > svg": {
             width: "1rem",
@@ -372,6 +388,7 @@ export function NoteCard({
     onReply,
     onVote,
     emojis = [],
+    pinned = false,
 }: {
     note: Note;
     ownActorID: string;
@@ -384,6 +401,7 @@ export function NoteCard({
     onReply: (note: Note) => void;
     onVote: (noteID: string, choice: number) => Promise<void>;
     emojis?: Emoji[];
+    pinned?: boolean;
 }) {
     const displayedNote = displayedNoteFor(note);
     const isRenote = Boolean(note.renote_id || note.renote);
@@ -406,6 +424,12 @@ export function NoteCard({
     };
     return (
         <article className={rules.card} style={styles.card}>
+            {pinned && (
+                <div className={rules.pinned} style={styles.pinned}>
+                    <IconPinFilled />
+                    <span>ピン留めされたノート</span>
+                </div>
+            )}
             {isRenote && (
                 <div className={rules.renoteAttribution} style={styles.renoteAttribution}>
                     <Avatar actor={renoter} size="xsmall" />

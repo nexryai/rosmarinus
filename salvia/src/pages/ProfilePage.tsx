@@ -137,6 +137,9 @@ const styles = {
         fontSize: "1rem",
         fontWeight: 900,
     },
+    pinnedNotes: {
+        borderBottom: "0.5rem solid var(--page)",
+    },
     loadMore: {
         padding: "1.5rem",
         display: "flex",
@@ -261,7 +264,8 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     const mutateNote = async (operation: () => Promise<void>) => {
         try {
             await operation();
-            await loadNotes();
+            const [refreshedProfile] = await Promise.all([api.profile(actorID, profileID), loadNotes()]);
+            setProfile(refreshedProfile);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "操作に失敗しました");
         }
@@ -310,6 +314,23 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     if (loading) return <Loading label="プロフィールを読み込み中" />;
     if (!profile) return <ErrorBanner message={error || "プロフィールが見つかりません"} />;
     const actor = profile.actor;
+    const renderNote = (note: Note, pinned = false) => (
+        <NoteCard
+            emojis={emojis}
+            key={note.id}
+            note={note}
+            onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
+            onOpenNote={onOpenNote}
+            onOpenProfile={onOpenProfile}
+            onQuote={(target) => onCompose("quote", target)}
+            onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
+            onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
+            onReply={(target) => onCompose("reply", target)}
+            onVote={(noteID, choice) => mutateNote(() => api.vote(csrf, actorID, noteID, choice))}
+            ownActorID={actorID}
+            pinned={pinned}
+        />
+    );
     return (
         <>
             <header style={styles.hero}>
@@ -402,6 +423,11 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 </div>
             </header>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
+            {profile.pinned_notes.length > 0 && (
+                <DividedList aria-label="ピン留めされたノート" style={styles.pinnedNotes}>
+                    {profile.pinned_notes.map((note) => renderNote(note, true))}
+                </DividedList>
+            )}
             <section aria-labelledby="profile-notes-heading">
                 <h2 id="profile-notes-heading" style={styles.notesHeader}>
                     ノート
@@ -412,22 +438,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                     <Empty>表示できるノートはまだありません。</Empty>
                 ) : (
                     <DividedList aria-label="プロフィールのノート一覧">
-                        {notes.map((note) => (
-                            <NoteCard
-                                emojis={emojis}
-                                key={note.id}
-                                note={note}
-                                onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
-                                onOpenNote={onOpenNote}
-                                onOpenProfile={onOpenProfile}
-                                onQuote={(target) => onCompose("quote", target)}
-                                onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
-                                onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
-                                onReply={(target) => onCompose("reply", target)}
-                                onVote={(noteID, choice) => mutateNote(() => api.vote(csrf, actorID, noteID, choice))}
-                                ownActorID={actorID}
-                            />
-                        ))}
+                        {notes.map((note) => renderNote(note))}
                         {next && (
                             <div style={styles.loadMore}>
                                 <Button disabled={notesLoading} onClick={() => void loadNotes(next, true)} variant="secondary">

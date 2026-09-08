@@ -230,7 +230,7 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/timelines/home?actor_id={viewer}` | Home timeline for the selected owned Actor |
 | `GET` | `/api/v1/notes/{noteId}?actor_id={viewer}` | Visibility-checked Note detail with reply/quote/renote projections |
 | `GET` | `/api/v1/notes/{noteId}/thread?actor_id={viewer}` | Visibility-checked direct replies |
-| `GET` | `/api/v1/profiles/{actorId}?actor_id={viewer}` | Safe local or remote Actor profile |
+| `GET` | `/api/v1/profiles/{actorId}?actor_id={viewer}` | Safe local or remote Actor profile with visible pinned Notes |
 | `GET` | `/api/v1/profiles/{actorId}/notes?actor_id={viewer}` | Cursor-paginated, visibility- and block-filtered Notes authored by the profile Actor |
 | `GET` | `/api/v1/profiles/{actorId}/followers?actor_id={viewer}` | Block-filtered followers |
 | `GET` | `/api/v1/profiles/{actorId}/following?actor_id={viewer}` | Block-filtered following list |
@@ -257,10 +257,13 @@ quote, and renote references with the referenced author's safe profile fields
 plus the custom emoji and
 attachment metadata required for in-card rendering. Raw federation documents
 and internal attachment URIs are never returned.
+
 Profile projections include viewer-specific `follow_status` and
-`blocked_by_viewer`. A profile blocked by the viewer remains readable so the
-viewer can reverse their own block; a profile that has blocked the viewer is
-still hidden.
+`blocked_by_viewer`, plus `pinned_notes` in the Actor's featured order. Pinned
+Notes pass the same visibility, deletion, active-author, and bilateral-block
+filters as other Note reads and use the normal safe Note projection. A profile
+blocked by the viewer remains readable so the viewer can reverse their own
+block; a profile that has blocked the viewer is still hidden.
 
 Actor `profile_fields` (including timeline authors and referenced Notes) is
 an array of `{ "name": string, "value": string }`, empty when unset. Salvia

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,7 @@ import type { Actor, Note, Profile } from "../lib/schema";
 import { ProfilePage } from "./ProfilePage";
 
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob", profile_fields: [], tags: [] } as unknown as Actor;
-const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false } as Profile;
+const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false, pinned_notes: [] } as Profile;
 
 describe("ProfilePage social actions", () => {
     beforeEach(() => {
@@ -87,5 +87,27 @@ describe("ProfilePage social actions", () => {
         expect(await screen.findByText("Bobのノート")).toBeInTheDocument();
         expect(api.profileNotes).toHaveBeenCalledWith("alice", "bob", "", expect.any(AbortSignal));
         expect(screen.getByRole("button", { name: "もっと見る" })).toBeInTheDocument();
+    });
+
+    it("shows pinned Notes before the regular timeline with a Misskey-style label", async () => {
+        const pinnedNote = {
+            id: "pinned-note",
+            uri: "https://remote.test/notes/pinned",
+            text: "大切なお知らせ",
+            visibility: "public",
+            created_at: "2026-09-08T00:00:00Z",
+            author: remote,
+            attachments: [],
+            emojis: [],
+            reactions: [],
+        } as unknown as Note;
+        vi.spyOn(api, "profile").mockResolvedValue({ ...profile, pinned_notes: [pinnedNote] });
+
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
+
+        const pinnedRegion = await screen.findByRole("region", { name: "ピン留めされたノート" });
+        expect(within(pinnedRegion).getByText("ピン留めされたノート")).toBeInTheDocument();
+        expect(within(pinnedRegion).getByText("大切なお知らせ")).toBeInTheDocument();
+        expect(pinnedRegion.compareDocumentPosition(screen.getByRole("heading", { name: "ノート" })) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     });
 });

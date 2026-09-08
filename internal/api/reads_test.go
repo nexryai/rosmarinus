@@ -241,13 +241,22 @@ func TestProfileConnectionsUseOwnedViewerForBlockFiltering(t *testing.T) {
 }
 
 func TestProfileReturnsViewerRelationshipState(t *testing.T) {
-	reader := &fakeReader{profile: &readmodel.Profile{Actor: &actors.Actor{ID: "remote-profile"}, FollowStatus: "pending", BlockedByViewer: true}}
+	reader := &fakeReader{profile: &readmodel.Profile{
+		Actor: &actors.Actor{ID: "remote-profile"}, FollowStatus: "pending", BlockedByViewer: true,
+		PinnedNotes: []readmodel.Note{{
+			Note:   notes.Note{ID: "pinned-note", URI: "https://remote.test/notes/pinned", Text: "pinned", Visibility: notes.VisibilityPublic, CreatedAt: time.Now(), Raw: map[string]any{"private": "federation document"}},
+			Author: &actors.Actor{ID: "remote-profile", Username: "remote"},
+		}},
+	}}
 	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
 	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/remote-profile?actor_id=actor-1", nil))
 	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"follow_status":"pending"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"blocked_by_viewer":true`)) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"pinned_notes":[{"id":"pinned-note"`)) || bytes.Contains(recorder.Body.Bytes(), []byte("federation document")) {
+		t.Fatalf("profile pinned Note projection is unsafe or missing: %s", recorder.Body.String())
 	}
 }
 

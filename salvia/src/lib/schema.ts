@@ -157,7 +157,17 @@ export const connectionSchema = z.object({
 
 export type Connection = z.infer<typeof connectionSchema>;
 
-export const profileSchema = z.object({ actor: actorSchema, followers_count: z.number(), following_count: z.number(), follow_status: z.string().default(""), blocked_by_viewer: z.boolean().default(false) });
+export const profileSchema = z.object({
+    actor: actorSchema,
+    followers_count: z.number(),
+    following_count: z.number(),
+    follow_status: z.string().default(""),
+    blocked_by_viewer: z.boolean().default(false),
+    pinned_notes: z
+        .array(noteSchema)
+        .nullish()
+        .transform((value) => value ?? []),
+});
 export type Profile = z.infer<typeof profileSchema>;
 
 export const instanceSchema = z.object({ name: z.string(), host: z.string(), url: z.string(), version: z.string(), passkey_only: z.literal(true) });

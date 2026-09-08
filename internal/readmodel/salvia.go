@@ -56,6 +56,7 @@ type Profile struct {
 	FollowingCount  int
 	FollowStatus    string
 	BlockedByViewer bool
+	PinnedNotes     []Note
 }
 
 type Reader interface {

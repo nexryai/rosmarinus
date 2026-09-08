@@ -329,9 +329,13 @@ func (h *Handler) resolveRemoteProfile(w http.ResponseWriter, r *http.Request, a
 }
 
 func (h *Handler) writeProfile(w http.ResponseWriter, profile *readmodel.Profile) {
+	pinnedNotes := make([]noteView, 0, len(profile.PinnedNotes))
+	for _, note := range profile.PinnedNotes {
+		pinnedNotes = append(pinnedNotes, projectNote(note))
+	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": profileView{
 		Actor: projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
-		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer,
+		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer, PinnedNotes: pinnedNotes,
 	}})
 }
 
@@ -522,11 +526,12 @@ type notificationView struct {
 }
 
 type profileView struct {
-	Actor           actorView `json:"actor"`
-	FollowersCount  int       `json:"followers_count"`
-	FollowingCount  int       `json:"following_count"`
-	FollowStatus    string    `json:"follow_status,omitempty"`
-	BlockedByViewer bool      `json:"blocked_by_viewer"`
+	Actor           actorView  `json:"actor"`
+	FollowersCount  int        `json:"followers_count"`
+	FollowingCount  int        `json:"following_count"`
+	FollowStatus    string     `json:"follow_status,omitempty"`
+	BlockedByViewer bool       `json:"blocked_by_viewer"`
+	PinnedNotes     []noteView `json:"pinned_notes"`
 }
 
 type emojiView struct {

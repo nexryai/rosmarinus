@@ -262,7 +262,8 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	}
 
 	// Phase 6: pin and unpin the Misskey Note, verifying Rosmarinus applies the
-	// delivered Add/Remove pair to the remote Actor's featured Note IDs.
+	// delivered Add/Remove pair and exposes the visible Note through its profile
+	// read model while pinned.
 	misskey.call(ctx, "i/pin", map[string]any{
 		"i": admin.Token, "noteId": created.CreatedNote.ID,
 	}, nil)
@@ -279,6 +280,13 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 		}
 		return false
 	})
+	remoteProfile, err := mongostore.NewSalviaReader(db).FindProfile(ctx, localActor.ID, remoteActor.ID)
+	if err != nil {
+		t.Fatalf("read remote Actor profile with pinned Note: %v", err)
+	}
+	if remoteProfile == nil || len(remoteProfile.PinnedNotes) != 1 || remoteProfile.PinnedNotes[0].Note.ID != remoteNote.ID || len(remoteProfile.PinnedNotes[0].Note.Attachments) != 1 {
+		t.Fatalf("remote Actor profile lost its visible pinned Note: %+v", remoteProfile)
+	}
 	misskey.call(ctx, "i/unpin", map[string]any{
 		"i": admin.Token, "noteId": created.CreatedNote.ID,
 	}, nil)

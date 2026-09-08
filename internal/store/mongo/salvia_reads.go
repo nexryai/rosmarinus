@@ -250,7 +250,40 @@ func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID s
 	if err == nil {
 		followStatus = follow.Status
 	}
-	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following), FollowStatus: followStatus, BlockedByViewer: blockedByViewer}, nil
+	pinnedNotes, err := r.listPinnedNotes(ctx, viewerActorID, actor)
+	if err != nil {
+		return nil, err
+	}
+	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following), FollowStatus: followStatus, BlockedByViewer: blockedByViewer, PinnedNotes: pinnedNotes}, nil
+}
+
+func (r *SalviaReader) listPinnedNotes(ctx context.Context, viewerActorID string, actor *actors.Actor) ([]readmodel.Note, error) {
+	if len(actor.FeaturedNoteIDs) == 0 {
+		return []readmodel.Note{}, nil
+	}
+	visibility, err := r.visibleNoteFilter(ctx, viewerActorID)
+	if err != nil {
+		return nil, err
+	}
+	filter := bson.M{"$and": bson.A{
+		bson.M{"_id": bson.M{"$in": actor.FeaturedNoteIDs}, "authorId": actor.ID, "deletedAt": nil},
+		visibility,
+	}}
+	items, err := r.listNotes(ctx, viewerActorID, filter, len(actor.FeaturedNoteIDs), -1)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]readmodel.Note, len(items))
+	for _, item := range items {
+		byID[item.Note.ID] = item
+	}
+	ordered := make([]readmodel.Note, 0, len(items))
+	for _, noteID := range actor.FeaturedNoteIDs {
+		if item, ok := byID[noteID]; ok {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered, nil
 }
 
 func (r *SalviaReader) ListLocalEmojis(ctx context.Context, afterName string, limit int) ([]emojis.Emoji, error) {
