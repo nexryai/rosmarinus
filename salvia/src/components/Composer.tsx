@@ -8,6 +8,7 @@ import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } fr
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
 import { Button, ErrorBanner, Modal } from "./ui";
 import { Dropdown, type DropdownOption } from "./ui/Dropdown";
+import { Switch } from "./ui/Switch";
 
 export type ComposerIntent = { kind: "post" } | { kind: "reply" | "quote"; target: Note };
 
@@ -433,10 +434,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                                 選択肢を追加
                             </button>
                         )}
-                        <label style={styles.pollToggle}>
-                            <input checked={multiple} onChange={(event) => setMultiple(event.target.checked)} type="checkbox" />
-                            複数回答を許可
-                        </label>
+                        <Switch checked={multiple} label="複数回答を許可" onChange={setMultiple} style={styles.pollToggle} />
                     </fieldset>
                 )}
                 <footer className={rules.footer} style={styles.footer}>
@@ -459,12 +457,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                             <input accept="image/jpeg,image/png,image/gif,image/webp" disabled={images.length >= 4} multiple onChange={(event) => void selectImages(event)} style={styles.fileInput} type="file" />
                         </label>
                     </div>
-                    {images.length > 0 && (
-                        <label style={styles.sensitive}>
-                            <input checked={sensitive} onChange={(event) => setSensitive(event.target.checked)} type="checkbox" />
-                            センシティブ
-                        </label>
-                    )}
+                    {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
                     <Button disabled={busy || !canSubmit} type="submit">
                         <IconSend />
                         投稿する

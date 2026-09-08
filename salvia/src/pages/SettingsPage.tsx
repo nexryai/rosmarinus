@@ -4,6 +4,7 @@ import { IconPalette, IconPlus, IconTrash, IconUserCircle } from "@tabler/icons-
 
 import { Button, ErrorBanner, PageHeader } from "../components/ui";
 import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
+import { Switch } from "../components/ui/Switch";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { AccountSettings, Actor, ActorSettings } from "../lib/schema";
@@ -73,11 +74,6 @@ const styles = {
         gap: "0.75rem",
         fontSize: "0.875rem",
         fontWeight: 600,
-    },
-    checkbox: {
-        width: "1rem",
-        height: "1rem",
-        accentColor: "var(--accent-hover)",
     },
     settingsTitle: {
         marginBottom: "1.25rem",
@@ -248,14 +244,8 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                         <span style={styles.fieldLabel}>テーマ</span>
                         <Dropdown label="テーマ" onChange={(theme) => void updateAccount({ theme })} options={themeOptions} triggerStyle={styles.dropdownTrigger} value={accountSettings.theme} />
                     </div>
-                    <label style={styles.toggle}>
-                        <input checked={accountSettings.reduce_motion} onChange={(event) => void updateAccount({ reduce_motion: event.target.checked })} style={styles.checkbox} type="checkbox" />
-                        <span>動きを減らす</span>
-                    </label>
-                    <label style={styles.toggle}>
-                        <input checked={accountSettings.compact_mode} onChange={(event) => void updateAccount({ compact_mode: event.target.checked })} style={styles.checkbox} type="checkbox" />
-                        <span>コンパクト表示</span>
-                    </label>
+                    <Switch checked={accountSettings.reduce_motion} label="動きを減らす" onChange={(reduce_motion) => void updateAccount({ reduce_motion })} style={styles.toggle} />
+                    <Switch checked={accountSettings.compact_mode} label="コンパクト表示" onChange={(compact_mode) => void updateAccount({ compact_mode })} style={styles.toggle} />
                 </section>
                 <section className={rules.card} style={styles.card}>
                     <div style={styles.settingsTitle}>
@@ -286,10 +276,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                                 <span style={styles.fieldLabel}>標準の公開範囲</span>
                                 <Dropdown label="標準の公開範囲" onChange={(default_visibility) => void saveActorSettings({ default_visibility })} options={visibilityOptions} triggerStyle={styles.dropdownTrigger} value={actorSettings.default_visibility} />
                             </div>
-                            <label style={styles.toggle}>
-                                <input checked={actorSettings.pinned} onChange={(event) => void saveActorSettings({ pinned: event.target.checked })} style={styles.checkbox} type="checkbox" />
-                                <span>Actor切替で上に固定</span>
-                            </label>
+                            <Switch checked={actorSettings.pinned} label="Actor切替で上に固定" onChange={(pinned) => void saveActorSettings({ pinned })} style={styles.toggle} />
                             <label style={styles.field}>
                                 <span style={styles.fieldLabel}>表示色</span>
                                 <input
@@ -313,10 +300,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                                     style={styles.input}
                                 />
                             </label>
-                            <label style={styles.toggle}>
-                                <input checked={actorSettings.show_content_warning} onChange={(event) => void saveActorSettings({ show_content_warning: event.target.checked })} style={styles.checkbox} type="checkbox" />
-                                <span>CW本文を初期表示する</span>
-                            </label>
+                            <Switch checked={actorSettings.show_content_warning} label="CW本文を初期表示する" onChange={(show_content_warning) => void saveActorSettings({ show_content_warning })} style={styles.toggle} />
                         </div>
                     )}
                 </section>
