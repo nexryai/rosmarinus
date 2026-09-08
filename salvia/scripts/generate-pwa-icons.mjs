@@ -53,6 +53,15 @@ const paintLine = (pixels, size, start, end, width, color) => {
     }
 };
 
+const paintLeaf = (pixels, size, start, end, width, color) => {
+    const steps = Math.ceil(Math.hypot(end[0] - start[0], end[1] - start[1]) * 1.5);
+    for (let step = 0; step <= steps; step += 1) {
+        const progress = step / steps;
+        const radius = (Math.sin(Math.PI * progress) * width) / 2;
+        paintCircle(pixels, size, start[0] + (end[0] - start[0]) * progress, start[1] + (end[1] - start[1]) * progress, radius, color);
+    }
+};
+
 const drawIcon = (targetSize, maskable) => {
     const size = targetSize * samples;
     const pixels = new Uint8Array(size * size * 4);
@@ -72,26 +81,19 @@ const drawIcon = (targetSize, maskable) => {
     for (let index = 0; index <= 160; index += 1) {
         const t = index / 160;
         const inverse = 1 - t;
-        stem.push([(inverse ** 3 * 0.3 + 3 * inverse ** 2 * t * 0.4 + 3 * inverse * t ** 2 * 0.52 + t ** 3 * 0.66) * size, (inverse ** 3 * 0.8 + 3 * inverse ** 2 * t * 0.65 + 3 * inverse * t ** 2 * 0.43 + t ** 3 * 0.2) * size]);
+        stem.push([(inverse ** 3 * 0.31 + 3 * inverse ** 2 * t * 0.44 + 3 * inverse * t ** 2 * 0.53 + t ** 3 * 0.72) * size, (inverse ** 3 * 0.81 + 3 * inverse ** 2 * t * 0.66 + 3 * inverse * t ** 2 * 0.3 + t ** 3 * 0.16) * size]);
     }
     for (let index = 1; index < stem.length; index += 1) paintLine(pixels, size, stem[index - 1], stem[index], size * 0.047, green);
 
-    const needles = [
-        [0.38, 0.7, 0.19, 0.72],
-        [0.41, 0.63, 0.23, 0.55],
-        [0.46, 0.55, 0.28, 0.43],
-        [0.5, 0.47, 0.36, 0.32],
-        [0.55, 0.39, 0.46, 0.24],
-        [0.59, 0.31, 0.54, 0.17],
-        [0.39, 0.66, 0.48, 0.82],
-        [0.44, 0.59, 0.62, 0.72],
-        [0.48, 0.52, 0.69, 0.6],
-        [0.52, 0.44, 0.74, 0.44],
-        [0.56, 0.36, 0.76, 0.28],
-        [0.61, 0.27, 0.75, 0.16],
+    const leaves = [
+        [0.42, 0.66, 0.2, 0.52, 0.13],
+        [0.45, 0.58, 0.69, 0.55, 0.14],
+        [0.52, 0.48, 0.31, 0.34, 0.13],
+        [0.56, 0.39, 0.78, 0.31, 0.13],
+        [0.61, 0.3, 0.48, 0.14, 0.12],
+        [0.65, 0.23, 0.83, 0.12, 0.11],
     ];
-    for (const [startX, startY, endX, endY] of needles) paintLine(pixels, size, point(startX, startY), point(endX, endY), size * 0.042, green);
-    paintCircle(pixels, size, size * 0.66, size * 0.2, size * 0.032, green);
+    for (const [startX, startY, endX, endY, width] of leaves) paintLeaf(pixels, size, point(startX, startY), point(endX, endY), size * width, green);
 
     const rows = Buffer.alloc((targetSize * 4 + 1) * targetSize);
     for (let y = 0; y < targetSize; y += 1) {

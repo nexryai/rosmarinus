@@ -1,4 +1,4 @@
-const cacheName = "rosemary-shell-v1";
+const cacheName = "rosemary-shell-v2";
 const staticPaths = ["/", "/manifest.webmanifest", "/favicon.svg", "/icons/rosemary-180.png", "/icons/rosemary-192.png", "/icons/rosemary-512.png", "/icons/rosemary-maskable-512.png"];
 
 self.addEventListener("install", (event) => {
