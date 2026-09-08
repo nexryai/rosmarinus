@@ -12,6 +12,7 @@ const darkTheme = {
     "--accent-hover": "#f4cd68",
     "--accent-soft": "#443a20",
     "--accent-ink": "#2d2308",
+    "--renote": "#73c991",
     "--shadow": "0 18px 50px #0000003d",
 };
 
@@ -33,6 +34,7 @@ export function GlobalStyles() {
             "--accent-soft": "#fff4c2",
             "--accent-ink": "#4b3908",
             "--danger": "#c8463a",
+            "--renote": "#3f9565",
             "--shadow": "0 18px 50px #34323b14",
             background: "var(--page)",
         },

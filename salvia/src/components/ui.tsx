@@ -217,6 +217,12 @@ const styles = {
 } satisfies Record<string, CSSProperties>;
 
 const avatarSizes = {
+    xsmall: {
+        width: "1.75rem",
+        height: "1.75rem",
+        fontSize: "0.6875rem",
+        lineHeight: 1.273,
+    },
     small: {
         width: "2.25rem",
         height: "2.25rem",
@@ -443,7 +449,7 @@ export function Button({ children, className = "", disableRipple = false, onMous
     );
 }
 
-export function Avatar({ actor, size = "medium" }: { actor?: Pick<Actor, "avatar_url" | "name" | "username">; size?: "small" | "medium" | "large" }) {
+export function Avatar({ actor, size = "medium" }: { actor?: Pick<Actor, "avatar_url" | "name" | "username">; size?: "xsmall" | "small" | "medium" | "large" }) {
     const label = actor?.name || actor?.username || "?";
     return actor?.avatar_url ? (
         <img alt={`${label}のアバター`} loading="lazy" referrerPolicy="no-referrer" src={actor.avatar_url} style={{ ...styles.avatar, ...avatarSizes[size] }} />

@@ -251,6 +251,12 @@ before projection. The public and home timelines, profile Note lists, Note
 threads, and notifications use opaque created-time/ID cursors. Connection and
 emoji cursors are likewise opaque to the SPA even where their current
 representation is a stable record ID or name.
+
+Note detail, timeline, profile Note, and thread responses project reply,
+quote, and renote references with the referenced author's safe profile fields
+plus the custom emoji and
+attachment metadata required for in-card rendering. Raw federation documents
+and internal attachment URIs are never returned.
 Profile projections include viewer-specific `follow_status` and
 `blocked_by_viewer`. A profile blocked by the viewer remains readable so the
 viewer can reverse their own block; a profile that has blocked the viewer is

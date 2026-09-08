@@ -94,6 +94,58 @@ describe("NoteCard social actions", () => {
         expect(onOpenNote).toHaveBeenCalledWith("quote-1");
     });
 
+    it("renders a renote as Misskey-style attribution followed by the original note", async () => {
+        const user = userEvent.setup();
+        const onOpenNote = vi.fn();
+        const onOpenProfile = vi.fn();
+        const onReply = vi.fn();
+        const originalAuthor = {
+            ...author,
+            id: "remote-bob",
+            avatar_url: "https://remote.test/avatar.jpg",
+            uri: "https://remote.test/users/bob",
+        };
+        const renote = {
+            ...note,
+            id: "renote-1",
+            author: { ...author, id: "alice", name: "Alice", username: "alice" },
+            renote_id: "original-1",
+            renote: {
+                id: "original-1",
+                uri: "https://remote.test/notes/original-1",
+                text: "元ノート :salvia:",
+                sensitive: false,
+                visibility: "public",
+                created_at: "2026-09-01T00:00:00Z",
+                author: originalAuthor,
+                emojis: [{ name: "salvia", url: "https://remote.test/salvia.webp", media_type: "image/webp" }],
+                attachments: [{ media_type: "image/jpeg", name: "元ノートの画像", sensitive: false, url: "https://remote.test/image.jpg" }],
+            },
+        } as Note;
+        render(<NoteCard note={renote} ownActorID="carol" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={onReply} onVote={vi.fn()} />);
+
+        expect(screen.getByText("Aliceさんがリノート")).toBeInTheDocument();
+        expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
+        expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "https://remote.test/salvia.webp");
+        expect(screen.getByRole("button", { name: "画像を表示: 元ノートの画像" })).toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "詳細" }));
+        await user.click(screen.getByRole("button", { name: "返信" }));
+        await user.click(screen.getByRole("button", { name: "Aliceさんがリノート" }));
+
+        expect(onOpenNote).toHaveBeenCalledWith("original-1");
+        expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ id: "original-1", author: originalAuthor }));
+        expect(onOpenProfile).toHaveBeenCalledWith("alice");
+    });
+
+    it("shows a deleted-note placeholder when a renote target is unavailable", () => {
+        const deletedRenote = { ...note, renote_id: "deleted-note" } as Note;
+        render(<NoteCard note={deletedRenote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getByText("削除されたノート")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "返信" })).not.toBeInTheDocument();
+    });
+
     it("votes in a poll and confirms deletion of an owned note", async () => {
         vi.spyOn(window, "confirm").mockReturnValue(true);
         const onVote = vi.fn().mockResolvedValue(undefined);

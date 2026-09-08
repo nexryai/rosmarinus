@@ -142,6 +142,36 @@ func TestReadTimelineReturnsSafeProjectionAndCursor(t *testing.T) {
 	}
 }
 
+func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
+	reference := &readmodel.NoteReference{Note: notes.Note{
+		ID: "remote-note", URI: "https://remote.test/notes/1", Text: "hello :salvia:",
+		Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC),
+		Emojis: []notes.Emoji{{Name: "salvia", IconURL: "https://remote.test/emoji.webp", MediaType: "image/webp"}},
+		Attachments: []notes.Attachment{{
+			URI: "https://remote.test/files/internal", Type: "Document", MediaType: "image/jpeg",
+			URL: "https://remote.test/files/public.jpg", Name: "photo", Width: 1200, Height: 800,
+		}},
+		Raw: map[string]any{"private": "federation document"},
+	}}
+
+	view := projectNoteReference(reference)
+	if view == nil || len(view.Emojis) != 1 || view.Emojis[0].IconURL != "https://remote.test/emoji.webp" {
+		t.Fatalf("emoji projection = %#v", view)
+	}
+	if len(view.Attachments) != 1 || view.Attachments[0].URL != "https://remote.test/files/public.jpg" || view.Attachments[0].Width != 1200 {
+		t.Fatalf("attachment projection = %#v", view)
+	}
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"federation document", "files/internal"} {
+		if bytes.Contains(encoded, []byte(forbidden)) {
+			t.Fatalf("reference projection leaked %q: %s", forbidden, encoded)
+		}
+	}
+}
+
 func TestReadNotificationsPassesAuthenticatedScope(t *testing.T) {
 	reader := &fakeReader{}
 	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}

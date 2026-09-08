@@ -10,8 +10,10 @@ import { Avatar, Button } from "./ui";
 
 const styles = {
     card: {
-        display: "flex",
-        gap: "0.75rem",
+        display: "grid",
+        gridTemplateColumns: "auto minmax(0, 1fr)",
+        columnGap: "0.75rem",
+        rowGap: "0.5rem",
         transition: "background-color 150ms",
     },
     body: {
@@ -52,22 +54,39 @@ const styles = {
         fontSize: "0.75rem",
         fontWeight: 700,
     },
-    reference: {
-        marginTop: "0.75rem",
-        padding: "0.75rem",
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
+    renoteAttribution: {
+        minWidth: 0,
+        paddingInline: "0.375rem",
+        gridColumn: "1 / -1",
+        display: "flex",
         alignItems: "center",
-        columnGap: "0.5rem",
-        border: "1px solid var(--border)",
-        borderRadius: "1rem",
-        color: "var(--muted)",
-        fontSize: "0.875rem",
+        gap: "0.5rem",
+        color: "var(--renote)",
+        fontSize: "0.8125rem",
+        fontWeight: 700,
     },
-    referenceText: {
-        marginTop: "0.5rem",
-        color: "var(--text)",
-        gridColumn: "span 2",
+    renoteActor: {
+        minWidth: 0,
+        overflow: "hidden",
+        color: "inherit",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    renoteTime: {
+        marginLeft: "auto",
+        flexShrink: 0,
+        color: "var(--muted)",
+        fontWeight: 400,
+    },
+    deleted: {
+        minHeight: "3.5rem",
+        gridColumn: "1 / -1",
+        display: "grid",
+        placeItems: "center",
+        borderRadius: "0.75rem",
+        color: "var(--muted)",
+        background: "var(--panel-muted)",
+        fontSize: "0.875rem",
     },
     warning: {
         marginTop: "0.75rem",
@@ -245,10 +264,14 @@ const rules = {
             background: "var(--accent-soft)",
         },
     }),
-    reference: css({
+    renoteAttribution: css({
         "& > svg": {
             width: "1rem",
             height: "1rem",
+            flexShrink: 0,
+        },
+        "& button:hover": {
+            textDecoration: "underline",
         },
     }),
     pollButton: css({
@@ -296,6 +319,36 @@ const relativeTime = (value: string) => {
     return new Intl.DateTimeFormat("ja", { month: "short", day: "numeric" }).format(new Date(value));
 };
 
+const actorHandle = (actor: Note["author"]) => {
+    const username = actor?.username || "unknown";
+    if (!actor?.uri) return `@${username}`;
+    try {
+        const host = new URL(actor.uri).hostname;
+        return host === window.location.hostname ? `@${username}` : `@${username}@${host}`;
+    } catch {
+        return `@${username}`;
+    }
+};
+
+const displayedNoteFor = (note: Note): Note => {
+    if (!note.renote) return note;
+    return {
+        ...note,
+        ...note.renote,
+        mention_uris: [],
+        hashtags: [],
+        published_at: null,
+        reactions: [],
+        poll: undefined,
+        reply_id: undefined,
+        quote_id: undefined,
+        renote_id: undefined,
+        reply: undefined,
+        quote: undefined,
+        renote: undefined,
+    };
+};
+
 const renderText = (text: string, note: Note) => {
     const byName = new Map(note.emojis.map((emoji) => [emoji.name, emoji]));
     let offset = 0;
@@ -332,13 +385,17 @@ export function NoteCard({
     onVote: (noteID: string, choice: number) => Promise<void>;
     emojis?: Emoji[];
 }) {
-    const [revealed, setRevealed] = useState(!note.content_warning);
+    const displayedNote = displayedNoteFor(note);
+    const isRenote = Boolean(note.renote_id || note.renote);
+    const renoter = isRenote ? note.author : undefined;
+    const renoteUnavailable = isRenote && !note.renote;
+    const [revealed, setRevealed] = useState(!displayedNote.content_warning);
     const [busy, setBusy] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
-    const author = note.author;
-    const imageAttachments = note.attachments.filter((attachment) => attachment.media_type?.startsWith("image/"));
-    const maxPollVotes = Math.max(...(note.poll?.choices ?? []).map((item) => item.votes), 1);
+    const author = displayedNote.author;
+    const imageAttachments = displayedNote.attachments.filter((attachment) => attachment.media_type?.startsWith("image/"));
+    const maxPollVotes = Math.max(...(displayedNote.poll?.choices ?? []).map((item) => item.votes), 1);
     const act = async (operation: () => Promise<void>) => {
         setBusy(true);
         try {
@@ -349,126 +406,137 @@ export function NoteCard({
     };
     return (
         <article className={rules.card} style={styles.card}>
-            <Avatar actor={author} />
-            <div style={styles.body}>
-                <header style={styles.header}>
-                    <button disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
-                        <strong style={styles.actorName}>{author?.name || author?.username || "Unknown"}</strong>
-                        <span>@{author?.username || "unknown"}</span>
+            {isRenote && (
+                <div className={rules.renoteAttribution} style={styles.renoteAttribution}>
+                    <Avatar actor={renoter} size="xsmall" />
+                    <IconRepeat />
+                    <button disabled={!renoter} onClick={() => renoter && onOpenProfile(renoter.id)} style={styles.renoteActor} type="button">
+                        {renoter?.name || renoter?.username || "Unknown"}さんがリノート
                     </button>
-                    <span>·</span>
-                    <time dateTime={note.created_at}>{relativeTime(note.created_at)}</time>
-                    <span style={styles.visibility}>{note.visibility === "followers" ? "フォロワー" : note.visibility === "home" ? "ホーム" : note.visibility === "specified" ? "宛先指定" : "公開"}</span>
-                    {onOpenNote && (
-                        <button className={rules.detail} onClick={() => onOpenNote(note.id)} style={styles.detail} type="button">
-                            詳細
-                        </button>
-                    )}
-                </header>
-                {note.renote && (
-                    <div className={rules.reference} style={styles.reference}>
-                        <IconRepeat />
-                        <span>{note.renote.author?.name || note.renote.author?.username}</span>
-                        <p style={styles.referenceText}>{note.renote.text}</p>
-                    </div>
-                )}
-                {note.content_warning && (
-                    <div style={styles.warning}>
-                        <strong>{note.content_warning}</strong>
-                        <Button onClick={() => setRevealed((value) => !value)} style={styles.warningButton} variant="secondary">
-                            {revealed ? "隠す" : "表示"}
-                        </Button>
-                    </div>
-                )}
-                {revealed && note.text && <p style={styles.text}>{renderText(note.text, note)}</p>}
-                {revealed && note.attachments.length > 0 && (
-                    <div style={{ ...styles.attachments, ...(note.attachments.length > 1 ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } : {}) }}>
-                        {note.attachments.map((attachment) =>
-                            attachment.media_type?.startsWith("image/") ? (
-                                <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.attachmentButton} key={attachment.url} onClick={() => setViewerIndex(imageAttachments.indexOf(attachment))} style={styles.attachmentButton} type="button">
-                                    <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.url} style={styles.attachmentImage} />
+                    <time dateTime={note.created_at} style={styles.renoteTime}>
+                        {relativeTime(note.created_at)}
+                    </time>
+                </div>
+            )}
+            {renoteUnavailable ? (
+                <div style={styles.deleted}>削除されたノート</div>
+            ) : (
+                <>
+                    <Avatar actor={author} />
+                    <div style={styles.body}>
+                        <header style={styles.header}>
+                            <button disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
+                                <strong style={styles.actorName}>{author?.name || author?.username || "Unknown"}</strong>
+                                <span>{isRenote ? actorHandle(author) : `@${author?.username || "unknown"}`}</span>
+                            </button>
+                            <span>·</span>
+                            <time dateTime={displayedNote.created_at}>{relativeTime(displayedNote.created_at)}</time>
+                            <span style={styles.visibility}>{displayedNote.visibility === "followers" ? "フォロワー" : displayedNote.visibility === "home" ? "ホーム" : displayedNote.visibility === "specified" ? "宛先指定" : "公開"}</span>
+                            {onOpenNote && (
+                                <button className={rules.detail} onClick={() => onOpenNote(displayedNote.id)} style={styles.detail} type="button">
+                                    詳細
                                 </button>
-                            ) : (
-                                <a href={attachment.url} key={attachment.url} rel="noreferrer" style={styles.attachmentFile} target="_blank">
-                                    {attachment.name || "添付ファイル"}
-                                </a>
-                            ),
+                            )}
+                        </header>
+                        {displayedNote.content_warning && (
+                            <div style={styles.warning}>
+                                <strong>{displayedNote.content_warning}</strong>
+                                <Button onClick={() => setRevealed((value) => !value)} style={styles.warningButton} variant="secondary">
+                                    {revealed ? "隠す" : "表示"}
+                                </Button>
+                            </div>
+                        )}
+                        {revealed && displayedNote.text && <p style={styles.text}>{renderText(displayedNote.text, displayedNote)}</p>}
+                        {revealed && displayedNote.attachments.length > 0 && (
+                            <div style={{ ...styles.attachments, ...(displayedNote.attachments.length > 1 ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } : {}) }}>
+                                {displayedNote.attachments.map((attachment) =>
+                                    attachment.media_type?.startsWith("image/") ? (
+                                        <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.attachmentButton} key={attachment.url} onClick={() => setViewerIndex(imageAttachments.indexOf(attachment))} style={styles.attachmentButton} type="button">
+                                            <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.url} style={styles.attachmentImage} />
+                                        </button>
+                                    ) : (
+                                        <a href={attachment.url} key={attachment.url} rel="noreferrer" style={styles.attachmentFile} target="_blank">
+                                            {attachment.name || "添付ファイル"}
+                                        </a>
+                                    ),
+                                )}
+                            </div>
+                        )}
+                        {displayedNote.quote && <QuotedNoteCard onOpen={onOpenNote} quote={displayedNote.quote} />}
+                        {displayedNote.poll && (
+                            <div style={styles.poll}>
+                                {displayedNote.poll.choices.map((choice) => (
+                                    <button aria-pressed={choice.voted} className={rules.pollButton} disabled={busy || displayedNote.poll?.expired} key={choice.index} onClick={() => act(() => onVote(displayedNote.id, choice.index))} style={styles.pollButton} type="button">
+                                        <span style={styles.pollText}>{choice.text}</span>
+                                        <span style={styles.pollVotes}>{choice.votes}票</span>
+                                        <i style={{ ...styles.pollBar, width: `${Math.max(3, choice.votes ? (choice.votes / maxPollVotes) * 100 : 3)}%` }} />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <footer style={styles.actions}>
+                            <button aria-label="返信" className={rules.action} onClick={() => onReply(displayedNote)} style={styles.action} type="button">
+                                <IconMessageCircle />
+                            </button>
+                            <button aria-label="リノート" className={rules.action} disabled={busy} onClick={() => void act(() => onRenote(displayedNote))} style={styles.action} type="button">
+                                <IconRepeat />
+                            </button>
+                            <button aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
+                                <IconQuote />
+                            </button>
+                            {displayedNote.reactions.map((reaction) => (
+                                <button
+                                    aria-pressed={reaction.reacted}
+                                    className={rules.action}
+                                    disabled={busy}
+                                    key={reaction.reaction}
+                                    onClick={() => act(() => onReact(displayedNote.id, reaction.reaction, reaction.reacted))}
+                                    style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
+                                    type="button"
+                                >
+                                    <span>{reaction.reaction}</span>
+                                    <b style={styles.reactionCount}>{reaction.count}</b>
+                                </button>
+                            ))}
+                            <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setPickerOpen((value) => !value)} style={styles.action} type="button">
+                                ＋
+                            </button>
+                            {note.author?.id === ownActorID && (
+                                <button
+                                    aria-label="削除"
+                                    className={`${rules.action} ${rules.deleteAction}`}
+                                    disabled={busy}
+                                    onClick={() => {
+                                        if (window.confirm("このノートを削除しますか？")) void act(() => onDelete(note.id));
+                                    }}
+                                    style={{ ...styles.action, ...styles.deleteAction }}
+                                    type="button"
+                                >
+                                    <IconTrash />
+                                </button>
+                            )}
+                        </footer>
+                        {pickerOpen && (
+                            <div style={styles.picker}>
+                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                    👍
+                                </button>
+                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                    ❤️
+                                </button>
+                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                    😂
+                                </button>
+                                {emojis.map((emoji) => (
+                                    <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => onReact(displayedNote.id, `:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">
+                                        <img alt="" src={emoji.url} style={styles.pickerImage} />
+                                    </button>
+                                ))}
+                            </div>
                         )}
                     </div>
-                )}
-                {note.quote && <QuotedNoteCard onOpen={onOpenNote} quote={note.quote} />}
-                {note.poll && (
-                    <div style={styles.poll}>
-                        {note.poll.choices.map((choice) => (
-                            <button aria-pressed={choice.voted} className={rules.pollButton} disabled={busy || note.poll?.expired} key={choice.index} onClick={() => act(() => onVote(note.id, choice.index))} style={styles.pollButton} type="button">
-                                <span style={styles.pollText}>{choice.text}</span>
-                                <span style={styles.pollVotes}>{choice.votes}票</span>
-                                <i style={{ ...styles.pollBar, width: `${Math.max(3, choice.votes ? (choice.votes / maxPollVotes) * 100 : 3)}%` }} />
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <footer style={styles.actions}>
-                    <button aria-label="返信" className={rules.action} onClick={() => onReply(note)} style={styles.action} type="button">
-                        <IconMessageCircle />
-                    </button>
-                    <button aria-label="リノート" className={rules.action} disabled={busy} onClick={() => void act(() => onRenote(note))} style={styles.action} type="button">
-                        <IconRepeat />
-                    </button>
-                    <button aria-label="引用" className={rules.action} onClick={() => onQuote(note)} style={styles.action} type="button">
-                        <IconQuote />
-                    </button>
-                    {note.reactions.map((reaction) => (
-                        <button
-                            aria-pressed={reaction.reacted}
-                            className={rules.action}
-                            disabled={busy}
-                            key={reaction.reaction}
-                            onClick={() => act(() => onReact(note.id, reaction.reaction, reaction.reacted))}
-                            style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
-                            type="button"
-                        >
-                            <span>{reaction.reaction}</span>
-                            <b style={styles.reactionCount}>{reaction.count}</b>
-                        </button>
-                    ))}
-                    <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setPickerOpen((value) => !value)} style={styles.action} type="button">
-                        ＋
-                    </button>
-                    {author?.id === ownActorID && (
-                        <button
-                            aria-label="削除"
-                            className={`${rules.action} ${rules.deleteAction}`}
-                            disabled={busy}
-                            onClick={() => {
-                                if (window.confirm("このノートを削除しますか？")) void act(() => onDelete(note.id));
-                            }}
-                            style={{ ...styles.action, ...styles.deleteAction }}
-                            type="button"
-                        >
-                            <IconTrash />
-                        </button>
-                    )}
-                </footer>
-                {pickerOpen && (
-                    <div style={styles.picker}>
-                        <button className={rules.pickerButton} onClick={() => void act(() => onReact(note.id, "👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                            👍
-                        </button>
-                        <button className={rules.pickerButton} onClick={() => void act(() => onReact(note.id, "❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                            ❤️
-                        </button>
-                        <button className={rules.pickerButton} onClick={() => void act(() => onReact(note.id, "😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                            😂
-                        </button>
-                        {emojis.map((emoji) => (
-                            <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => onReact(note.id, `:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">
-                                <img alt="" src={emoji.url} style={styles.pickerImage} />
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
+                </>
+            )}
             {viewerIndex !== undefined && <ImageViewer images={imageAttachments} initialIndex={viewerIndex} onClose={() => setViewerIndex(undefined)} />}
         </article>
     );

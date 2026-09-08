@@ -36,6 +36,11 @@ export const actorSchema = z.object({
 
 export type Actor = z.infer<typeof actorSchema>;
 
+export const emojiSchema = z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() });
+export type Emoji = z.infer<typeof emojiSchema>;
+
+const attachmentSchema = z.object({ type: z.string().optional(), media_type: z.string().optional(), url: z.string(), name: z.string().optional(), width: z.number().optional(), height: z.number().optional(), sensitive: z.boolean() });
+
 const noteReferenceSchema = z.object({
     id: z.string(),
     uri: z.string(),
@@ -45,6 +50,14 @@ const noteReferenceSchema = z.object({
     visibility: z.string(),
     created_at: z.string(),
     author: actorSchema.optional(),
+    emojis: z
+        .array(emojiSchema)
+        .nullish()
+        .transform((value) => value ?? []),
+    attachments: z
+        .array(attachmentSchema)
+        .nullish()
+        .transform((value) => value ?? []),
 });
 
 export const noteSchema = z.object({
@@ -60,11 +73,11 @@ export const noteSchema = z.object({
     mention_uris: strings,
     hashtags: strings,
     emojis: z
-        .array(z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() }))
+        .array(emojiSchema)
         .nullish()
         .transform((value) => value ?? []),
     attachments: z
-        .array(z.object({ type: z.string().optional(), media_type: z.string().optional(), url: z.string(), name: z.string().optional(), width: z.number().optional(), height: z.number().optional(), sensitive: z.boolean() }))
+        .array(attachmentSchema)
         .nullish()
         .transform((value) => value ?? []),
     created_at: z.string(),
@@ -143,9 +156,6 @@ export const connectionSchema = z.object({
 });
 
 export type Connection = z.infer<typeof connectionSchema>;
-
-export const emojiSchema = z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() });
-export type Emoji = z.infer<typeof emojiSchema>;
 
 export const profileSchema = z.object({ actor: actorSchema, followers_count: z.number(), following_count: z.number(), follow_status: z.string().default(""), blocked_by_viewer: z.boolean().default(false) });
 export type Profile = z.infer<typeof profileSchema>;
