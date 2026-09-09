@@ -23,11 +23,9 @@ const styles = {
     layout: {
         width: "100%",
         minHeight: "100dvh",
-        maxWidth: "72rem",
         marginInline: "auto",
         display: "flex",
         background: "var(--panel)",
-        boxShadow: "var(--shadow)",
     },
     sidebar: {
         position: "sticky",
