@@ -119,8 +119,9 @@ describe("ProfilePage social actions", () => {
         render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
 
         const pinnedRegion = await screen.findByRole("region", { name: "ピン留めされたノート" });
+        const notesRegion = screen.getByRole("region", { name: "ノート" });
         expect(within(pinnedRegion).getByText("ピン留めされたノート")).toBeInTheDocument();
         expect(within(pinnedRegion).getByText("大切なお知らせ")).toBeInTheDocument();
-        expect(pinnedRegion.compareDocumentPosition(screen.getByRole("heading", { name: "ノート" })) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+        expect(pinnedRegion.compareDocumentPosition(notesRegion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     });
 });

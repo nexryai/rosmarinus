@@ -426,7 +426,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
             </header>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {profile.pinned_notes.length > 0 && <DividedList aria-label="ピン留めされたノート">{profile.pinned_notes.map((note) => renderNote(note, true))}</DividedList>}
-            <section aria-labelledby="profile-notes-heading">
+            <section aria-label="ノート">
                 {notesLoading && notes.length === 0 ? (
                     <Loading label="ノートを読み込み中" />
                 ) : notes.length === 0 ? (
