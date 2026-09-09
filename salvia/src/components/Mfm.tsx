@@ -2,10 +2,10 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { type MfmNode, parse } from "mfm-js";
 
+import { emojiFontFamily } from "../globalStyles";
 import { css, keyframes } from "../lib/css";
 import type { Emoji } from "../lib/schema";
 import { CustomEmoji } from "./EmojiText";
-import { Twemoji } from "./Twemoji";
 
 const spin = keyframes({
     to: {
@@ -72,7 +72,7 @@ const styles = {
         overflowX: "auto",
         borderRadius: "0.75rem",
         background: "var(--panel-muted)",
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+        fontFamily: `${emojiFontFamily}, ui-monospace, SFMono-Regular, Consolas, monospace`,
         fontSize: "0.875em",
         whiteSpace: "pre",
     },
@@ -80,7 +80,7 @@ const styles = {
         padding: "0.1em 0.3em",
         borderRadius: "0.3em",
         background: "var(--panel-muted)",
-        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+        fontFamily: `${emojiFontFamily}, ui-monospace, SFMono-Regular, Consolas, monospace`,
         fontSize: "0.9em",
     },
     link: {
@@ -176,7 +176,7 @@ const functionStyle = (node: Extract<MfmNode, { type: "fn" }>): CSSProperties | 
         case "x4":
             return { ...styles.function, fontSize: "4em" };
         case "font":
-            return { ...styles.function, fontFamily: args.serif ? "serif" : args.monospace ? "monospace" : args.cursive ? "cursive" : args.fantasy ? "fantasy" : args.emoji ? "emoji" : undefined };
+            return { ...styles.function, fontFamily: `${emojiFontFamily}, ${args.serif ? "serif" : args.monospace ? "monospace" : args.cursive ? "cursive" : args.fantasy ? "fantasy" : args.emoji ? "emoji" : "inherit"}` };
         case "fg":
             return { ...styles.function, color: colorArgument(args.color) ?? "#f00" };
         case "bg":
@@ -203,9 +203,9 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm")
         const children = "children" in node && node.children ? renderNodes(node.children, emojis, key) : undefined;
         switch (node.type) {
             case "text":
-                return <Twemoji key={key} text={node.props.text} />;
+                return node.props.text;
             case "unicodeEmoji":
-                return <Twemoji key={key} text={node.props.emoji} />;
+                return node.props.emoji;
             case "emojiCode": {
                 const emoji = emojis.get(node.props.name);
                 return emoji ? <CustomEmoji emoji={emoji} key={key} /> : <span key={key}>:{node.props.name}:</span>;

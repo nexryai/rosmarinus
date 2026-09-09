@@ -227,7 +227,7 @@ describe("NoteCard social actions", () => {
         const user = userEvent.setup();
         render(<NoteCard note={reacted} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={onReact} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
-        const reaction = screen.getByRole("button", { name: "❤️ 2" });
+        const reaction = screen.getByRole("button", { name: "❤️2" });
         expect(reaction).toHaveStyle({ background: "var(--accent-soft)", color: "var(--accent-ink)" });
         expect(reaction.style.borderColor).toBe("var(--accent)");
         await user.click(reaction);
