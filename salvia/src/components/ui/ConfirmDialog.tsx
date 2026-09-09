@@ -11,10 +11,15 @@ const styles = {
         justifyItems: "start",
         textAlign: "left",
     },
+    header: {
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+    },
     icon: {
         width: "2.75rem",
         height: "2.75rem",
-        marginBottom: "1rem",
+        flexShrink: 0,
         display: "grid",
         placeItems: "center",
         borderRadius: "9999px",
@@ -65,10 +70,12 @@ export function ConfirmDialog({
     return (
         <Modal label={title} onClose={() => !busy && onCancel()}>
             <div data-confirm-dialog-part="content" style={styles.content}>
-                <span aria-label="警告" role="img" style={styles.icon}>
-                    <IconAlertTriangle aria-hidden="true" style={styles.iconSvg} />
-                </span>
-                <h2 style={styles.title}>{title}</h2>
+                <div style={styles.header}>
+                    <span aria-label="警告" role="img" style={styles.icon}>
+                        <IconAlertTriangle aria-hidden="true" style={styles.iconSvg} />
+                    </span>
+                    <h2 style={styles.title}>{title}</h2>
+                </div>
                 <div style={styles.body}>{children}</div>
             </div>
             <footer data-confirm-dialog-part="actions" style={styles.actions}>
