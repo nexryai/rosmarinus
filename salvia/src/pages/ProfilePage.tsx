@@ -139,6 +139,12 @@ const styles = {
         borderBottom: "1px solid var(--border)",
         paddingBottom: "64px",
     },
+    notesHeader: {
+        padding: "1rem 1.5rem",
+        borderBottom: "1px solid var(--border)",
+        fontSize: "1rem",
+        fontWeight: 900,
+    },
     loadMore: {
         padding: "1.5rem",
         display: "flex",
@@ -425,8 +431,15 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 </div>
             </header>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
-            {profile.pinned_notes.length > 0 && <DividedList aria-label="ピン留めされたノート">{profile.pinned_notes.map((note) => renderNote(note, true))}</DividedList>}
+            {profile.pinned_notes.length > 0 && (
+                <DividedList aria-label="ピン留めされたノート" style={styles.pinnedNotes}>
+                    {profile.pinned_notes.map((note) => renderNote(note, true))}
+                </DividedList>
+            )}
             <section aria-label="ノート">
+                <h2 id="profile-notes-heading" style={styles.notesHeader}>
+                    ノート
+                </h2>
                 {notesLoading && notes.length === 0 ? (
                     <Loading label="ノートを読み込み中" />
                 ) : notes.length === 0 ? (
