@@ -4,6 +4,7 @@ import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRe
 
 import { CustomEmoji, EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
+import { Twemoji } from "../components/Twemoji";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
@@ -239,7 +240,9 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, on
                                         {item.kind === "reaction" && item.reaction_emoji ? (
                                             <CustomEmoji emoji={item.reaction_emoji} label="" style={styles.kindEmoji} />
                                         ) : item.kind === "reaction" && item.reaction ? (
-                                            <span aria-hidden="true">{item.reaction}</span>
+                                            <span aria-hidden="true">
+                                                <Twemoji style={styles.kindEmoji} text={item.reaction} />
+                                            </span>
                                         ) : (
                                             <KindIcon aria-hidden="true" style={styles.kindIconSvg} />
                                         )}

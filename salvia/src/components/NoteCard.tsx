@@ -8,6 +8,7 @@ import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
 import { QuotedNoteCard } from "./QuotedNoteCard";
+import { Twemoji } from "./Twemoji";
 import { Avatar, Button } from "./ui";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 
@@ -508,7 +509,9 @@ export function NoteCard({
                             <div style={styles.poll}>
                                 {displayedNote.poll.choices.map((choice) => (
                                     <button aria-pressed={choice.voted} className={rules.pollButton} disabled={busy || displayedNote.poll?.expired} key={choice.index} onClick={() => act(() => onVote(displayedNote.id, choice.index))} style={styles.pollButton} type="button">
-                                        <span style={styles.pollText}>{choice.text}</span>
+                                        <span style={styles.pollText}>
+                                            <Twemoji text={choice.text} />
+                                        </span>
                                         <span style={styles.pollVotes}>{choice.votes}票</span>
                                         <i style={{ ...styles.pollBar, width: `${Math.max(3, choice.votes ? (choice.votes / maxPollVotes) * 100 : 3)}%` }} />
                                     </button>
@@ -535,7 +538,7 @@ export function NoteCard({
                                     style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
                                     type="button"
                                 >
-                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} /> : <span>{reaction.reaction}</span>}
+                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} /> : <Twemoji text={reaction.reaction} />}
                                     <b style={styles.reactionCount}>{reaction.count}</b>
                                 </button>
                             ))}
@@ -551,13 +554,13 @@ export function NoteCard({
                         {pickerOpen && (
                             <div style={styles.picker}>
                                 <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    👍
+                                    <Twemoji text="👍" />
                                 </button>
                                 <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    ❤️
+                                    <Twemoji text="❤️" />
                                 </button>
                                 <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    😂
+                                    <Twemoji text="😂" />
                                 </button>
                                 {emojis.map((emoji) => (
                                     <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => onReact(displayedNote.id, `:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">

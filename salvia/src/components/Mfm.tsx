@@ -5,6 +5,7 @@ import { type MfmNode, parse } from "mfm-js";
 import { css, keyframes } from "../lib/css";
 import type { Emoji } from "../lib/schema";
 import { CustomEmoji } from "./EmojiText";
+import { Twemoji } from "./Twemoji";
 
 const spin = keyframes({
     to: {
@@ -202,9 +203,9 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm")
         const children = "children" in node && node.children ? renderNodes(node.children, emojis, key) : undefined;
         switch (node.type) {
             case "text":
-                return node.props.text;
+                return <Twemoji key={key} text={node.props.text} />;
             case "unicodeEmoji":
-                return node.props.emoji;
+                return <Twemoji key={key} text={node.props.emoji} />;
             case "emojiCode": {
                 const emoji = emojis.get(node.props.name);
                 return emoji ? <CustomEmoji emoji={emoji} key={key} /> : <span key={key}>:{node.props.name}:</span>;

@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { parseSimple } from "mfm-js";
 
 import type { Emoji } from "../lib/schema";
+import { Twemoji } from "./Twemoji";
 
 const styles = {
     emoji: {
@@ -25,7 +26,7 @@ export function EmojiText({ emojis = [], text }: { emojis?: Emoji[]; text: strin
     try {
         nodes = parseSimple(text);
     } catch {
-        return <>{text}</>;
+        return <Twemoji text={text} />;
     }
     let keyOffset = 0;
     return (
@@ -33,9 +34,9 @@ export function EmojiText({ emojis = [], text }: { emojis?: Emoji[]; text: strin
             {nodes.map((node): ReactNode => {
                 const key = `${node.type}-${keyOffset}`;
                 keyOffset += JSON.stringify(node).length;
-                if (node.type === "text") return node.props.text;
-                if (node.type === "unicodeEmoji") return node.props.emoji;
-                if (node.type === "plain") return node.children.map((child) => child.props.text).join("");
+                if (node.type === "text") return <Twemoji key={key} text={node.props.text} />;
+                if (node.type === "unicodeEmoji") return <Twemoji key={key} text={node.props.emoji} />;
+                if (node.type === "plain") return <Twemoji key={key} text={node.children.map((child) => child.props.text).join("")} />;
                 const emoji = byName.get(node.props.name);
                 return emoji ? <CustomEmoji emoji={emoji} key={key} /> : <span key={key}>:{node.props.name}:</span>;
             })}
