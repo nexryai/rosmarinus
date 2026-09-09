@@ -25,8 +25,7 @@ const styles = {
         border: "1px solid var(--border)",
         borderRadius: "1.25rem",
         background: "var(--panel)",
-        boxShadow: "0 1px 3px rgb(0 0 0 / 8%)",
-        transition: "background-color 150ms, border-color 150ms, box-shadow 150ms",
+        transition: "background-color 150ms, border-color 150ms",
     },
     body: {
         minWidth: 0,
@@ -265,7 +264,6 @@ const rules = {
         paddingBlock: "1.25rem",
         "&:hover": {
             background: "var(--panel-muted)",
-            boxShadow: "0 4px 12px rgb(0 0 0 / 8%)",
         },
         "@media (width >= 40rem)": {
             paddingInline: "1.75rem",
