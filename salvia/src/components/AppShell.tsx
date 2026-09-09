@@ -6,6 +6,7 @@ import type { Page } from "../lib/api";
 import { css } from "../lib/css";
 import type { Actor, Session } from "../lib/schema";
 import { BrandMark } from "./BrandMark";
+import { EmojiText } from "./EmojiText";
 import { Avatar, Button } from "./ui";
 import { Dropdown } from "./ui/Dropdown";
 
@@ -372,7 +373,15 @@ export function AppShell({
                     <Avatar actor={selectedActor} onOpenProfile={(id) => onNavigate(`/profiles/${encodeURIComponent(id)}`)} size="small" />
                     <div style={styles.accountLabel}>
                         <span style={styles.accountName}>{session.display_name || session.username}</span>
-                        <Dropdown label="操作するActor" onChange={onActorChange} options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))} placement="top" style={styles.actorSelect} triggerStyle={styles.actorTrigger} value={selectedActor.id} />
+                        <Dropdown
+                            label="操作するActor"
+                            onChange={onActorChange}
+                            options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name ? <EmojiText emojis={actor.emojis} text={actor.name} /> : undefined }))}
+                            placement="top"
+                            style={styles.actorSelect}
+                            triggerStyle={styles.actorTrigger}
+                            value={selectedActor.id}
+                        />
                     </div>
                 </div>
                 <button className={rules.logout} onClick={onLogout} style={styles.logout} type="button">
@@ -388,7 +397,7 @@ export function AppShell({
                 <Dropdown
                     label="モバイルで操作するActor"
                     onChange={onActorChange}
-                    options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name || undefined }))}
+                    options={actors.map((actor) => ({ value: actor.id, label: `@${actor.username}`, description: actor.name ? <EmojiText emojis={actor.emojis} text={actor.name} /> : undefined }))}
                     renderValue={() => (
                         <span style={styles.mobileActorValue}>
                             <strong>@{selectedActor.username}</strong>

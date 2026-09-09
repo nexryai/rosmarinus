@@ -869,6 +869,7 @@ type actorView struct {
 	BannerURL      string             `json:"banner_url"`
 	Tags           []string           `json:"tags"`
 	EmojiNames     []string           `json:"emoji_names"`
+	Emojis         []emojiView        `json:"emojis"`
 	IsBot          bool               `json:"is_bot"`
 	IsCat          bool               `json:"is_cat"`
 	IsLocked       bool               `json:"is_locked"`
@@ -889,11 +890,15 @@ func projectActor(actor *actors.Actor) actorView {
 	for _, field := range actor.ProfileFields {
 		fields = append(fields, profileFieldView{Name: field.Name, Value: field.Value})
 	}
+	resolvedEmojis := make([]emojiView, 0, len(actor.ResolvedEmojis))
+	for _, emoji := range actor.ResolvedEmojis {
+		resolvedEmojis = append(resolvedEmojis, emojiView{Name: emoji.Name, URL: emoji.URL, MediaType: emoji.MediaType})
+	}
 	return actorView{
 		ID: actor.ID, Username: actor.Username, Name: actor.Name, Summary: actor.Summary,
 		URL: actor.URL, ProfileFields: fields, Birthday: actor.Birthday,
 		Location: actor.Location, AvatarURL: actor.AvatarURL, BannerURL: actor.BannerURL,
-		Tags: actor.Tags, EmojiNames: actor.EmojiNames, IsBot: actor.IsBot,
+		Tags: actor.Tags, EmojiNames: actor.EmojiNames, Emojis: resolvedEmojis, IsBot: actor.IsBot,
 		IsCat: actor.IsCat, IsLocked: actor.IsLocked, IsDiscoverable: actor.IsDiscoverable,
 		Type: actor.Type, URI: actor.URI, MovedToURI: actor.MovedToURI, IsSuspended: actor.IsSuspended,
 	}

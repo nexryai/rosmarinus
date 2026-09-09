@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -207,6 +208,20 @@ func (r *SalviaReader) ListNotifications(ctx context.Context, accountID, actorID
 			item.Note, err = r.FindVisibleNote(ctx, actorID, doc.NoteID)
 			if err != nil {
 				return nil, err
+			}
+		}
+		if doc.Kind == notifications.KindReaction {
+			var reaction reactionDocument
+			reactionErr := r.db.Collection("reactions").FindOne(ctx, bson.M{"remoteActivityId": doc.RemoteActivityID}).Decode(&reaction)
+			if reactionErr != nil && !errors.Is(reactionErr, mongo.ErrNoDocuments) {
+				return nil, reactionErr
+			}
+			if reactionErr == nil {
+				item.Reaction = reaction.Reaction
+				item.ReactionEmoji, err = r.reactionEmoji(ctx, reaction.Reaction, reaction.EmojiName, reaction.EmojiURL, reaction.EmojiMediaType)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 		result = append(result, item)
@@ -462,7 +477,46 @@ func (r *SalviaReader) findActor(ctx context.Context, actorID string) (*actors.A
 		return nil, err
 	}
 	actor := actorFromDocument(doc)
+	if err := r.hydrateActorEmojis(ctx, &actor); err != nil {
+		return nil, err
+	}
 	return &actor, nil
+}
+
+func (r *SalviaReader) hydrateActorEmojis(ctx context.Context, actor *actors.Actor) error {
+	actor.ResolvedEmojis = []emojis.Reference{}
+	if len(actor.EmojiNames) == 0 {
+		return nil
+	}
+	host := ""
+	if actor.Host != nil {
+		host = *actor.Host
+	}
+	cursor, err := r.db.Collection("emojis").Find(ctx, bson.M{"host": host, "name": bson.M{"$in": actor.EmojiNames}})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+	var docs []emojiRecord
+	if err := cursor.All(ctx, &docs); err != nil {
+		return err
+	}
+	byName := make(map[string]emojis.Reference, len(docs))
+	for _, doc := range docs {
+		url := doc.PublicURL
+		if url == "" {
+			url = doc.OriginalURL
+		}
+		if url != "" {
+			byName[doc.Name] = emojis.Reference{Name: doc.Name, URL: url, MediaType: doc.MediaType}
+		}
+	}
+	for _, name := range actor.EmojiNames {
+		if emoji, ok := byName[name]; ok {
+			actor.ResolvedEmojis = append(actor.ResolvedEmojis, emoji)
+		}
+	}
+	return nil
 }
 
 func (r *SalviaReader) followingActorIDs(ctx context.Context, actorID string) ([]string, error) {
@@ -534,7 +588,10 @@ func (r *SalviaReader) reactionSummary(ctx context.Context, noteID, viewerActorI
 	}
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: match}},
-		{{Key: "$group", Value: bson.M{"_id": "$reaction", "count": bson.M{"$sum": 1}, "actors": bson.M{"$addToSet": "$actorId"}}}},
+		{{Key: "$group", Value: bson.M{
+			"_id": "$reaction", "count": bson.M{"$sum": 1}, "actors": bson.M{"$addToSet": "$actorId"},
+			"emojiName": bson.M{"$max": "$emojiName"}, "emojiUrl": bson.M{"$max": "$emojiUrl"}, "emojiMediaType": bson.M{"$max": "$emojiMediaType"},
+		}}},
 		{{Key: "$sort", Value: bson.M{"_id": 1}}},
 	}
 	cursor, err := r.db.Collection("reactions").Aggregate(ctx, pipeline)
@@ -543,9 +600,12 @@ func (r *SalviaReader) reactionSummary(ctx context.Context, noteID, viewerActorI
 	}
 	defer cursor.Close(ctx)
 	var rows []struct {
-		Reaction string   `bson:"_id"`
-		Count    int      `bson:"count"`
-		Actors   []string `bson:"actors"`
+		Reaction       string   `bson:"_id"`
+		Count          int      `bson:"count"`
+		Actors         []string `bson:"actors"`
+		EmojiName      string   `bson:"emojiName"`
+		EmojiURL       string   `bson:"emojiUrl"`
+		EmojiMediaType string   `bson:"emojiMediaType"`
 	}
 	if err := cursor.All(ctx, &rows); err != nil {
 		return nil, err
@@ -559,9 +619,47 @@ func (r *SalviaReader) reactionSummary(ctx context.Context, noteID, viewerActorI
 				break
 			}
 		}
-		result = append(result, readmodel.ReactionSummary{Reaction: row.Reaction, Count: row.Count, Reacted: reacted})
+		emoji, err := r.reactionEmoji(ctx, row.Reaction, row.EmojiName, row.EmojiURL, row.EmojiMediaType)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, readmodel.ReactionSummary{Reaction: row.Reaction, Count: row.Count, Reacted: reacted, Emoji: emoji})
 	}
 	return result, nil
+}
+
+func (r *SalviaReader) reactionEmoji(ctx context.Context, reaction, name, url, mediaType string) (*emojis.Reference, error) {
+	if name != "" && url != "" {
+		return &emojis.Reference{Name: name, URL: url, MediaType: mediaType}, nil
+	}
+	if len(reaction) < 5 || reaction[0] != ':' || reaction[len(reaction)-1] != ':' {
+		return nil, nil
+	}
+	value := reaction[1 : len(reaction)-1]
+	separator := strings.LastIndexByte(value, '@')
+	if separator <= 0 || separator == len(value)-1 {
+		return nil, nil
+	}
+	host := value[separator+1:]
+	if host == "." {
+		host = ""
+	}
+	var doc emojiRecord
+	err := r.db.Collection("emojis").FindOne(ctx, bson.M{"host": host, "name": value[:separator]}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	resolvedURL := doc.PublicURL
+	if resolvedURL == "" {
+		resolvedURL = doc.OriginalURL
+	}
+	if resolvedURL == "" {
+		return nil, nil
+	}
+	return &emojis.Reference{Name: doc.Name, URL: resolvedURL, MediaType: doc.MediaType}, nil
 }
 
 func (r *SalviaReader) myPollVotes(ctx context.Context, noteID, actorID string) ([]int, error) {

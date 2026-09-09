@@ -26,6 +26,9 @@ type reactionDocument struct {
 	ActorURI             string     `bson:"actorUri"`
 	ActorHost            *string    `bson:"actorHost"`
 	Reaction             string     `bson:"reaction"`
+	EmojiName            string     `bson:"emojiName,omitempty"`
+	EmojiURL             string     `bson:"emojiUrl,omitempty"`
+	EmojiMediaType       string     `bson:"emojiMediaType,omitempty"`
 	RemoteActivityID     string     `bson:"remoteActivityId,omitempty"`
 	RemoteUndoActivityID string     `bson:"remoteUndoActivityId,omitempty"`
 	CreatedAt            time.Time  `bson:"createdAt"`
@@ -73,6 +76,9 @@ func (r *ReactionRepository) Upsert(ctx context.Context, reaction reactions.Reac
 			"actorUri":             doc.ActorURI,
 			"actorHost":            doc.ActorHost,
 			"reaction":             doc.Reaction,
+			"emojiName":            doc.EmojiName,
+			"emojiUrl":             doc.EmojiURL,
+			"emojiMediaType":       doc.EmojiMediaType,
 			"remoteActivityId":     doc.RemoteActivityID,
 			"remoteUndoActivityId": "",
 			"deletedAt":            nil,
@@ -126,6 +132,9 @@ func fromReaction(reaction reactions.Reaction) reactionDocument {
 		ActorURI:             reaction.ActorURI,
 		ActorHost:            reaction.ActorHost,
 		Reaction:             reaction.Reaction,
+		EmojiName:            reaction.EmojiName,
+		EmojiURL:             reaction.EmojiURL,
+		EmojiMediaType:       reaction.EmojiMediaType,
 		RemoteActivityID:     reaction.RemoteActivityID,
 		RemoteUndoActivityID: reaction.RemoteUndoActivityID,
 		CreatedAt:            reaction.CreatedAt,
@@ -141,6 +150,9 @@ func toReaction(doc reactionDocument) *reactions.Reaction {
 		ActorURI:             doc.ActorURI,
 		ActorHost:            doc.ActorHost,
 		Reaction:             doc.Reaction,
+		EmojiName:            doc.EmojiName,
+		EmojiURL:             doc.EmojiURL,
+		EmojiMediaType:       doc.EmojiMediaType,
 		RemoteActivityID:     doc.RemoteActivityID,
 		RemoteUndoActivityID: doc.RemoteUndoActivityID,
 		CreatedAt:            doc.CreatedAt,

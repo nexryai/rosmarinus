@@ -2,6 +2,8 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { css } from "../lib/css";
 import type { Actor, Note } from "../lib/schema";
+import { EmojiText } from "./EmojiText";
+import { Mfm } from "./Mfm";
 import { Avatar } from "./ui";
 
 type Quote = NonNullable<Note["quote"]>;
@@ -122,14 +124,16 @@ export function QuotedNoteCard({ onOpen, onOpenProfile, quote }: { onOpen?: (not
         <>
             <span style={styles.header}>
                 <span style={styles.identity}>
-                    <strong style={styles.name}>{authorName}</strong>
+                    <strong style={styles.name}>
+                        <EmojiText emojis={author?.emojis} text={authorName} />
+                    </strong>
                     <span style={styles.handle}>{actorHandle(author)}</span>
                 </span>
                 <time dateTime={quote.created_at} style={styles.time}>
                     {quoteDate(quote.created_at)}
                 </time>
             </span>
-            {quote.content_warning ? <span style={styles.warning}>閲覧注意: {quote.content_warning}（詳細を開いて表示）</span> : <span style={styles.text}>{quote.text || "本文のないノート"}</span>}
+            {quote.content_warning ? <span style={styles.warning}>閲覧注意: {quote.content_warning}（詳細を開いて表示）</span> : <Mfm emojis={quote.emojis} style={styles.text} text={quote.text || "本文のないノート"} />}
         </>
     );
 

@@ -55,6 +55,12 @@ part of the target architecture.
   account. Active Actors federate their own Block and Undo while suspended
   Actors retain the local moderation relationship until resumed or deleted.
 
+- Completed: render Note text and Actor biographies as MFM through one shared,
+  safe component based on the canonical `mfm-js` parser. Render Actor display
+  names with a separate emoji-only component so MFM markup stays literal, and
+  carry local or remote custom-emoji metadata in Actor, Note reaction, and
+  reaction-notification REST projections.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

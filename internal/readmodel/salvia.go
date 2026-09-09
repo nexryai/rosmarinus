@@ -38,6 +38,7 @@ type ReactionSummary struct {
 	Reaction string
 	Count    int
 	Reacted  bool
+	Emoji    *emojis.Reference
 }
 
 type Connection struct {
@@ -46,9 +47,11 @@ type Connection struct {
 }
 
 type Notification struct {
-	Notification notifications.Notification
-	Source       *actors.Actor
-	Note         *Note
+	Notification  notifications.Notification
+	Source        *actors.Actor
+	Note          *Note
+	Reaction      string
+	ReactionEmoji *emojis.Reference
 }
 
 type Profile struct {

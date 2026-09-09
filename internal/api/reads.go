@@ -237,6 +237,7 @@ func (h *Handler) writeNotifications(w http.ResponseWriter, r *http.Request, acc
 			ID: item.Notification.ID, ActorID: item.Notification.RecipientActorID,
 			Kind: item.Notification.Kind, NoteID: item.Notification.NoteID,
 			CreatedAt: item.Notification.CreatedAt, IsRead: item.Notification.IsRead, ReadAt: item.Notification.ReadAt,
+			Reaction: item.Reaction,
 		}
 		if actorID != "" && item.Source != nil {
 			source := projectActor(item.Source)
@@ -245,6 +246,10 @@ func (h *Handler) writeNotifications(w http.ResponseWriter, r *http.Request, acc
 		if actorID != "" && item.Note != nil {
 			note := projectNote(*item.Note)
 			view.Note = &note
+		}
+		if item.ReactionEmoji != nil {
+			emoji := emojiView{Name: item.ReactionEmoji.Name, URL: item.ReactionEmoji.URL, MediaType: item.ReactionEmoji.MediaType}
+			view.ReactionEmoji = &emoji
 		}
 		views = append(views, view)
 	}
@@ -487,9 +492,10 @@ type pollChoiceView struct {
 }
 
 type reactionSummaryView struct {
-	Reaction string `json:"reaction"`
-	Count    int    `json:"count"`
-	Reacted  bool   `json:"reacted"`
+	Reaction string     `json:"reaction"`
+	Count    int        `json:"count"`
+	Reacted  bool       `json:"reacted"`
+	Emoji    *emojiView `json:"emoji,omitempty"`
 }
 
 type noteReferenceView struct {
@@ -515,15 +521,17 @@ type connectionView struct {
 }
 
 type notificationView struct {
-	ID        string     `json:"id"`
-	ActorID   string     `json:"actor_id"`
-	Kind      string     `json:"kind"`
-	NoteID    string     `json:"note_id,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	IsRead    bool       `json:"is_read"`
-	ReadAt    *time.Time `json:"read_at,omitempty"`
-	Source    *actorView `json:"source,omitempty"`
-	Note      *noteView  `json:"note,omitempty"`
+	ID            string     `json:"id"`
+	ActorID       string     `json:"actor_id"`
+	Kind          string     `json:"kind"`
+	NoteID        string     `json:"note_id,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	IsRead        bool       `json:"is_read"`
+	ReadAt        *time.Time `json:"read_at,omitempty"`
+	Source        *actorView `json:"source,omitempty"`
+	Note          *noteView  `json:"note,omitempty"`
+	Reaction      string     `json:"reaction,omitempty"`
+	ReactionEmoji *emojiView `json:"reaction_emoji,omitempty"`
 }
 
 type profileView struct {
@@ -566,7 +574,12 @@ func projectNote(item readmodel.Note) noteView {
 		})
 	}
 	for _, reaction := range item.Reactions {
-		view.Reactions = append(view.Reactions, reactionSummaryView(reaction))
+		projected := reactionSummaryView{Reaction: reaction.Reaction, Count: reaction.Count, Reacted: reaction.Reacted}
+		if reaction.Emoji != nil {
+			emoji := emojiView{Name: reaction.Emoji.Name, URL: reaction.Emoji.URL, MediaType: reaction.Emoji.MediaType}
+			projected.Emoji = &emoji
+		}
+		view.Reactions = append(view.Reactions, projected)
 	}
 	if item.Poll != nil {
 		view.Poll = projectPoll(item.Poll, item.MyVotes)

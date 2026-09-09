@@ -157,6 +157,14 @@ Account
   metadata, emoji, avatars, banners, and instance metadata as untrusted.
 - Use the sanitized projections returned by Rosmarinus. Do not add raw HTML
   rendering paths or infer visibility from mentions.
+- Render Note text and Actor biographies through the shared `Mfm` domain
+  component, using the canonical `mfm-js` parser and React elements only.
+  Validate URL protocols and MFM style arguments, retain unknown syntax as
+  text, and respect reduced-motion preferences.
+- Render Actor display names through the shared `EmojiText` domain component.
+  It may replace custom-emoji codes from the Actor's `emojis` projection, but
+  must not interpret display names as MFM. Use the shared `CustomEmoji`
+  primitive for reaction images instead of duplicating image policy.
 - Preserve Actor/account and Note visibility boundaries in caches and query
   keys. Clear private projections when the session or active Actor changes.
 - Remote media URLs remain untrusted even after backend validation. Apply the

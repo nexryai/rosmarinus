@@ -65,11 +65,31 @@ describe("social inbox mutations", () => {
         render(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} refreshKey={0} />);
 
         expect(await screen.findByText("がリノートしました")).toBeInTheDocument();
-        expect(screen.getByText("“Rosemaryへようこそ”")).toBeInTheDocument();
+        expect(screen.getByText((_, element) => element?.tagName === "BLOCKQUOTE" && element.textContent === "“Rosemaryへようこそ”")).toBeInTheDocument();
         expect(screen.getByRole("img", { name: "リノートしました" })).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "ノートを開く" }));
 
         expect(onOpenNote).toHaveBeenCalledWith("note-1");
+    });
+
+    it("renders the custom emoji carried by a reaction notification", async () => {
+        const item = {
+            id: "notification-reaction",
+            actor_id: "alice",
+            kind: "reaction",
+            note_id: "note-1",
+            reaction: ":party@remote.test:",
+            reaction_emoji: { name: "party", url: "https://remote.test/party.webp", media_type: "image/webp" },
+            created_at: new Date().toISOString(),
+            is_read: true,
+            source: remote,
+        } as Notification;
+        vi.spyOn(api, "notifications").mockResolvedValue([item]);
+
+        render(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        expect(await screen.findByTitle(":party:")).toHaveAttribute("src", "https://remote.test/party.webp");
+        expect(screen.queryByText(":party@remote.test:")).not.toBeInTheDocument();
     });
 
     it("rejects a mandatory follow request", async () => {

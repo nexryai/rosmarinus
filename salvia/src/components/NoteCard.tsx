@@ -4,7 +4,9 @@ import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuo
 
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
+import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
+import { Mfm } from "./Mfm";
 import { QuotedNoteCard } from "./QuotedNoteCard";
 import { Avatar, Button } from "./ui";
 
@@ -117,17 +119,10 @@ const styles = {
     },
     text: {
         marginTop: "0.5rem",
+        display: "block",
         overflowWrap: "break-word",
         whiteSpace: "pre-wrap",
         lineHeight: "1.75rem",
-    },
-    emoji: {
-        width: "1.5rem",
-        height: "1.5rem",
-        marginInline: "0.125rem",
-        display: "inline-block",
-        objectFit: "contain",
-        verticalAlign: "text-bottom",
     },
     attachments: {
         maxHeight: "32rem",
@@ -379,17 +374,6 @@ const displayedNoteFor = (note: Note): Note => {
     };
 };
 
-const renderText = (text: string, note: Note) => {
-    const byName = new Map(note.emojis.map((emoji) => [emoji.name, emoji]));
-    let offset = 0;
-    return text.split(/(:[A-Za-z0-9_+-]+:)/g).map((part) => {
-        const tokenOffset = offset;
-        offset += part.length;
-        const emoji = part.startsWith(":") && part.endsWith(":") ? byName.get(part.slice(1, -1)) : undefined;
-        return emoji ? <img alt={part} key={tokenOffset} loading="lazy" src={emoji.url} style={styles.emoji} /> : part;
-    });
-};
-
 export function NoteCard({
     note,
     ownActorID,
@@ -451,7 +435,8 @@ export function NoteCard({
                     <Avatar actor={renoter} onOpenProfile={onOpenProfile} size="xsmall" />
                     <IconRepeat />
                     <button disabled={!renoter} onClick={() => renoter && onOpenProfile(renoter.id)} style={styles.renoteActor} type="button">
-                        {renoter?.name || renoter?.username || "Unknown"}さんがリノート
+                        <EmojiText emojis={renoter?.emojis} text={renoter?.name || renoter?.username || "Unknown"} />
+                        さんがリノート
                     </button>
                     <time dateTime={note.created_at} style={styles.renoteTime}>
                         {relativeTime(note.created_at)}
@@ -466,7 +451,9 @@ export function NoteCard({
                     <div style={styles.body}>
                         <header style={styles.header}>
                             <button disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
-                                <strong style={styles.actorName}>{author?.name || author?.username || "Unknown"}</strong>
+                                <strong style={styles.actorName}>
+                                    <EmojiText emojis={author?.emojis} text={author?.name || author?.username || "Unknown"} />
+                                </strong>
                                 <span>{isRenote ? actorHandle(author) : `@${author?.username || "unknown"}`}</span>
                             </button>
                             {onOpenNote ? (
@@ -490,7 +477,7 @@ export function NoteCard({
                                 </Button>
                             </div>
                         )}
-                        {revealed && displayedNote.text && <p style={styles.text}>{renderText(displayedNote.text, displayedNote)}</p>}
+                        {revealed && displayedNote.text && <Mfm emojis={displayedNote.emojis} style={styles.text} text={displayedNote.text} />}
                         {revealed && displayedNote.attachments.length > 0 && (
                             <div style={{ ...styles.attachments, ...(displayedNote.attachments.length > 1 ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } : {}) }}>
                                 {displayedNote.attachments.map((attachment) =>
@@ -538,7 +525,7 @@ export function NoteCard({
                                     style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
                                     type="button"
                                 >
-                                    <span>{reaction.reaction}</span>
+                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} /> : <span>{reaction.reaction}</span>}
                                     <b style={styles.reactionCount}>{reaction.count}</b>
                                 </button>
                             ))}

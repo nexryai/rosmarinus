@@ -178,6 +178,22 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 	}
 }
 
+func TestSalviaProjectionsIncludeRemoteActorAndReactionEmojis(t *testing.T) {
+	remoteEmoji := emojis.Reference{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"}
+	view := projectNote(readmodel.Note{
+		Note:      notes.Note{ID: "note-1", URI: "https://remote.test/notes/1", Visibility: notes.VisibilityPublic, CreatedAt: time.Now()},
+		Author:    &actors.Actor{ID: "remote-1", Username: "remote", Name: "Remote :party:", ResolvedEmojis: []emojis.Reference{remoteEmoji}},
+		Reactions: []readmodel.ReactionSummary{{Reaction: ":party@remote.test:", Count: 2, Emoji: &remoteEmoji}},
+	})
+
+	if view.Author == nil || len(view.Author.Emojis) != 1 || view.Author.Emojis[0].URL != remoteEmoji.URL {
+		t.Fatalf("actor emojis = %#v", view.Author)
+	}
+	if len(view.Reactions) != 1 || view.Reactions[0].Emoji == nil || view.Reactions[0].Emoji.URL != remoteEmoji.URL {
+		t.Fatalf("reaction emojis = %#v", view.Reactions)
+	}
+}
+
 func TestReadNotificationsPassesAuthenticatedScope(t *testing.T) {
 	reader := &fakeReader{}
 	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
@@ -203,6 +219,40 @@ func TestReadNotificationsPassesReadFilter(t *testing.T) {
 	}
 	if reader.unread == nil || *reader.unread {
 		t.Fatalf("unread filter = %v, want false", reader.unread)
+	}
+}
+
+func TestReactionNotificationIncludesRenderableReaction(t *testing.T) {
+	remoteEmoji := emojis.Reference{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"}
+	reader := &fakeReader{notifications: []readmodel.Notification{{
+		Notification:  notifications.Notification{ID: "notification-1", RecipientAccountID: "account-1", RecipientActorID: "actor-1", Kind: notifications.KindReaction, SourceActorID: "remote-1", NoteID: "note-1", CreatedAt: time.Now()},
+		Source:        &actors.Actor{ID: "remote-1", Username: "remote"},
+		Reaction:      ":party@remote.test:",
+		ReactionEmoji: &remoteEmoji,
+	}}}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors/actor-1/notifications", nil))
+
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"reaction":":party@remote.test:"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"reaction_emoji":{"name":"party","url":"https://remote.test/party.webp"`)) {
+		t.Fatalf("reaction notification projection = status %d body %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAccountReactionNotificationIncludesRenderableReaction(t *testing.T) {
+	remoteEmoji := emojis.Reference{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"}
+	reader := &fakeReader{notifications: []readmodel.Notification{{
+		Notification:  notifications.Notification{ID: "notification-1", RecipientAccountID: "account-1", RecipientActorID: "actor-1", Kind: notifications.KindReaction, NoteID: "note-1", CreatedAt: time.Now()},
+		Reaction:      ":party@remote.test:",
+		ReactionEmoji: &remoteEmoji,
+	}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, &fakeActorStore{}, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/notifications", nil))
+
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"reaction":":party@remote.test:"`)) || !bytes.Contains(recorder.Body.Bytes(), []byte(`"reaction_emoji":{"name":"party","url":"https://remote.test/party.webp"`)) {
+		t.Fatalf("account reaction notification projection = status %d body %s", recorder.Code, recorder.Body.String())
 	}
 }
 

@@ -2,6 +2,8 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
+import { EmojiText } from "../components/EmojiText";
+import { Mfm } from "../components/Mfm";
 import { NoteCard } from "../components/NoteCard";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
 import { api } from "../lib/api";
@@ -58,6 +60,7 @@ const styles = {
     },
     summary: {
         marginTop: "1.25rem",
+        display: "block",
         lineHeight: "1.75rem",
         whiteSpace: "pre-wrap",
     },
@@ -364,7 +367,9 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                             </>
                         )}
                     </div>
-                    <h1 style={styles.title}>{actor.name || actor.username}</h1>
+                    <h1 style={styles.title}>
+                        <EmojiText emojis={actor.emojis} text={actor.name || actor.username} />
+                    </h1>
                     <p style={styles.handle}>{actorHandle(profile)}</p>
                     {actor.is_suspended && (
                         <p className={rules.alert} style={styles.alert}>
@@ -380,7 +385,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                             。
                         </p>
                     )}
-                    {actor.summary && <p style={styles.summary}>{actor.summary}</p>}
+                    {actor.summary && <Mfm emojis={actor.emojis} style={styles.summary} text={actor.summary} />}
                     <div className={rules.meta} style={styles.meta}>
                         {actor.location && (
                             <span>
@@ -468,7 +473,9 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                 >
                                     <Avatar actor={item.actor} />
                                     <span style={styles.connectionText}>
-                                        <strong>{item.actor.name || item.actor.username}</strong>
+                                        <strong>
+                                            <EmojiText emojis={item.actor.emojis} text={item.actor.name || item.actor.username} />
+                                        </strong>
                                         <small style={styles.connectionHandle}>@{item.actor.username}</small>
                                     </span>
                                 </button>

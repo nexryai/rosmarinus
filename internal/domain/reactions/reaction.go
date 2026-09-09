@@ -13,6 +13,9 @@ type Reaction struct {
 	ActorURI             string
 	ActorHost            *string
 	Reaction             string
+	EmojiName            string
+	EmojiURL             string
+	EmojiMediaType       string
 	RemoteActivityID     string
 	RemoteUndoActivityID string
 	CreatedAt            time.Time

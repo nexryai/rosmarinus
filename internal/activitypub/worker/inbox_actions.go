@@ -138,7 +138,9 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		return "skip: reaction is blocked", nil
 	}
 	reaction := reactionFromActivity(activity)
-	if err := h.upsertRemoteEmojis(ctx, actor, apnotes.ExtractEmojis(activity["tag"])); err != nil && h.logger != nil {
+	reactionEmojis := apnotes.ExtractEmojis(activity["tag"])
+	reactionEmoji := matchingReactionEmoji(reaction, reactionEmojis)
+	if err := h.upsertRemoteEmojis(ctx, actor, reactionEmojis); err != nil && h.logger != nil {
 		h.logger.Printf("activitypub: store reaction emoji tags: %v", err)
 	}
 	existing, err := h.reactions.Find(ctx, note.ID, actor.ID)
@@ -146,6 +148,14 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		return "", err
 	}
 	if existing != nil && existing.Reaction == reaction {
+		if reactionEmoji != nil && existing.EmojiURL != reactionEmoji.IconURL {
+			existing.EmojiName = reactionEmoji.Name
+			existing.EmojiURL = reactionEmoji.IconURL
+			existing.EmojiMediaType = reactionEmoji.MediaType
+			if _, err := h.reactions.Upsert(ctx, *existing); err != nil {
+				return "", err
+			}
+		}
 		activityID, _ := activity["id"].(string)
 		recipient, findErr := h.repo.FindLocalByID(ctx, note.AuthorID)
 		if findErr != nil {
@@ -157,7 +167,7 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		return "skip: already reacted", nil
 	}
 	activityID, _ := activity["id"].(string)
-	if _, err := h.reactions.Upsert(ctx, reactions.Reaction{
+	reactionRecord := reactions.Reaction{
 		NoteID:           note.ID,
 		NoteURI:          note.URI,
 		ActorID:          actor.ID,
@@ -166,7 +176,13 @@ func (h *Handler) performLike(ctx context.Context, actor *actors.Actor, activity
 		Reaction:         reaction,
 		RemoteActivityID: activityID,
 		CreatedAt:        time.Now().UTC(),
-	}); err != nil {
+	}
+	if reactionEmoji != nil {
+		reactionRecord.EmojiName = reactionEmoji.Name
+		reactionRecord.EmojiURL = reactionEmoji.IconURL
+		reactionRecord.EmojiMediaType = reactionEmoji.MediaType
+	}
+	if _, err := h.reactions.Upsert(ctx, reactionRecord); err != nil {
 		return "", err
 	}
 	recipient, err := h.repo.FindLocalByID(ctx, note.AuthorID)
@@ -302,6 +318,22 @@ func (h *Handler) upsertRemoteEmojis(ctx context.Context, actor *actors.Actor, v
 		}
 		if err := h.ScheduleMedia(ctx, value.IconURL); err != nil && h.logger != nil {
 			h.logger.Printf("activitypub: schedule emoji media url=%s error=%v", value.IconURL, err)
+		}
+	}
+	return nil
+}
+
+func matchingReactionEmoji(reaction string, values []domainnotes.Emoji) *domainnotes.Emoji {
+	if len(reaction) < 3 || reaction[0] != ':' || reaction[len(reaction)-1] != ':' {
+		return nil
+	}
+	name := reaction[1 : len(reaction)-1]
+	if index := strings.LastIndexByte(name, '@'); index >= 0 {
+		name = name[:index]
+	}
+	for index := range values {
+		if values[index].Name == name && values[index].IconURL != "" {
+			return &values[index]
 		}
 	}
 	return nil

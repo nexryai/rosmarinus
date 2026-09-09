@@ -423,6 +423,9 @@ func TestProcessInboxLikeStoresReaction(t *testing.T) {
 	if reaction.Reaction != ":party@example.com:" || reaction.RemoteActivityID != "https://remote.example/activities/like" {
 		t.Fatalf("unexpected reaction payload: %+v", reaction)
 	}
+	if reaction.EmojiName != "party" || reaction.EmojiURL != "https://remote.example/files/party.webp" || reaction.EmojiMediaType != "image/webp" {
+		t.Fatalf("reaction emoji metadata was not preserved: %+v", reaction)
+	}
 	storedEmoji := emojiRepo.emojis["remote.example\x00party"]
 	if storedEmoji == nil || storedEmoji.URI != "https://remote.example/emojis/party" || storedEmoji.OriginalURL != "https://remote.example/files/party.webp" {
 		t.Fatalf("reaction emoji was not upserted: %+v", storedEmoji)

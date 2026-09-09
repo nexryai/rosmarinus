@@ -557,7 +557,7 @@ func (h *Handler) CreateReaction(ctx context.Context, command connector.Reaction
 	if inbox == "" {
 		return connector.ReactionCreated{}, fmt.Errorf("reaction target inbox is empty")
 	}
-	stored, err := h.reactions.Upsert(ctx, reactions.Reaction{
+	reactionRecord := reactions.Reaction{
 		NoteID:    note.ID,
 		NoteURI:   note.URI,
 		ActorID:   actor.ID,
@@ -565,7 +565,16 @@ func (h *Handler) CreateReaction(ctx context.Context, command connector.Reaction
 		ActorHost: actor.Host,
 		Reaction:  reactionValue,
 		CreatedAt: time.Now().UTC(),
-	})
+	}
+	if localEmoji != nil {
+		reactionRecord.EmojiName = localEmoji.Name
+		reactionRecord.EmojiURL = localEmoji.PublicURL
+		if reactionRecord.EmojiURL == "" {
+			reactionRecord.EmojiURL = localEmoji.OriginalURL
+		}
+		reactionRecord.EmojiMediaType = localEmoji.MediaType
+	}
+	stored, err := h.reactions.Upsert(ctx, reactionRecord)
 	if err != nil {
 		return connector.ReactionCreated{}, err
 	}

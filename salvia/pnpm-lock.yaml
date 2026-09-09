@@ -11,6 +11,9 @@ importers:
       '@tabler/icons-react':
         specifier: ^3.46.0
         version: 3.46.0(react@19.2.8)
+      mfm-js:
+        specifier: 0.26.0
+        version: 0.26.0
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -191,6 +194,9 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
+
+  '@misskey-dev/emoji-data@17.0.0':
+    resolution: {integrity: sha512-grMnsmTm7VSah5heS1fIfOfoQmIpzo6ZU5AV5yRxCy7ivtWhFU3fpMfXZyKsH9G9/HZiLRsClKtyjHKMlxjt7g==}
 
   '@oxc-project/types@0.147.0':
     resolution: {integrity: sha512-IJ3s6ltHLp45S0bh7phkX+gJO7A1Wuz2EaqpAhb8WjqDwbzMiWKHhyyT42tskaWjEYXtHtVCPpnBJVT9+dcRLg==}
@@ -611,6 +617,9 @@ packages:
   mdn-data@2.27.1:
     resolution: {integrity: sha512-9Yubnt3e8A0OKwxYSXyhLymGW4sCufcLG6VdiDdUGVkPhpqLxlvP5vl1983gQjJl3tqbrM731mjaZaP68AgosQ==}
 
+  mfm-js@0.26.0:
+    resolution: {integrity: sha512-JEbaa1GBJBcpsk9/6tGaOgo1WewUhL9cIFl3VhIZ2a/89X83hzwxwVZOEebFaWdOufwFxnti44QMR/TWcAxSzg==}
+
   min-indent@1.0.1:
     resolution: {integrity: sha512-I9jwMn07Sy/IwOj3zVkVik2JTvgpaykDZEigL6Rx6N9LbMywwUSMtxET+7lVoDLLd3O3IXwJwvuuns8UB/HeAg==}
     engines: {node: '>=4'}
@@ -958,6 +967,8 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
+  '@misskey-dev/emoji-data@17.0.0': {}
+
   '@oxc-project/types@0.147.0': {}
 
   '@rolldown/binding-android-arm-eabi@1.2.6':
@@ -1284,6 +1295,10 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   mdn-data@2.27.1: {}
+
+  mfm-js@0.26.0:
+    dependencies:
+      '@misskey-dev/emoji-data': 17.0.0
 
   min-indent@1.0.1: {}
 

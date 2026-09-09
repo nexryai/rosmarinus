@@ -6,6 +6,8 @@ import { api, type CreatePostInput } from "../lib/api";
 import { css } from "../lib/css";
 import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
+import { EmojiText } from "./EmojiText";
+import { Mfm } from "./Mfm";
 import { Button, ErrorBanner, Modal } from "./ui";
 import { Dropdown, type DropdownOption } from "./ui/Dropdown";
 import { Switch } from "./ui/Switch";
@@ -376,7 +378,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                 </header>
                 {intent.kind !== "post" && (
                     <p style={styles.target}>
-                        {intent.target.author?.name || intent.target.author?.username}: {intent.target.text || "（本文なし）"}
+                        <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} text={intent.target.text || "（本文なし）"} />
                     </p>
                 )}
                 {error && <ErrorBanner message={error} />}

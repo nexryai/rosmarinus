@@ -5,6 +5,9 @@ const strings = z
     .nullish()
     .transform((value) => value ?? []);
 
+export const emojiSchema = z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() });
+export type Emoji = z.infer<typeof emojiSchema>;
+
 // Older Rosmarinus responses exposed Go field names for nonempty profile fields.
 const profileFieldSchema = z.union([z.object({ name: z.string(), value: z.string() }), z.object({ Name: z.string(), Value: z.string() }).transform((field) => ({ name: field.Name, value: field.Value }))]);
 
@@ -24,6 +27,10 @@ export const actorSchema = z.object({
     banner_url: z.string().default(""),
     tags: strings,
     emoji_names: strings,
+    emojis: z
+        .array(emojiSchema)
+        .nullish()
+        .transform((value) => value ?? []),
     is_bot: z.boolean().default(false),
     is_cat: z.boolean().default(false),
     is_locked: z.boolean().default(false),
@@ -35,9 +42,6 @@ export const actorSchema = z.object({
 });
 
 export type Actor = z.infer<typeof actorSchema>;
-
-export const emojiSchema = z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() });
-export type Emoji = z.infer<typeof emojiSchema>;
 
 const attachmentSchema = z.object({ type: z.string().optional(), media_type: z.string().optional(), url: z.string(), name: z.string().optional(), width: z.number().optional(), height: z.number().optional(), sensitive: z.boolean() });
 
@@ -96,7 +100,7 @@ export const noteSchema = z.object({
         })
         .optional(),
     reactions: z
-        .array(z.object({ reaction: z.string(), count: z.number(), reacted: z.boolean() }))
+        .array(z.object({ reaction: z.string(), count: z.number(), reacted: z.boolean(), emoji: emojiSchema.optional() }))
         .nullish()
         .transform((value) => value ?? []),
     reply: noteReferenceSchema.optional(),
@@ -147,6 +151,8 @@ export const notificationSchema = z.object({
     read_at: z.string().nullish(),
     source: actorSchema.optional(),
     note: noteSchema.optional(),
+    reaction: z.string().optional(),
+    reaction_emoji: emojiSchema.optional(),
 });
 
 export type Notification = z.infer<typeof notificationSchema>;

@@ -902,7 +902,8 @@ func TestCreateReactionDeliversLocalCustomEmojiTag(t *testing.T) {
 		"local-party": {Name: "party", PublicURL: "https://cdn.rosmarinus.example/party.webp", MediaType: "image/webp"},
 	}}
 	q := &fakeQueue{}
-	h := New(config.Config{PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute}}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
+	reactionRepo := &fakeReactionRepo{}
+	h := New(config.Config{PublicURL: "https://rosmarinus.example", DeliverQueue: config.QueueConfig{MaxRetry: 17, Timeout: time.Minute}}, nil, &fakeRepo{local: local, remote: remote}, noteRepo, &fakeFollowRepo{}, &fakeBlockRepo{}, reactionRepo, &fakeReportRepo{}, q, &fakeClient{}, local)
 	h.SetEmojiRepository(emojiRepo)
 
 	created, err := h.CreateReaction(context.Background(), connector.ReactionCreateCommand{ActorID: local.ID, NoteID: "remote-note", Reaction: ":party:"})
@@ -911,6 +912,10 @@ func TestCreateReactionDeliversLocalCustomEmojiTag(t *testing.T) {
 	}
 	if created.Reaction != ":party@.:" {
 		t.Fatalf("normalized reaction = %q", created.Reaction)
+	}
+	storedReaction, err := reactionRepo.Find(context.Background(), "remote-note", local.ID)
+	if err != nil || storedReaction == nil || storedReaction.EmojiName != "party" || storedReaction.EmojiURL != "https://cdn.rosmarinus.example/party.webp" {
+		t.Fatalf("stored local reaction emoji = %+v, err=%v", storedReaction, err)
 	}
 	delivery := q.tasks[0].Payload.(queue.DeliverPayload)
 	tags, ok := delivery.Object["tag"].([]any)

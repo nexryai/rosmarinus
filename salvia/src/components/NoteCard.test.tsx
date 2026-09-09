@@ -38,9 +38,23 @@ describe("NoteCard social actions", () => {
         const emojiNote = { ...note, text: "Hi :salvia: <script>", emojis: [{ name: "salvia", url: "/media/salvia", media_type: "image/webp" }] };
         render(<NoteCard note={emojiNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
-        expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "/media/salvia");
-        expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.includes("<script>") === true)).toBeInTheDocument();
+        const emoji = screen.getByAltText(":salvia:");
+        expect(emoji).toHaveAttribute("src", "/media/salvia");
+        expect(emoji.parentElement).toHaveTextContent("<script>");
         expect(document.querySelector("script")).toBeNull();
+    });
+
+    it("renders MFM and remote custom emoji reactions", () => {
+        const emojiNote = {
+            ...note,
+            text: "**強調された本文**",
+            reactions: [{ reaction: ":party@remote.test:", count: 3, reacted: false, emoji: { name: "party", url: "https://remote.test/party.webp", media_type: "image/webp" } }],
+        } as Note;
+        render(<NoteCard note={emojiNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getByText("強調された本文").tagName).toBe("STRONG");
+        expect(screen.getByAltText(":party@remote.test:")).toHaveAttribute("src", "https://remote.test/party.webp");
+        expect(screen.getByText("3")).toBeInTheDocument();
     });
 
     it("opens image attachments in the custom viewer", () => {

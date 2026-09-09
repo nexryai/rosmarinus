@@ -261,6 +261,22 @@ Renote references include one visibility-checked `quote` reference when their
 target is itself a quote Note, allowing Salvia to retain the quoted card without
 an unbounded recursive projection.
 
+Actor projections include `emojis`, an array of
+`{ "name": string, "url": string, "media_type"?: string }` references resolved
+for that Actor's display name and biography. Note `text` and Actor `summary`
+are sanitized MFM source strings; Salvia parses them with the shared MFM
+renderer and never inserts them as HTML. Actor display names use the separate
+custom-emoji text renderer, which expands `:name:` codes from `emojis` but
+intentionally leaves MFM syntax literal.
+
+Each Note reaction summary contains `reaction`, `count`, `reacted`, and an
+optional `emoji` reference with the same shape. Reaction notifications contain
+the concrete `reaction` value and an optional `reaction_emoji` reference.
+Rosmarinus stores the emoji metadata received with a federated reaction so the
+notification and Note remain renderable even when the reaction code contains
+a remote host suffix. Legacy reaction rows are resolved against the validated
+emoji catalog when possible and otherwise retain their literal reaction code.
+
 Profile projections include viewer-specific `follow_status` and
 `blocked_by_viewer`, plus `pinned_notes` in the Actor's featured order. Pinned
 Notes pass the same visibility, deletion, active-author, and bilateral-block
@@ -363,6 +379,10 @@ URLs as untrusted.
   vote projections by the selected owned Actor.
 - Return validated HTTPS media/emoji/avatar/banner URLs as untrusted remote
   resources. Do not forward cookies or authorization headers to them.
+- Return MFM as source text plus explicit custom-emoji references. Salvia must
+  parse that source into React elements, validate link protocols and style
+  arguments, respect reduced-motion preferences, and keep unknown syntax as
+  visible text rather than using a raw-HTML rendering path.
 - Rosmarinus does not decode, resize, crop, transcode, optimize, or generate
   thumbnails for images and remains buildable with `CGO_ENABLED=0`. Salvia
   generates upload previews, thumbnails, and other required derivatives in the

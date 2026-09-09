@@ -5,24 +5,29 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 )
 
 type Actor struct {
-	ID              string
-	OwnerAccountID  string
-	IsSystemActor   bool
-	Username        string
-	UsernameLower   string
-	Name            string
-	Summary         string
-	URL             string
-	ProfileFields   []ProfileField
-	Birthday        string
-	Location        string
-	AvatarURL       string
-	BannerURL       string
-	Tags            []string
-	EmojiNames      []string
+	ID             string
+	OwnerAccountID string
+	IsSystemActor  bool
+	Username       string
+	UsernameLower  string
+	Name           string
+	Summary        string
+	URL            string
+	ProfileFields  []ProfileField
+	Birthday       string
+	Location       string
+	AvatarURL      string
+	BannerURL      string
+	Tags           []string
+	EmojiNames     []string
+	// ResolvedEmojis is presentation data hydrated by read models. Actor
+	// persistence and ActivityPub rendering continue to use EmojiNames.
+	ResolvedEmojis  []emojis.Reference
 	IsBot           bool
 	IsCat           bool
 	IsLocked        bool

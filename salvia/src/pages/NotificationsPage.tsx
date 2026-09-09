@@ -2,6 +2,8 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserPlus } from "@tabler/icons-react";
 
+import { CustomEmoji, EmojiText } from "../components/EmojiText";
+import { Mfm } from "../components/Mfm";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
@@ -80,6 +82,12 @@ const styles = {
         width: "0.6875rem",
         height: "0.6875rem",
         strokeWidth: 2.5,
+    },
+    kindEmoji: {
+        width: "100%",
+        height: "100%",
+        margin: 0,
+        verticalAlign: "middle",
     },
     body: {
         minWidth: 0,
@@ -228,18 +236,30 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, on
                                 <div style={styles.avatar}>
                                     <Avatar actor={item.source} onOpenProfile={onOpenProfile} />
                                     <span aria-label={details.message.replace(/^[がかの]/, "")} role="img" style={{ ...styles.kindIcon, background: details.color }}>
-                                        <KindIcon aria-hidden="true" style={styles.kindIconSvg} />
+                                        {item.kind === "reaction" && item.reaction_emoji ? (
+                                            <CustomEmoji emoji={item.reaction_emoji} label="" style={styles.kindEmoji} />
+                                        ) : item.kind === "reaction" && item.reaction ? (
+                                            <span aria-hidden="true">{item.reaction}</span>
+                                        ) : (
+                                            <KindIcon aria-hidden="true" style={styles.kindIconSvg} />
+                                        )}
                                     </span>
                                 </div>
                                 <div style={styles.body}>
                                     <div style={styles.header}>
-                                        <strong style={styles.actorName}>{sourceName}</strong>
+                                        <strong style={styles.actorName}>
+                                            <EmojiText emojis={item.source?.emojis} text={sourceName} />
+                                        </strong>
                                         <span style={styles.message}>{details.message}</span>
                                         <time dateTime={item.created_at} style={styles.time} title={new Date(item.created_at).toLocaleString("ja")}>
                                             {relativeTime(item.created_at)}
                                         </time>
                                     </div>
-                                    {item.note?.text && <blockquote style={styles.quote}>“{item.note.text}”</blockquote>}
+                                    {item.note?.text && (
+                                        <blockquote style={styles.quote}>
+                                            “<Mfm emojis={item.note.emojis} text={item.note.text} />”
+                                        </blockquote>
+                                    )}
                                     {scope === "account" && item.actor_id !== actorID && (
                                         <button onClick={() => onActorChange(item.actor_id)} style={styles.context} type="button">
                                             この通知のActorへ切り替え

@@ -18,6 +18,12 @@ type Emoji struct {
 	UpdatedAt       time.Time
 }
 
+type Reference struct {
+	Name      string
+	URL       string
+	MediaType string
+}
+
 type Repository interface {
 	UpsertRemote(context.Context, Emoji) (*Emoji, error)
 	UpsertLocal(context.Context, Emoji) (*Emoji, error)

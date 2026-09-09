@@ -67,6 +67,17 @@ describe("ProfilePage social actions", () => {
         expect(screen.getByRole("button", { name: "Bobのプロフィールを開く" }).parentElement?.style.top).toBe("-3rem");
     });
 
+    it("renders MFM in the bio and remote custom emoji in the display name", async () => {
+        const emoji = { name: "party", url: "https://remote.test/party.webp", media_type: "image/webp" };
+        vi.spyOn(api, "profile").mockResolvedValue({ ...profile, actor: { ...remote, name: "Bob :party:", summary: "**連合BIO** :party:", emojis: [emoji] } });
+
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
+
+        expect(await screen.findByRole("heading", { name: "Bob :party:" })).toBeInTheDocument();
+        expect(screen.getByText("連合BIO").tagName).toBe("STRONG");
+        expect(screen.getAllByAltText(":party:")).toHaveLength(2);
+    });
+
     it("renders the profile actor's visibility-filtered notes", async () => {
         const note = {
             id: "note-1",

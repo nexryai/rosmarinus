@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconUserCheck } from "@tabler/icons-react";
 
+import { EmojiText } from "../components/EmojiText";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
@@ -106,7 +107,9 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
                         <article className={rules.request} key={item.id} style={styles.request}>
                             <Avatar actor={item.actor} onOpenProfile={onOpenProfile} />
                             <div style={styles.identity}>
-                                <strong style={styles.name}>{item.actor.name || item.actor.username}</strong>
+                                <strong style={styles.name}>
+                                    <EmojiText emojis={item.actor.emojis} text={item.actor.name || item.actor.username} />
+                                </strong>
                                 <span style={styles.handle}>@{item.actor.username}</span>
                             </div>
                             <div className={rules.actions} style={styles.actions}>
