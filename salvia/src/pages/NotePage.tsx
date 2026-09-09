@@ -3,7 +3,8 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { IconArrowLeft } from "@tabler/icons-react";
 
 import { NoteCard } from "../components/NoteCard";
-import { DividedList, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
+import { NoteList, NoteListItem } from "../components/NoteList";
+import { ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
@@ -87,20 +88,21 @@ export function NotePage({
         }
     };
     const card = (item: Note) => (
-        <NoteCard
-            emojis={emojis}
-            key={item.id}
-            note={item}
-            onDelete={(id) => mutate(() => api.deletePost(csrf, actorID, id))}
-            onOpenNote={onOpenNote}
-            onOpenProfile={onOpenProfile}
-            onQuote={(target) => onCompose("quote", target)}
-            onReact={(id, reaction, reacted) => mutate(() => (reacted ? api.unreact(csrf, actorID, id) : api.react(csrf, actorID, id, reaction)))}
-            onRenote={(target) => mutate(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
-            onReply={(target) => onCompose("reply", target)}
-            onVote={(id, choice) => mutate(() => api.vote(csrf, actorID, id, choice))}
-            ownActorID={actorID}
-        />
+        <NoteListItem key={item.id}>
+            <NoteCard
+                emojis={emojis}
+                note={item}
+                onDelete={(id) => mutate(() => api.deletePost(csrf, actorID, id))}
+                onOpenNote={onOpenNote}
+                onOpenProfile={onOpenProfile}
+                onQuote={(target) => onCompose("quote", target)}
+                onReact={(id, reaction, reacted) => mutate(() => (reacted ? api.unreact(csrf, actorID, id) : api.react(csrf, actorID, id, reaction)))}
+                onRenote={(target) => mutate(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
+                onReply={(target) => onCompose("reply", target)}
+                onVote={(id, choice) => mutate(() => api.vote(csrf, actorID, id, choice))}
+                ownActorID={actorID}
+            />
+        </NoteListItem>
     );
     return (
         <>
@@ -118,11 +120,11 @@ export function NotePage({
                 <Loading label="ノートを読み込み中" />
             ) : (
                 note && (
-                    <DividedList aria-label="スレッド" className={rules.thread}>
+                    <NoteList aria-label="スレッド" className={rules.thread}>
                         {card(note)}
                         {thread.length > 0 && <h2>返信</h2>}
                         {thread.map(card)}
-                    </DividedList>
+                    </NoteList>
                 )
             )}
         </>

@@ -7,26 +7,12 @@ import type { Emoji, Note } from "../lib/schema";
 import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
+import { NoteSurface } from "./NoteSurface";
 import { QuotedNoteCard } from "./QuotedNoteCard";
 import { Avatar, Button } from "./ui";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 const styles = {
-    card: {
-        width: "calc(100% - 1.5rem)",
-        maxWidth: "64rem",
-        marginBlock: "0.75rem",
-        marginInline: "auto",
-        overflow: "clip",
-        display: "grid",
-        gridTemplateColumns: "auto minmax(0, 1fr)",
-        columnGap: "0.75rem",
-        rowGap: "0.5rem",
-        border: "1px solid var(--border)",
-        borderRadius: "1.25rem",
-        background: "var(--panel)",
-        transition: "background-color 150ms, border-color 150ms",
-    },
     body: {
         minWidth: 0,
         flex: 1,
@@ -259,19 +245,6 @@ const styles = {
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
-    card: css({
-        paddingInline: "1.25rem",
-        paddingBlock: "1.25rem",
-        "&:hover": {
-            background: "var(--panel-muted)",
-        },
-        "@media (width >= 40rem)": {
-            paddingInline: "1.75rem",
-        },
-        ':root[data-compact="true"] &': {
-            paddingBlock: "0.75rem",
-        },
-    }),
     timestamp: css({
         color: "var(--muted)",
         "&:hover": {
@@ -433,7 +406,7 @@ export function NoteCard({
         }
     };
     return (
-        <article className={rules.card} style={styles.card}>
+        <NoteSurface>
             {pinned && (
                 <div className={rules.pinned} style={styles.pinned}>
                     <IconPinFilled />
@@ -584,6 +557,6 @@ export function NoteCard({
                     この操作は取り消せません。
                 </ConfirmDialog>
             )}
-        </article>
+        </NoteSurface>
     );
 }

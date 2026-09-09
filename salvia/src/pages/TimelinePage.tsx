@@ -3,7 +3,8 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 import { IconRefresh } from "@tabler/icons-react";
 
 import { NoteCard } from "../components/NoteCard";
-import { Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
+import { NoteList, NoteListItem } from "../components/NoteList";
+import { Button, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
 import { api } from "../lib/api";
 import { css, keyframes } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
@@ -30,7 +31,6 @@ const styles = {
     noteSlot: {
         display: "grid",
         gridTemplateRows: "1fr",
-        borderBottom: 0,
     },
     noteSlotContent: {
         minHeight: 0,
@@ -143,11 +143,11 @@ export function TimelinePage({
             ) : notes.length === 0 ? (
                 <Empty>まだ表示できるノートがありません。</Empty>
             ) : (
-                <DividedList aria-label="ノート一覧">
+                <NoteList aria-label="ノート一覧">
                     {notes.map((note) => {
                         const arriving = arrivingIDs.has(note.id);
                         return (
-                            <div
+                            <NoteListItem
                                 className={arriving ? rules.arriving : undefined}
                                 data-live-entry={arriving || undefined}
                                 key={note.id}
@@ -176,7 +176,7 @@ export function TimelinePage({
                                         ownActorID={actorID}
                                     />
                                 </div>
-                            </div>
+                            </NoteListItem>
                         );
                     })}
                     {next && (
@@ -186,7 +186,7 @@ export function TimelinePage({
                             </Button>
                         </div>
                     )}
-                </DividedList>
+                </NoteList>
             )}
         </>
     );

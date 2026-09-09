@@ -5,7 +5,8 @@ import { IconBan, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/
 import { EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
 import { NoteCard } from "../components/NoteCard";
-import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
+import { NoteList, NoteListItem } from "../components/NoteList";
+import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
@@ -321,21 +322,22 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     if (!profile) return <ErrorBanner message={error || "プロフィールが見つかりません"} />;
     const actor = profile.actor;
     const renderNote = (note: Note, pinned = false) => (
-        <NoteCard
-            emojis={emojis}
-            key={note.id}
-            note={note}
-            onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
-            onOpenNote={onOpenNote}
-            onOpenProfile={onOpenProfile}
-            onQuote={(target) => onCompose("quote", target)}
-            onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
-            onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
-            onReply={(target) => onCompose("reply", target)}
-            onVote={(noteID, choice) => mutateNote(() => api.vote(csrf, actorID, noteID, choice))}
-            ownActorID={actorID}
-            pinned={pinned}
-        />
+        <NoteListItem key={note.id}>
+            <NoteCard
+                emojis={emojis}
+                note={note}
+                onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
+                onOpenNote={onOpenNote}
+                onOpenProfile={onOpenProfile}
+                onQuote={(target) => onCompose("quote", target)}
+                onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
+                onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
+                onReply={(target) => onCompose("reply", target)}
+                onVote={(noteID, choice) => mutateNote(() => api.vote(csrf, actorID, noteID, choice))}
+                ownActorID={actorID}
+                pinned={pinned}
+            />
+        </NoteListItem>
     );
     return (
         <>
@@ -432,9 +434,9 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
             </header>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {profile.pinned_notes.length > 0 && (
-                <DividedList aria-label="ピン留めされたノート" style={styles.pinnedNotes}>
+                <NoteList aria-label="ピン留めされたノート" style={styles.pinnedNotes}>
                     {profile.pinned_notes.map((note) => renderNote(note, true))}
-                </DividedList>
+                </NoteList>
             )}
             <section aria-label="ノート">
                 <h2 id="profile-notes-heading" style={styles.notesHeader}>
@@ -445,7 +447,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 ) : notes.length === 0 ? (
                     <Empty>表示できるノートはまだありません。</Empty>
                 ) : (
-                    <DividedList aria-label="プロフィールのノート一覧">
+                    <NoteList aria-label="プロフィールのノート一覧">
                         {notes.map((note) => renderNote(note))}
                         {next && (
                             <div style={styles.loadMore}>
@@ -454,7 +456,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                 </Button>
                             </div>
                         )}
-                    </DividedList>
+                    </NoteList>
                 )}
             </section>
             {connections && (
