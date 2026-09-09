@@ -4,6 +4,7 @@ import { IconBan, IconUserCheck } from "@tabler/icons-react";
 
 import { EmojiText } from "../components/EmojiText";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Connection } from "../lib/schema";
@@ -68,6 +69,7 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [busyID, setBusyID] = useState("");
+    const [blockTarget, setBlockTarget] = useState<Connection>();
     const load = useCallback(async () => {
         setLoading(true);
         try {
@@ -80,6 +82,7 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     }, [actorID]);
     useEffect(() => {
         void refreshKey;
+        setBlockTarget(undefined);
         void load();
     }, [load, refreshKey]);
     const decide = async (item: Connection, status: "accepted" | "rejected" | "rejected_and_blocked") => {
@@ -119,13 +122,7 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
                                 <Button disabled={busyID === item.id} onClick={() => void decide(item, "rejected")} variant="ghost">
                                     拒否
                                 </Button>
-                                <Button
-                                    disabled={busyID === item.id}
-                                    onClick={() => {
-                                        if (window.confirm(`${item.actor.name || item.actor.username}を拒否してブロックしますか？`)) void decide(item, "rejected_and_blocked");
-                                    }}
-                                    variant="danger"
-                                >
+                                <Button disabled={busyID === item.id} onClick={() => setBlockTarget(item)} variant="danger">
                                     <IconBan />
                                     拒否してブロック
                                 </Button>
@@ -133,6 +130,21 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
                         </article>
                     ))}
                 </DividedList>
+            )}
+            {blockTarget && (
+                <ConfirmDialog
+                    busy={busyID === blockTarget.id}
+                    confirmLabel="拒否してブロック"
+                    onCancel={() => setBlockTarget(undefined)}
+                    onConfirm={() => {
+                        const target = blockTarget;
+                        setBlockTarget(undefined);
+                        void decide(target, "rejected_and_blocked");
+                    }}
+                    title="フォローを拒否してブロックしますか？"
+                >
+                    {blockTarget.actor.name || blockTarget.actor.username}からのフォローリクエストを拒否し、今後のやり取りを制限します。
+                </ConfirmDialog>
             )}
         </>
     );

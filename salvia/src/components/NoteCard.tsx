@@ -9,6 +9,7 @@ import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
 import { QuotedNoteCard } from "./QuotedNoteCard";
 import { Avatar, Button } from "./ui";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 const styles = {
     card: {
@@ -407,6 +408,7 @@ export function NoteCard({
     const renoteUnavailable = isRenote && !note.renote;
     const [revealed, setRevealed] = useState(!displayedNote.content_warning);
     const [busy, setBusy] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
     const author = displayedNote.author;
@@ -533,16 +535,7 @@ export function NoteCard({
                                 ＋
                             </button>
                             {note.author?.id === ownActorID && (
-                                <button
-                                    aria-label="削除"
-                                    className={`${rules.action} ${rules.deleteAction}`}
-                                    disabled={busy}
-                                    onClick={() => {
-                                        if (window.confirm("このノートを削除しますか？")) void act(() => onDelete(note.id));
-                                    }}
-                                    style={{ ...styles.action, ...styles.deleteAction }}
-                                    type="button"
-                                >
+                                <button aria-label="削除" className={`${rules.action} ${rules.deleteAction}`} disabled={busy} onClick={() => setDeleteDialogOpen(true)} style={{ ...styles.action, ...styles.deleteAction }} type="button">
                                     <IconTrash />
                                 </button>
                             )}
@@ -569,6 +562,20 @@ export function NoteCard({
                 </>
             )}
             {viewerIndex !== undefined && <ImageViewer images={imageAttachments} initialIndex={viewerIndex} onClose={() => setViewerIndex(undefined)} />}
+            {deleteDialogOpen && (
+                <ConfirmDialog
+                    busy={busy}
+                    confirmLabel="削除する"
+                    onCancel={() => setDeleteDialogOpen(false)}
+                    onConfirm={() => {
+                        setDeleteDialogOpen(false);
+                        void act(() => onDelete(note.id));
+                    }}
+                    title="ノートを削除しますか？"
+                >
+                    この操作は取り消せません。
+                </ConfirmDialog>
+            )}
         </article>
     );
 }

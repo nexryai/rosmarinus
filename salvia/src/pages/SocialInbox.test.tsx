@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -108,13 +108,14 @@ describe("social inbox mutations", () => {
         const item = { id: "follow-3", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
         vi.spyOn(api, "followRequests").mockResolvedValue([item]);
         const decide = vi.spyOn(api, "decideFollowRequest").mockResolvedValue(undefined);
-        vi.spyOn(window, "confirm").mockReturnValue(true);
         const user = userEvent.setup();
         render(<FollowRequestsPage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} refreshKey={0} />);
 
         await user.click(await screen.findByRole("button", { name: "拒否してブロック" }));
 
-        expect(window.confirm).toHaveBeenCalledWith("Bobを拒否してブロックしますか？");
+        expect(decide).not.toHaveBeenCalled();
+        const dialog = screen.getByRole("dialog", { name: "フォローを拒否してブロックしますか？" });
+        await user.click(within(dialog).getByRole("button", { name: "拒否してブロック" }));
         expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "rejected_and_blocked");
         expect(screen.queryByText("@bob")).not.toBeInTheDocument();
     });

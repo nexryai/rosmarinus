@@ -193,7 +193,6 @@ describe("NoteCard social actions", () => {
     });
 
     it("votes in a poll and confirms deletion of an owned note", async () => {
-        vi.spyOn(window, "confirm").mockReturnValue(true);
         const onVote = vi.fn().mockResolvedValue(undefined);
         const onDelete = vi.fn().mockResolvedValue(undefined);
         const pollNote = { ...note, author: { ...author, id: "alice" }, poll: { choices: [{ index: 0, text: "A", votes: 0, voted: false }], multiple: false, expires_at: null, expired: false } } as Note;
@@ -204,6 +203,9 @@ describe("NoteCard social actions", () => {
         await user.click(screen.getByRole("button", { name: "削除" }));
 
         expect(onVote).toHaveBeenCalledWith("note-1", 0);
+        expect(onDelete).not.toHaveBeenCalled();
+        expect(screen.getByRole("dialog", { name: "ノートを削除しますか？" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "削除する" }));
         expect(onDelete).toHaveBeenCalledWith("note-1");
     });
 

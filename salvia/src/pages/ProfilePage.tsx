@@ -6,6 +6,7 @@ import { EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
 import { NoteCard } from "../components/NoteCard";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Connection, Emoji, Note, Profile } from "../lib/schema";
@@ -224,11 +225,13 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     const [loading, setLoading] = useState(true);
     const [notesLoading, setNotesLoading] = useState(true);
     const [busy, setBusy] = useState(false);
+    const [blockDialogOpen, setBlockDialogOpen] = useState(false);
     const [error, setError] = useState("");
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
         setProfile(undefined);
+        setBlockDialogOpen(false);
         setError("");
         api.profile(actorID, profileID, controller.signal)
             .then((value) => {
@@ -289,7 +292,6 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     };
     const toggleBlock = async () => {
         if (!profile) return;
-        if (!blocked && !window.confirm(`${profile.actor.name || profile.actor.username}をブロックしますか？`)) return;
         setBusy(true);
         setError("");
         try {
@@ -360,7 +362,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                         </>
                                     )}
                                 </Button>
-                                <Button disabled={busy} onClick={() => void toggleBlock()} variant="ghost">
+                                <Button disabled={busy} onClick={() => (blocked ? void toggleBlock() : setBlockDialogOpen(true))} variant="ghost">
                                     <IconBan />
                                     {blocked ? "ブロック解除" : "ブロック"}
                                 </Button>
@@ -483,6 +485,20 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                         )}
                     </section>
                 </Modal>
+            )}
+            {blockDialogOpen && (
+                <ConfirmDialog
+                    busy={busy}
+                    confirmLabel="ブロックする"
+                    onCancel={() => setBlockDialogOpen(false)}
+                    onConfirm={() => {
+                        setBlockDialogOpen(false);
+                        void toggleBlock();
+                    }}
+                    title="このActorをブロックしますか？"
+                >
+                    {actor.name || actor.username}からのフォローややり取りを制限します。
+                </ConfirmDialog>
             )}
         </>
     );

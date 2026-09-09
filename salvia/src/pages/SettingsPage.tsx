@@ -3,6 +3,7 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 import { IconPalette, IconPlus, IconTrash, IconUserCircle } from "@tabler/icons-react";
 
 import { Button, ErrorBanner, PageHeader } from "../components/ui";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
 import { Switch } from "../components/ui/Switch";
 import { api } from "../lib/api";
@@ -181,7 +182,10 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     const [newName, setNewName] = useState("");
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     useEffect(() => {
+        setDeleteDialogOpen(false);
         setName(selectedActor.name);
         setSummary(selectedActor.summary);
         setAvatarURL(selectedActor.avatar_url);
@@ -226,6 +230,19 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
             setMessage("Actorを作成しました");
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "Actorを作成できませんでした");
+        }
+    };
+    const deleteActor = async () => {
+        setDeleting(true);
+        setError("");
+        try {
+            await api.deleteActor(csrf, selectedActor.id);
+            setDeleteDialogOpen(false);
+            await onActorsChanged();
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "削除できませんでした");
+        } finally {
+            setDeleting(false);
         }
     };
     return (
@@ -320,22 +337,18 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                     <section className={`${rules.card} ${rules.dangerCard}`} style={styles.card}>
                         <h2 style={styles.cardTitle}>Actorを削除</h2>
                         <p style={styles.cardText}>@{selectedActor.username}を削除すると元に戻せません。</p>
-                        <Button
-                            onClick={() => {
-                                if (window.confirm(`@${selectedActor.username}を削除しますか？`))
-                                    void api
-                                        .deleteActor(csrf, selectedActor.id)
-                                        .then(onActorsChanged)
-                                        .catch((reason) => setError(reason instanceof Error ? reason.message : "削除できませんでした"));
-                            }}
-                            variant="danger"
-                        >
+                        <Button onClick={() => setDeleteDialogOpen(true)} variant="danger">
                             <IconTrash />
                             このActorを削除
                         </Button>
                     </section>
                 )}
             </div>
+            {deleteDialogOpen && (
+                <ConfirmDialog busy={deleting} confirmLabel="削除する" onCancel={() => setDeleteDialogOpen(false)} onConfirm={() => void deleteActor()} title="Actorを削除しますか？">
+                    @{selectedActor.username}を削除すると元に戻せません。
+                </ConfirmDialog>
+            )}
         </>
     );
 }

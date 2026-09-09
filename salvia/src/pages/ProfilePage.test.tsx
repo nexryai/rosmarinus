@@ -25,7 +25,6 @@ describe("ProfilePage social actions", () => {
         const unfollow = vi.spyOn(api, "unfollow").mockResolvedValue(undefined);
         const block = vi.spyOn(api, "block").mockResolvedValue(undefined);
         const unblock = vi.spyOn(api, "unblock").mockResolvedValue(undefined);
-        vi.spyOn(window, "confirm").mockReturnValue(true);
         const user = userEvent.setup();
         render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
         await screen.findByRole("heading", { name: "Bob" });
@@ -34,6 +33,9 @@ describe("ProfilePage social actions", () => {
         await user.click(screen.getByRole("button", { name: "フォロー" }));
         await user.click(screen.getByRole("button", { name: "フォロー解除" }));
         await user.click(screen.getByRole("button", { name: "ブロック" }));
+        expect(block).not.toHaveBeenCalled();
+        expect(screen.getByRole("dialog", { name: "このActorをブロックしますか？" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "ブロックする" }));
         await user.click(screen.getByRole("button", { name: "ブロック解除" }));
 
         expect(follow).toHaveBeenCalledWith("csrf", "alice", remote.uri);

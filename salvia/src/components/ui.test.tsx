@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Button, Modal } from "./ui";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { Dropdown } from "./ui/Dropdown";
 
 const useMobileViewport = () => {
@@ -119,6 +120,34 @@ describe("Modal", () => {
         fireEvent.pointerDown(drawer.parentElement as HTMLElement);
         act(() => vi.advanceTimersByTime(110));
         expect(onClose).toHaveBeenCalledOnce();
+    });
+});
+
+describe("ConfirmDialog", () => {
+    afterEach(() => {
+        cleanup();
+        vi.unstubAllGlobals();
+    });
+
+    it("lays out warning content on the left and actions on the right", () => {
+        const onCancel = vi.fn();
+        const onConfirm = vi.fn();
+        render(
+            <ConfirmDialog confirmLabel="削除する" onCancel={onCancel} onConfirm={onConfirm} title="ノートを削除しますか？">
+                この操作は取り消せません。
+            </ConfirmDialog>,
+        );
+
+        const dialog = screen.getByRole("dialog", { name: "ノートを削除しますか？" });
+        expect(screen.getByRole("img", { name: "警告" })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "ノートを削除しますか？" })).toHaveStyle({ textAlign: "left" });
+        expect(screen.getByText("この操作は取り消せません。")).toHaveStyle({ textAlign: "left" });
+        expect(dialog.querySelector('[data-confirm-dialog-part="actions"]')).toHaveStyle({ justifyContent: "flex-end" });
+
+        fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
+        fireEvent.click(screen.getByRole("button", { name: "削除する" }));
+        expect(onCancel).toHaveBeenCalledOnce();
+        expect(onConfirm).toHaveBeenCalledOnce();
     });
 });
 
