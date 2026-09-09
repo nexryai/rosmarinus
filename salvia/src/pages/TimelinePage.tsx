@@ -30,6 +30,7 @@ const styles = {
     noteSlot: {
         display: "grid",
         gridTemplateRows: "1fr",
+        borderBottom: 0,
     },
     noteSlotContent: {
         minHeight: 0,

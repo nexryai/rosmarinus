@@ -13,11 +13,20 @@ import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 const styles = {
     card: {
+        width: "calc(100% - 1.5rem)",
+        maxWidth: "64rem",
+        marginBlock: "0.75rem",
+        marginInline: "auto",
+        overflow: "clip",
         display: "grid",
         gridTemplateColumns: "auto minmax(0, 1fr)",
         columnGap: "0.75rem",
         rowGap: "0.5rem",
-        transition: "background-color 150ms",
+        border: "1px solid var(--border)",
+        borderRadius: "1.25rem",
+        background: "var(--panel)",
+        boxShadow: "0 1px 3px rgb(0 0 0 / 8%)",
+        transition: "background-color 150ms, border-color 150ms, box-shadow 150ms",
     },
     body: {
         minWidth: 0,
@@ -256,6 +265,7 @@ const rules = {
         paddingBlock: "1.25rem",
         "&:hover": {
             background: "var(--panel-muted)",
+            boxShadow: "0 4px 12px rgb(0 0 0 / 8%)",
         },
         "@media (width >= 40rem)": {
             paddingInline: "1.75rem",

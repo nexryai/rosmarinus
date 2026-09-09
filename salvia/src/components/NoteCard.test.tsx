@@ -34,6 +34,18 @@ describe("NoteCard social actions", () => {
         expect(onReact).toHaveBeenCalledWith(note.id, "👍", false);
     });
 
+    it("renders each note as a centered card capped at 64rem", () => {
+        const { container } = render(<NoteCard note={note} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        const card = container.querySelector("article") as HTMLElement;
+        expect(card.style.width).toBe("calc(100% - 1.5rem)");
+        expect(card.style.maxWidth).toBe("64rem");
+        expect(card.style.marginInline).toBe("auto");
+        expect(card.style.border).toBe("1px solid var(--border)");
+        expect(card.style.borderRadius).toBe("1.25rem");
+        expect(card.style.background).toBe("var(--panel)");
+    });
+
     it("renders custom emoji without injecting markup", () => {
         const emojiNote = { ...note, text: "Hi :salvia: <script>", emojis: [{ name: "salvia", url: "/media/salvia", media_type: "image/webp" }] };
         render(<NoteCard note={emojiNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
