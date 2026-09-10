@@ -18,7 +18,7 @@ describe("GlobalStyles", () => {
         expect(css).toContain("JdeckedTwemoji-SVG.woff2");
         expect(css).toContain("JdeckedTwemoji-COLRv1.woff2");
         expect(css).toContain(":root{--accent:#f4bd36;");
-        expect(css).toContain('font-family:"Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", Inter, "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;');
+        expect(css).toContain('font-family:Inter, "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", "Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", ui-sans-serif, system-ui, sans-serif;');
         expect(css).toContain("button, input, textarea, select{color:inherit;font:inherit;");
         expect(css).not.toContain("https://");
     });

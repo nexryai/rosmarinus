@@ -4,6 +4,7 @@ import twemojiFallbackFontURL from "@exis9/jdecked-twemoji/JdeckedTwemoji-SVG.wo
 import { globalCss } from "./lib/css";
 
 export const emojiFontFamily = '"Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"';
+const textFontFamily = 'Inter, "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans"';
 
 const emojiUnicodeRange = "U+00A9,U+00AE,U+200D,U+203C,U+2049,U+20E3,U+2122,U+2139,U+2190-21FF,U+2300-23FF,U+2460-24FF,U+25A0-27FF,U+2934-2935,U+2B00-2BFF,U+3030,U+303D,U+3297,U+3299,U+FE0F,U+1F000-1FAFF,U+1FC00-1FFFD,U+E0020-E007F";
 
@@ -39,7 +40,7 @@ export function GlobalStyles() {
         },
         ":root": {
             color: "#34323b",
-            fontFamily: `${emojiFontFamily}, Inter, "Noto Sans JP", ui-sans-serif, system-ui, sans-serif`,
+            fontFamily: `${textFontFamily}, ${emojiFontFamily}, ui-sans-serif, system-ui, sans-serif`,
             fontSynthesis: "none",
             textRendering: "optimizeLegibility",
             "--page": "#f4f3f0",

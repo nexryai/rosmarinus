@@ -7,6 +7,8 @@ import { css, keyframes } from "../lib/css";
 import type { Emoji } from "../lib/schema";
 import { CustomEmoji } from "./EmojiText";
 
+const monospaceFontFamily = `SFMono-Regular, Consolas, "Liberation Mono", "DejaVu Sans Mono", ${emojiFontFamily}, ui-monospace, monospace`;
+
 const spin = keyframes({
     to: {
         transform: "rotate(360deg)",
@@ -72,7 +74,7 @@ const styles = {
         overflowX: "auto",
         borderRadius: "0.75rem",
         background: "var(--panel-muted)",
-        fontFamily: `${emojiFontFamily}, ui-monospace, SFMono-Regular, Consolas, monospace`,
+        fontFamily: monospaceFontFamily,
         fontSize: "0.875em",
         whiteSpace: "pre",
     },
@@ -80,7 +82,7 @@ const styles = {
         padding: "0.1em 0.3em",
         borderRadius: "0.3em",
         background: "var(--panel-muted)",
-        fontFamily: `${emojiFontFamily}, ui-monospace, SFMono-Regular, Consolas, monospace`,
+        fontFamily: monospaceFontFamily,
         fontSize: "0.9em",
     },
     link: {
@@ -176,7 +178,12 @@ const functionStyle = (node: Extract<MfmNode, { type: "fn" }>): CSSProperties | 
         case "x4":
             return { ...styles.function, fontSize: "4em" };
         case "font":
-            return { ...styles.function, fontFamily: `${emojiFontFamily}, ${args.serif ? "serif" : args.monospace ? "monospace" : args.cursive ? "cursive" : args.fantasy ? "fantasy" : args.emoji ? "emoji" : "inherit"}` };
+            if (args.emoji) return { ...styles.function, fontFamily: emojiFontFamily };
+            if (args.serif) return { ...styles.function, fontFamily: `Georgia, "Times New Roman", ${emojiFontFamily}, serif` };
+            if (args.monospace) return { ...styles.function, fontFamily: monospaceFontFamily };
+            if (args.cursive) return { ...styles.function, fontFamily: `"Comic Sans MS", "Brush Script MT", ${emojiFontFamily}, cursive` };
+            if (args.fantasy) return { ...styles.function, fontFamily: `Impact, ${emojiFontFamily}, fantasy` };
+            return styles.function;
         case "fg":
             return { ...styles.function, color: colorArgument(args.color) ?? "#f00" };
         case "bg":

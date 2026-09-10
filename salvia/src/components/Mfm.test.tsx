@@ -34,4 +34,11 @@ describe("federated text rendering", () => {
         expect(container).toHaveTextContent("$[future syntax]");
         expect(container).toHaveTextContent("$[unixtime 999999999999999999999]");
     });
+
+    it("keeps numbers in code on a text font before falling back to Twemoji", () => {
+        render(<Mfm text="`123😀`" />);
+
+        const code = screen.getByText("123😀");
+        expect(code.style.fontFamily).toBe('SFMono-Regular, Consolas, "Liberation Mono", "DejaVu Sans Mono", "Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", ui-monospace, monospace');
+    });
 });
