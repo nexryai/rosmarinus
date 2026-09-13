@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,12 +7,13 @@ import type { Actor, Connection, Notification } from "../lib/schema";
 import { FollowRequestsPage } from "./FollowRequestsPage";
 import { NotificationsPage } from "./NotificationsPage";
 
-const remote = { id: "bob", username: "bob", name: "Bob" } as Actor;
+const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob" } as Actor;
 
 describe("social inbox mutations", () => {
     afterEach(() => {
         cleanup();
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it("approves a mandatory follow request and removes it from the queue", async () => {
@@ -27,7 +28,44 @@ describe("social inbox mutations", () => {
         await user.click(await screen.findByRole("button", { name: "承認" }));
 
         expect(onOpenProfile).toHaveBeenCalledWith("bob");
+        expect(decide).not.toHaveBeenCalled();
+        const dialog = screen.getByRole("dialog", { name: "フォローリクエストを承認しますか？" });
+        await user.click(within(dialog).getByRole("button", { name: "承認" }));
         expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "accepted");
+        expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+    });
+
+    it("approves a request and follows the remote Actor back", async () => {
+        const item = { id: "follow-back", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
+        vi.spyOn(api, "followRequests").mockResolvedValue([item]);
+        const decide = vi.spyOn(api, "decideFollowRequest").mockResolvedValue(undefined);
+        const follow = vi.spyOn(api, "follow").mockResolvedValue(undefined);
+        const user = userEvent.setup();
+        render(<FollowRequestsPage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        await user.click(await screen.findByRole("button", { name: "承認してフォローバック" }));
+        expect(decide).not.toHaveBeenCalled();
+        const dialog = screen.getByRole("dialog", { name: "承認してフォローバックしますか？" });
+        await user.click(within(dialog).getByRole("button", { name: "承認してフォローバック" }));
+
+        await waitFor(() => expect(follow).toHaveBeenCalledWith("csrf", "alice", "https://remote.test/users/bob"));
+        expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "accepted");
+        expect(decide.mock.invocationCallOrder[0]).toBeLessThan(follow.mock.invocationCallOrder[0]);
+        expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+    });
+
+    it("keeps an accepted request removed when only the follow-back fails", async () => {
+        const item = { id: "follow-back-failure", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
+        vi.spyOn(api, "followRequests").mockResolvedValue([item]);
+        vi.spyOn(api, "decideFollowRequest").mockResolvedValue(undefined);
+        vi.spyOn(api, "follow").mockRejectedValue(new Error("remote unavailable"));
+        const user = userEvent.setup();
+        render(<FollowRequestsPage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        await user.click(await screen.findByRole("button", { name: "承認してフォローバック" }));
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "承認してフォローバック" }));
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("リクエストは承認しましたが、フォローバックに失敗しました: remote unavailable");
         expect(screen.queryByText("@bob")).not.toBeInTheDocument();
     });
 
@@ -101,6 +139,9 @@ describe("social inbox mutations", () => {
 
         await user.click(await screen.findByRole("button", { name: "拒否" }));
 
+        expect(decide).not.toHaveBeenCalled();
+        const dialog = screen.getByRole("dialog", { name: "フォローリクエストを拒否しますか？" });
+        await user.click(within(dialog).getByRole("button", { name: "拒否" }));
         expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "rejected");
     });
 
@@ -118,6 +159,34 @@ describe("social inbox mutations", () => {
         await user.click(within(dialog).getByRole("button", { name: "拒否してブロック" }));
         expect(decide).toHaveBeenCalledWith("csrf", "alice", "bob", "rejected_and_blocked");
         expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+    });
+
+    it("shows follow request actions in a bottom drawer on mobile", async () => {
+        vi.stubGlobal(
+            "matchMedia",
+            vi.fn((query: string) => ({
+                matches: query === "(width < 64rem)",
+                media: query,
+                onchange: null,
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            })),
+        );
+        const item = { id: "follow-mobile", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
+        vi.spyOn(api, "followRequests").mockResolvedValue([item]);
+        vi.spyOn(api, "decideFollowRequest").mockResolvedValue(undefined);
+        const user = userEvent.setup();
+        render(<FollowRequestsPage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        await user.click(await screen.findByRole("button", { name: "Bobへの対応" }));
+
+        const drawer = screen.getByRole("dialog", { name: "Bobへの対応の選択" });
+        expect(drawer).toHaveAttribute("data-drawer", "bottom");
+        await user.click(within(drawer).getByRole("option", { name: /承認してフォローバック/ }));
+        expect(await screen.findByRole("dialog", { name: "承認してフォローバックしますか？" })).toHaveAttribute("data-drawer", "bottom");
     });
 
     it("renders empty and error states without losing the page controls", async () => {
