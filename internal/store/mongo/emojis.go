@@ -26,6 +26,7 @@ type emojiRecord struct {
 	OriginalURL     string     `bson:"originalUrl"`
 	PublicURL       string     `bson:"publicUrl"`
 	MediaType       string     `bson:"mediaType,omitempty"`
+	MediaID         string     `bson:"mediaId,omitempty"`
 	RemoteUpdatedAt *time.Time `bson:"remoteUpdatedAt,omitempty"`
 	CreatedAt       time.Time  `bson:"createdAt"`
 	UpdatedAt       time.Time  `bson:"updatedAt"`
@@ -77,7 +78,7 @@ func (r *EmojiRepository) UpdateLocal(ctx context.Context, id string, emoji emoj
 	}
 	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": id, "host": ""}, bson.M{"$set": bson.M{
 		"name": emoji.Name, "uri": emoji.URI, "originalUrl": emoji.OriginalURL,
-		"publicUrl": emoji.PublicURL, "mediaType": emoji.MediaType, "updatedAt": time.Now().UTC(),
+		"publicUrl": emoji.PublicURL, "mediaType": emoji.MediaType, "mediaId": emoji.MediaID, "updatedAt": time.Now().UTC(),
 	}})
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
@@ -259,7 +260,7 @@ func (r *EmojiRepository) findOne(ctx context.Context, filter bson.M) (*emojis.E
 func toEmoji(doc emojiRecord) *emojis.Emoji {
 	return &emojis.Emoji{
 		ID: doc.ID, Host: doc.Host, Name: doc.Name, URI: doc.URI,
-		OriginalURL: doc.OriginalURL, PublicURL: doc.PublicURL, MediaType: doc.MediaType,
+		OriginalURL: doc.OriginalURL, PublicURL: doc.PublicURL, MediaType: doc.MediaType, MediaID: doc.MediaID,
 		RemoteUpdatedAt: doc.RemoteUpdatedAt, CreatedAt: doc.CreatedAt, UpdatedAt: doc.UpdatedAt,
 	}
 }
@@ -272,7 +273,7 @@ func fromEmoji(emoji emojis.Emoji) emojiRecord {
 	return emojiRecord{
 		ID: emoji.ID, Host: emoji.Host, Name: emoji.Name, URI: emoji.URI,
 		OriginalURL: emoji.OriginalURL, PublicURL: publicURL,
-		MediaType: emoji.MediaType, RemoteUpdatedAt: emoji.RemoteUpdatedAt,
+		MediaType: emoji.MediaType, MediaID: emoji.MediaID, RemoteUpdatedAt: emoji.RemoteUpdatedAt,
 		CreatedAt: emoji.CreatedAt, UpdatedAt: emoji.UpdatedAt,
 	}
 }

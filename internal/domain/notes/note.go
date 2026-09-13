@@ -49,6 +49,7 @@ type Emoji struct {
 }
 
 type Attachment struct {
+	MediaID   string
 	URI       string
 	Type      string
 	MediaType string

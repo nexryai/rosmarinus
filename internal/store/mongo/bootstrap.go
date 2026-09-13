@@ -399,10 +399,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Collection("media").Indexes().CreateMany(ctx, []mongo.IndexModel{
+	_, err = db.Collection("media_objects").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
-			Keys:    bson.D{{Key: "legacyIds", Value: 1}},
-			Options: options.Index().SetName("uniq_media_legacy_ids").SetUnique(true).SetSparse(true),
+			Keys:    bson.D{{Key: "objectKey", Value: 1}},
+			Options: options.Index().SetName("uniq_media_object_key").SetUnique(true),
 		},
 		{
 			Keys:    bson.D{{Key: "uploadKey", Value: 1}},

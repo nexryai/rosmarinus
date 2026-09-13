@@ -36,7 +36,6 @@ var actorReferences = []reference{
 	{collection: "blocks", field: "blockeeId"},
 	{collection: "notifications", field: "recipientActorId"},
 	{collection: "notifications", field: "sourceActorId"},
-	{collection: "media", field: "ownerActorId"},
 	{collection: "api_idempotency_receipts", field: "actorId"},
 	{collection: "ui_settings", field: "selectedActorId"},
 	{collection: "abuse_reports", field: "targetUserId"},

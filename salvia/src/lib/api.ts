@@ -121,14 +121,29 @@ export const api = {
     createPost: async (csrf: string, actorID: string, input: CreatePostInput, intentKey: string = crypto.randomUUID()): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/posts`, envelope(z.unknown()), { method: "POST", body: input, csrf, headers: { "Idempotency-Key": intentKey } });
     },
-    uploadImage: async (csrf: string, actorID: string, file: File, thumbnail: { blob: Blob; originalHeight: number; originalWidth: number }, intentKey: string): Promise<{ id: string; url: string; preview_url: string }> => {
-        const form = new FormData();
-        form.set("file", file, file.name);
-        form.set("thumbnail", thumbnail.blob, `${file.name}.thumbnail.webp`);
-        form.set("width", String(thumbnail.originalWidth));
-        form.set("height", String(thumbnail.originalHeight));
-        const result = await request(`/actors/${encodeURIComponent(actorID)}/media`, envelope(z.object({ id: z.string(), url: z.string(), preview_url: z.string() })), { method: "POST", body: form, csrf, headers: { "Idempotency-Key": intentKey } });
+    prepareMediaUpload: async (csrf: string, actorID: string, input: { name: string; content_type: string; size: number; sha256: string; width: number; height: number }, intentKey: string) => {
+        const result = await request(
+            `/actors/${encodeURIComponent(actorID)}/media`,
+            envelope(
+                z.object({
+                    id: z.string(),
+                    url: z.string(),
+                    state: z.string(),
+                    upload_url: z.string(),
+                    upload_headers: z.record(z.string(), z.string()),
+                    expires_at: z.string(),
+                }),
+            ),
+            { method: "POST", body: input, csrf, headers: { "Idempotency-Key": intentKey } },
+        );
         return result.data;
+    },
+    completeMediaUpload: async (csrf: string, actorID: string, mediaID: string): Promise<{ id: string; url: string }> => {
+        const result = await request(`/actors/${encodeURIComponent(actorID)}/media/${encodeURIComponent(mediaID)}/complete`, envelope(z.object({ id: z.string(), url: z.string() }).passthrough()), { method: "POST", csrf });
+        return result.data;
+    },
+    deleteMedia: async (csrf: string, actorID: string, mediaID: string): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/media/${encodeURIComponent(mediaID)}`, z.undefined(), { method: "DELETE", csrf });
     },
     deletePost: async (csrf: string, actorID: string, noteID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/posts/${encodeURIComponent(noteID)}`, envelope(z.unknown()), { method: "DELETE", csrf, idempotent: true });

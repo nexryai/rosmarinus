@@ -17,6 +17,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
@@ -291,6 +292,9 @@ func TestHandleAccountDeleteTaskCleansDeletedLocalActor(t *testing.T) {
 	cleanupRepo := &fakeAccountCleanupRepo{result: cleanup.Result{Notes: 2, Follows: 1}}
 	h := New(config.Config{}, nil, &fakeRepo{local: local}, &fakeNoteRepo{}, &fakeFollowRepo{}, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, &fakeQueue{}, &fakeClient{}, nil)
 	h.SetAccountCleanupRepository(cleanupRepo)
+	mediaRepo := &fakeMediaRepo{record: &domainmedia.Media{ID: "media-1", ObjectKey: "object-1", OwnerActorID: local.ID}}
+	mediaStorage := &fakeObjectStorage{}
+	h.SetMediaRepository(mediaRepo, nil, mediaStorage)
 	payload, err := json.Marshal(queue.AccountDeletePayload{Version: 1, ActorID: local.ID, ActorURI: local.URI, Local: true})
 	if err != nil {
 		t.Fatalf("Marshal returned error: %v", err)
@@ -300,6 +304,9 @@ func TestHandleAccountDeleteTaskCleansDeletedLocalActor(t *testing.T) {
 	}
 	if cleanupRepo.actorID != local.ID {
 		t.Fatalf("cleanup actor id = %q", cleanupRepo.actorID)
+	}
+	if !mediaStorage.deleted || mediaRepo.record != nil {
+		t.Fatalf("Actor media was not deleted: storage=%+v record=%+v", mediaStorage, mediaRepo.record)
 	}
 }
 

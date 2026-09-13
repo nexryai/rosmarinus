@@ -360,7 +360,7 @@ func (h *Handler) resolveLocalAttachments(ctx context.Context, actorID string, m
 			return nil, fmt.Errorf("media is not an image: %s", mediaID)
 		}
 		attachments = append(attachments, domainnotes.Attachment{
-			Type: "Image", MediaType: item.ContentType, URL: item.PublicURL,
+			MediaID: item.ID, Type: "Image", MediaType: item.ContentType, URL: item.PublicURL,
 			Name: item.Name, Width: item.Width, Height: item.Height, Sensitive: sensitive,
 		})
 	}
@@ -481,6 +481,24 @@ func (h *Handler) DeletePost(ctx context.Context, command connector.PostDeleteCo
 	}
 	if err := h.cleanupNote(ctx, note.ID); err != nil {
 		return connector.PostDeleted{}, err
+	}
+	for _, attachment := range note.Attachments {
+		if attachment.MediaID == "" || h.mediaStorage == nil {
+			continue
+		}
+		mediaRecord, err := h.media.FindByID(ctx, attachment.MediaID)
+		if err != nil {
+			return connector.PostDeleted{}, err
+		}
+		if mediaRecord == nil {
+			continue
+		}
+		if err := h.mediaStorage.Delete(ctx, mediaRecord.ObjectKey); err != nil {
+			return connector.PostDeleted{}, fmt.Errorf("delete note media object: %w", err)
+		}
+		if err := h.media.Delete(ctx, mediaRecord.ID); err != nil {
+			return connector.PostDeleted{}, fmt.Errorf("delete note media metadata: %w", err)
+		}
 	}
 	activity := apnotes.RenderDelete(note, deletedAt)
 	if renoteTarget != nil {

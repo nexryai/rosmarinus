@@ -67,20 +67,15 @@ describe("Rosmarinus API client", () => {
         expect(listener).toHaveBeenCalledOnce();
     });
 
-    it("uploads the untouched original and Canvas thumbnail as multipart data", async () => {
-        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ version: 1, data: { id: "media-1", url: "/media/1", preview_url: "/media/thumb" } }));
+    it("prepares an object-storage upload with validated metadata", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ version: 1, data: { id: "media-1", url: "https://objects.test/one", state: "pending", upload_url: "https://s3.test/one", upload_headers: { "Content-Type": "image/png" }, expires_at: "2026-09-14T00:00:00Z" } }));
         vi.stubGlobal("fetch", fetchMock);
-        const file = new File(["original"], "photo.png", { type: "image/png" });
-        const thumbnail = { blob: new Blob(["thumbnail"], { type: "image/webp" }), originalHeight: 800, originalWidth: 1600 };
 
-        await api.uploadImage("csrf", "actor-1", file, thumbnail, "upload-intent-123456");
+        await api.prepareMediaUpload("csrf", "actor-1", { name: "photo.png", content_type: "image/png", size: 8, sha256: "a".repeat(64), width: 1600, height: 800 }, "upload-intent-123456");
 
         const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-        const form = init.body as FormData;
-        expect(new Headers(init.headers).has("Content-Type")).toBe(false);
-        expect(form.get("file")).toMatchObject({ name: "photo.png", size: file.size, type: "image/png" });
-        expect(form.get("thumbnail")).toBeInstanceOf(File);
-        expect(form.get("width")).toBe("1600");
+        expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+        expect(JSON.parse(String(init.body))).toMatchObject({ name: "photo.png", width: 1600, sha256: "a".repeat(64) });
         expect(new Headers(init.headers).get("Idempotency-Key")).toBe("upload-intent-123456");
     });
 

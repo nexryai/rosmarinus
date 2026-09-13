@@ -3,12 +3,14 @@ import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, use
 import { IconDownload, IconMoodSmile, IconPencil, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
 
 import { CustomEmoji } from "../components/EmojiText";
+import { ImageFileInput } from "../components/ImageFileInput";
 import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import { createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { ManagedEmoji } from "../lib/schema";
+import { uploadImage } from "../lib/uploader";
 
 type Scope = "local" | "remote";
 
@@ -175,15 +177,18 @@ function EmojiEditor({ actorID, csrf, emoji, onClose, onSaved }: { actorID: stri
         setBusy(true);
         setError("");
         let thumbnail: Awaited<ReturnType<typeof createCanvasThumbnail>> | null = null;
+        let mediaID = "";
+        let committed = false;
         try {
-            let mediaID = "";
             if (file) {
                 thumbnail = await createCanvasThumbnail(file);
-                mediaID = (await api.uploadImage(csrf, actorID, file, thumbnail, crypto.randomUUID())).id;
+                mediaID = (await uploadImage(csrf, actorID, file, { width: thumbnail.originalWidth, height: thumbnail.originalHeight })).id;
             }
             const saved = emoji ? await api.updateEmoji(csrf, actorID, emoji.id, name.trim(), mediaID) : await api.createEmoji(csrf, actorID, name.trim(), mediaID);
+            committed = true;
             onSaved(saved);
         } catch (reason) {
+            if (mediaID && !committed) await api.deleteMedia(csrf, actorID, mediaID).catch(() => undefined);
             setError(reason instanceof Error ? reason.message : "絵文字を保存できませんでした");
         } finally {
             revokeCanvasThumbnail(thumbnail);
@@ -199,9 +204,9 @@ function EmojiEditor({ actorID, csrf, emoji, onClose, onSaved }: { actorID: stri
                     <span>名前</span>
                     <input autoCapitalize="none" autoComplete="off" className={rules.input} maxLength={100} onChange={(event) => setName(event.target.value)} pattern="[A-Za-z0-9_]+" required spellCheck={false} style={styles.input} value={name} />
                 </label>
-                <label style={styles.label}>
+                <label htmlFor="emoji-image" style={styles.label}>
                     <span>{emoji ? "画像（変更する場合のみ）" : "画像"}</span>
-                    <input accept="image/jpeg,image/png,image/gif,image/webp" disabled={busy} onChange={(event) => setFile(event.target.files?.[0])} required={!emoji} type="file" />
+                    <ImageFileInput disabled={busy} id="emoji-image" onSelect={(files) => setFile(files[0])} required={!emoji} resetAfterSelect={false} />
                 </label>
                 <footer style={styles.editorActions}>
                     <Button disabled={busy} onClick={onClose} type="button" variant="ghost">

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +12,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
 	"github.com/nexryai/rosmarinus/internal/settings"
@@ -51,7 +51,9 @@ type AccountLookup interface {
 }
 
 type MediaUploadStore interface {
-	CreateLocal(context.Context, string, string, string, string, string, int64, string, int, int, io.Reader) (*domainmedia.Media, error)
+	Prepare(context.Context, string, string, string, string, int64, string, int, int) (*domainmedia.Media, objectstorage.PresignedUpload, error)
+	Complete(context.Context, string, string) (*domainmedia.Media, error)
+	Delete(context.Context, string, string) error
 }
 
 type RemoteProfileResolver interface {
@@ -352,10 +354,6 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 }
 
 func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
-	if len(segments) != 0 || r.Method != http.MethodPost {
-		h.methodOrNotFound(w, r, http.MethodPost, len(segments) == 0)
-		return
-	}
 	if h.mediaUploads == nil || h.mediaMaxBytes <= 0 || h.instance.URL == "" {
 		h.internalError(w, r, fmt.Errorf("media upload service is not configured"))
 		return
@@ -363,94 +361,83 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request, accountID,
 	if _, ok := h.authorizeActor(w, r, accountID, actorID, false); !ok {
 		return
 	}
+	if len(segments) == 2 && segments[1] == "complete" && r.Method == http.MethodPost {
+		h.completeMediaUpload(w, r, actorID, segments[0])
+		return
+	}
+	if len(segments) == 1 && r.Method == http.MethodDelete {
+		if err := h.mediaUploads.Delete(r.Context(), actorID, segments[0]); err != nil {
+			if errors.Is(err, domainmedia.ErrNotFound) {
+				h.writeError(w, http.StatusNotFound, "media_not_found", "media was not found")
+			} else {
+				h.internalError(w, r, fmt.Errorf("delete media: %w", err))
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if len(segments) != 0 || r.Method != http.MethodPost {
+		h.methodOrNotFound(w, r, http.MethodPost, len(segments) == 0)
+		return
+	}
 	requestID := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if len(requestID) < 16 || len(requestID) > 200 {
 		h.writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key must contain 16 to 200 characters")
 		return
 	}
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "multipart/form-data" {
-		h.writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be multipart/form-data")
+	var input struct {
+		Name        string `json:"name"`
+		ContentType string `json:"content_type"`
+		SHA256      string `json:"sha256"`
+		Size        int64  `json:"size"`
+		Width       int    `json:"width"`
+		Height      int    `json:"height"`
+	}
+	if !h.decodeJSON(w, r, &input, false) {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, h.mediaMaxBytes*2+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid_upload", "multipart upload is malformed or too large")
+	if strings.TrimSpace(input.Name) == "" || len(input.Name) > 255 || input.Size < 1 || input.Size > h.mediaMaxBytes || input.Width < 1 || input.Height < 1 || input.Width > 65535 || input.Height > 65535 {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_media_metadata", "media size or dimensions are invalid")
 		return
 	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	width, height, ok := h.uploadDimensions(w, r)
-	if !ok {
+	if !allowedUploadedImage(input.ContentType) || !regexp.MustCompile(`^[a-fA-F0-9]{64}$`).MatchString(input.SHA256) {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_media_metadata", "media type or SHA-256 is invalid")
 		return
 	}
-	original, ok := h.storeUploadPart(w, r, actorID, requestID, "file", "original", width, height)
-	if !ok {
+	record, upload, err := h.mediaUploads.Prepare(r.Context(), accountScopedMediaKey(actorID, requestID, "object"), actorID, input.Name, input.ContentType, input.Size, input.SHA256, input.Width, input.Height)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("prepare media upload: %w", err))
 		return
 	}
-	thumbnail, ok := h.storeUploadPart(w, r, actorID, requestID, "thumbnail", "thumbnail", 0, 0)
-	if !ok {
-		return
+	headers := map[string]string{}
+	for name, values := range upload.Headers {
+		if len(values) > 0 {
+			headers[name] = values[0]
+		}
 	}
 	h.writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
-		"id": original.ID, "url": original.PublicURL, "preview_url": thumbnail.PublicURL,
-		"name": original.Name, "media_type": original.ContentType, "size": original.Size,
-		"width": width, "height": height,
+		"id": record.ID, "url": record.PublicURL, "state": record.State,
+		"upload_url": upload.URL, "upload_headers": headers, "expires_at": upload.ExpiresAt,
 	}})
 }
 
-func (h *Handler) uploadDimensions(w http.ResponseWriter, r *http.Request) (int, int, bool) {
-	width, widthErr := strconv.Atoi(r.FormValue("width"))
-	height, heightErr := strconv.Atoi(r.FormValue("height"))
-	if widthErr != nil || heightErr != nil || width < 1 || height < 1 || width > 65535 || height > 65535 {
-		h.writeError(w, http.StatusUnprocessableEntity, "invalid_dimensions", "width and height must be integers from 1 to 65535")
-		return 0, 0, false
-	}
-	return width, height, true
-}
-
-func (h *Handler) storeUploadPart(w http.ResponseWriter, r *http.Request, actorID, requestID, field, suffix string, width, height int) (*domainmedia.Media, bool) {
-	file, header, err := r.FormFile(field)
+func (h *Handler) completeMediaUpload(w http.ResponseWriter, r *http.Request, actorID, id string) {
+	record, err := h.mediaUploads.Complete(r.Context(), actorID, id)
 	if err != nil {
-		h.writeError(w, http.StatusUnprocessableEntity, "missing_upload_part", field+" is required")
-		return nil, false
+		if errors.Is(err, domainmedia.ErrNotFound) {
+			h.writeError(w, http.StatusNotFound, "media_not_found", "media was not found")
+		} else if errors.Is(err, domainmedia.ErrInvalidObject) {
+			h.writeError(w, http.StatusUnprocessableEntity, "invalid_uploaded_object", "uploaded object does not match the reserved image")
+		} else {
+			h.internalError(w, r, fmt.Errorf("complete media upload: %w", err))
+		}
+		return
 	}
-	defer file.Close()
-	hash := sha256.New()
-	size, err := io.Copy(hash, io.LimitReader(file, h.mediaMaxBytes+1))
-	if err != nil || size < 1 || size > h.mediaMaxBytes {
-		h.writeError(w, http.StatusUnprocessableEntity, "invalid_upload_size", "uploaded image is empty or too large")
-		return nil, false
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		h.internalError(w, r, fmt.Errorf("rewind upload: %w", err))
-		return nil, false
-	}
-	buffer := make([]byte, 512)
-	n, err := io.ReadFull(file, buffer)
-	if err != nil && err != io.ErrUnexpectedEOF {
-		h.writeError(w, http.StatusUnprocessableEntity, "invalid_image", "uploaded image cannot be read")
-		return nil, false
-	}
-	contentType := http.DetectContentType(buffer[:n])
-	if !allowedUploadedImage(contentType) || (field == "thumbnail" && contentType != "image/webp") {
-		h.writeError(w, http.StatusUnprocessableEntity, "invalid_image_type", "only supported image uploads are accepted; thumbnails must be WebP")
-		return nil, false
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		h.internalError(w, r, fmt.Errorf("rewind upload: %w", err))
-		return nil, false
-	}
-	uploadKey := accountScopedMediaKey(actorID, requestID, suffix)
-	publicBaseURL := strings.TrimRight(h.instance.URL, "/") + "/media"
-	name := filepath.Base(header.Filename)
-	stored, err := h.mediaUploads.CreateLocal(r.Context(), uploadKey, actorID, name, publicBaseURL, contentType, size, hex.EncodeToString(hash.Sum(nil)), width, height, file)
-	if err != nil {
-		h.internalError(w, r, fmt.Errorf("store %s upload: %w", suffix, err))
-		return nil, false
-	}
-	return stored, true
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
+		"id": record.ID, "url": record.PublicURL, "name": record.Name, "media_type": record.ContentType,
+		"size": record.Size, "width": record.Width, "height": record.Height,
+	}})
 }
 
 func allowedUploadedImage(contentType string) bool {

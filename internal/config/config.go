@@ -57,6 +57,14 @@ type Config struct {
 	MediaMaxBytes               int64
 	MediaFetchTimeout           time.Duration
 	MediaAllowedPrivateNetworks []string
+	ObjectStorageEndpoint       string
+	ObjectStorageRegion         string
+	ObjectStorageBucket         string
+	ObjectStorageAccessKeyID    string
+	ObjectStorageSecretKey      string
+	ObjectStoragePublicURL      string
+	ObjectStoragePathStyle      bool
+	ObjectStoragePresignTTL     time.Duration
 	InstanceMetadataTimeout     time.Duration
 }
 
@@ -117,6 +125,13 @@ func Load(lookup LookupFunc) (Config, error) {
 		MediaMaxBytes:               getInt64(lookup, "MEDIA_MAX_BYTES", 20*1024*1024),
 		MediaFetchTimeout:           getDuration(lookup, "MEDIA_FETCH_TIMEOUT", time.Minute),
 		MediaAllowedPrivateNetworks: splitCSV(get(lookup, "MEDIA_ALLOWED_PRIVATE_NETWORKS", "")),
+		ObjectStorageEndpoint:       get(lookup, "OBJECT_STORAGE_ENDPOINT", "http://localhost:9000"),
+		ObjectStorageRegion:         get(lookup, "OBJECT_STORAGE_REGION", "us-east-1"),
+		ObjectStorageBucket:         get(lookup, "OBJECT_STORAGE_BUCKET", "rosmarinus"),
+		ObjectStorageAccessKeyID:    get(lookup, "OBJECT_STORAGE_ACCESS_KEY_ID", ""),
+		ObjectStorageSecretKey:      get(lookup, "OBJECT_STORAGE_SECRET_ACCESS_KEY", ""),
+		ObjectStoragePublicURL:      get(lookup, "OBJECT_STORAGE_PUBLIC_URL", "http://localhost:9000/rosmarinus"),
+		ObjectStoragePresignTTL:     getDuration(lookup, "OBJECT_STORAGE_PRESIGN_TTL", 15*time.Minute),
 		InstanceMetadataTimeout:     getDuration(lookup, "INSTANCE_METADATA_TIMEOUT", 30*time.Second),
 	}
 
@@ -130,6 +145,10 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	cfg.RunWorkers, err = parseBool(get(lookup, "RUN_WORKERS", "true"), "RUN_WORKERS")
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.ObjectStoragePathStyle, err = parseBool(get(lookup, "OBJECT_STORAGE_PATH_STYLE", "true"), "OBJECT_STORAGE_PATH_STYLE")
 	if err != nil {
 		return Config{}, err
 	}
@@ -244,6 +263,25 @@ func (c Config) Validate() error {
 	}
 	if c.MediaMaxBytes <= 0 || c.MediaFetchTimeout <= 0 {
 		return fmt.Errorf("media max bytes and fetch timeout must be positive")
+	}
+	if strings.TrimSpace(c.ObjectStorageRegion) == "" || strings.TrimSpace(c.ObjectStorageBucket) == "" || strings.TrimSpace(c.ObjectStoragePublicURL) == "" {
+		return fmt.Errorf("OBJECT_STORAGE_REGION, OBJECT_STORAGE_BUCKET, and OBJECT_STORAGE_PUBLIC_URL must not be empty")
+	}
+	storageURL, err := url.Parse(c.ObjectStoragePublicURL)
+	if err != nil || storageURL.Scheme == "" || storageURL.Host == "" || (storageURL.Scheme != "http" && storageURL.Scheme != "https") {
+		return fmt.Errorf("OBJECT_STORAGE_PUBLIC_URL must be an absolute HTTP(S) URL")
+	}
+	if c.ObjectStorageEndpoint != "" {
+		endpointURL, err := url.Parse(c.ObjectStorageEndpoint)
+		if err != nil || endpointURL.Scheme == "" || endpointURL.Host == "" || (endpointURL.Scheme != "http" && endpointURL.Scheme != "https") {
+			return fmt.Errorf("OBJECT_STORAGE_ENDPOINT must be an absolute HTTP(S) URL")
+		}
+	}
+	if (c.ObjectStorageAccessKeyID == "") != (c.ObjectStorageSecretKey == "") {
+		return fmt.Errorf("OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY must be set together")
+	}
+	if c.ObjectStoragePresignTTL <= 0 {
+		return fmt.Errorf("OBJECT_STORAGE_PRESIGN_TTL must be positive")
 	}
 	if c.InstanceMetadataTimeout <= 0 {
 		return fmt.Errorf("INSTANCE_METADATA_TIMEOUT must be positive")

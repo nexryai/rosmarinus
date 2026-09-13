@@ -201,9 +201,8 @@ Pub/Sub message arriving.
       resolution into the profile follow/unfollow flow.
 - [x] Add local custom-emoji create/edit/delete management plus searchable
       observed-remote browsing and server-side media import.
-- [x] Generate image upload previews and thumbnails with Canvas, test
-      orientation and size handling, and keep the original file available when
-      the upload contract requires it.
+- [x] Generate image previews with Canvas, test orientation and size handling,
+      and upload originals through the shared signed-URL object-storage flow.
 - [x] Add focused accessibility and interaction tests for every mutation and
       its loading, retry, empty, and error states.
 

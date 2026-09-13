@@ -31,6 +31,7 @@ import (
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	"github.com/nexryai/rosmarinus/internal/ratelimit"
 	"github.com/nexryai/rosmarinus/internal/realtime"
@@ -125,6 +126,20 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
 	mediaRepo := mongostore.NewMediaRepository(mongoDB)
+	mediaStorage, err := objectstorage.New(ctx, objectstorage.Config{
+		Endpoint: cfg.ObjectStorageEndpoint, Region: cfg.ObjectStorageRegion, Bucket: cfg.ObjectStorageBucket,
+		AccessKeyID: cfg.ObjectStorageAccessKeyID, SecretAccessKey: cfg.ObjectStorageSecretKey,
+		PublicURL: cfg.ObjectStoragePublicURL, PathStyle: cfg.ObjectStoragePathStyle, PresignTTL: cfg.ObjectStoragePresignTTL,
+	})
+	if err != nil {
+		_ = mongoClient.Disconnect(context.Background())
+		return nil, err
+	}
+	if err := mediaStorage.Check(ctx); err != nil {
+		_ = mongoClient.Disconnect(context.Background())
+		return nil, err
+	}
+	mediaUploads := mediafetch.NewUploadService(mediaRepo, mediaStorage)
 	instanceRepo := mongostore.NewInstanceRepository(mongoDB)
 	accountCleanupRepo := mongostore.NewAccountCleanupRepository(mongoDB)
 	reportRepo := mongostore.NewReportRepository(mongoDB)
@@ -182,7 +197,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetEmojiRepository(emojiRepo)
 	apWorker.SetPollRepository(pollRepo)
 	mediaFetcher := mediafetch.NewWithAllowedNetworks(cfg.MediaMaxBytes, cfg.MediaFetchTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil)
-	apWorker.SetMediaRepository(mediaRepo, mediaFetcher)
+	apWorker.SetMediaRepository(mediaRepo, mediaFetcher, mediaStorage)
 	apWorker.SetInstanceRepository(cachedInstanceRepo, instancemetadata.New(cfg.InstanceMetadataTimeout, cfg.UserAgent, cfg.MediaAllowedPrivateNetworks, nil))
 	apWorker.SetWebFingerResolver(cache.NewCachedWebFinger(apwebfinger.New(nil, cfg.UserAgent), valueCache))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
@@ -207,11 +222,11 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	}
 	authLimiter := ratelimit.NewRedisLimiter(redisClient)
 	authAPI := api.NewAuthHandlerWithRateLimit(passkeys, sessionManager, accountRepo, authLimiter, cfg.AuthRateLimit, cfg.AuthRateWindow, logger)
-	emojiAdmin := emojiadmin.New(emojiRepo, mediaRepo, mediaFetcher, cfg.PublicURL, logger)
+	emojiAdmin := emojiadmin.New(emojiRepo, mediaUploads, mediaFetcher, cfg.PublicURL, logger)
 	applicationAPI := api.NewHandlerCompleteWithEmojiAdmin(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
 		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
-		mediaRepo, apWorker, emojiAdmin, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
+		mediaUploads, apWorker, emojiAdmin, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
 	)
 
 	return &App{

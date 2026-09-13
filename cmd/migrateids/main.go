@@ -36,7 +36,6 @@ type migrationPlan struct {
 	accounts map[string]idMapping
 	actors   map[string]idMapping
 	notes    map[string]idMapping
-	media    map[string]idMapping
 	ids      map[string]map[string]idMapping
 }
 
@@ -61,7 +60,6 @@ var actorRefs = []fieldRef{
 	{"blocks", "blockeeId"},
 	{"notifications", "recipientActorId"},
 	{"notifications", "sourceActorId"},
-	{"media", "ownerActorId"},
 	{"api_idempotency_receipts", "actorId"},
 	{"ui_settings", "selectedActorId"},
 	{"actor_settings", "_id"},
@@ -83,8 +81,8 @@ var noteRefs = []fieldRef{
 var knownCollections = []string{
 	"accounts", "actors", "notes", "polls", "poll_votes", "reactions", "emojis", "blocks",
 	"abuse_reports", "follows", "api_idempotency_receipts", "inbox_activity_receipts",
-	"notifications", "media", "instances", "sessions", "webauthn_challenges", "ui_settings",
-	"actor_settings", "migration_audits", "media_fs.files", "media_fs.chunks",
+	"notifications", "instances", "sessions", "webauthn_challenges", "ui_settings",
+	"actor_settings", "migration_audits",
 }
 
 func main() {
@@ -145,12 +143,7 @@ func buildPlan(ctx context.Context, db *mongo.Database) (*migrationPlan, error) 
 	if plan.notes, err = buildIdentityMappings(ctx, db, "notes", noteRefs); err != nil {
 		return nil, err
 	}
-	mediaRefs := []fieldRef{{"media_fs.files", "_id"}, {"media_fs.chunks", "files_id"}}
-	if plan.media, err = buildIdentityMappings(ctx, db, "media", mediaRefs); err != nil {
-		return nil, err
-	}
-
-	sharedIDs := map[string]bool{"accounts": true, "actors": true, "notes": true, "media": true, "ui_settings": true, "actor_settings": true, "media_fs.files": true}
+	sharedIDs := map[string]bool{"accounts": true, "actors": true, "notes": true, "ui_settings": true, "actor_settings": true}
 	for _, collection := range knownCollections {
 		if sharedIDs[collection] {
 			continue
@@ -272,10 +265,6 @@ func applyPlan(ctx context.Context, client *mongo.Client, db *mongo.Database, pl
 				return nil, err
 			}
 		}
-		if err := rewriteReferences(tx, db, plan.media, []fieldRef{{"media_fs.chunks", "files_id"}}); err != nil {
-			return nil, err
-		}
-
 		if err := rekeyCollection(tx, db.Collection("accounts"), plan.accounts, false); err != nil {
 			return nil, err
 		}
@@ -285,19 +274,12 @@ func applyPlan(ctx context.Context, client *mongo.Client, db *mongo.Database, pl
 		if err := rekeyCollection(tx, db.Collection("notes"), plan.notes, true); err != nil {
 			return nil, err
 		}
-		if err := rekeyCollection(tx, db.Collection("media"), plan.media, true); err != nil {
-			return nil, err
-		}
 		if err := rekeyCollection(tx, db.Collection("ui_settings"), plan.accounts, false); err != nil {
 			return nil, err
 		}
 		if err := rekeyCollection(tx, db.Collection("actor_settings"), plan.actors, false); err != nil {
 			return nil, err
 		}
-		if err := rekeyCollection(tx, db.Collection("media_fs.files"), plan.media, false); err != nil {
-			return nil, err
-		}
-
 		if err := backfillPolls(tx, db, plan); err != nil {
 			return nil, err
 		}
@@ -604,7 +586,6 @@ func verify(ctx context.Context, db *mongo.Database) error {
 
 func verifyReferences(ctx context.Context, db *mongo.Database, requireAll bool) error {
 	refs := append(append(append([]fieldRef{}, accountRefs...), actorRefs...), noteRefs...)
-	refs = append(refs, fieldRef{"media_fs.chunks", "files_id"})
 	for _, ref := range refs {
 		if ref.field == "_id" {
 			continue
@@ -726,7 +707,7 @@ func isNamespaceNotFound(err error) bool {
 }
 
 func (p *migrationPlan) count() int {
-	total := len(p.accounts) + len(p.actors) + len(p.notes) + len(p.media)
+	total := len(p.accounts) + len(p.actors) + len(p.notes)
 	for _, mappings := range p.ids {
 		total += len(mappings)
 	}

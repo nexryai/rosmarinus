@@ -19,6 +19,7 @@ type Emoji struct {
 	OriginalURL     string
 	PublicURL       string
 	MediaType       string
+	MediaID         string
 	RemoteUpdatedAt *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time

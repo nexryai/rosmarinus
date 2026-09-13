@@ -25,7 +25,7 @@ const rosmarinusCollections = [
   "follow_requests",
   "blocks",
   "emojis",
-  "media",
+  "media_objects",
   "instances",
   "abuse_reports",
   "notifications",
@@ -35,8 +35,6 @@ const rosmarinusCollections = [
 
 const rosmarinusInternalCollections = [
   "inbox_activity_receipts",
-  "media_fs.files",
-  "media_fs.chunks",
 ];
 
 const writeActions = [
@@ -59,8 +57,7 @@ applicationDB.createRole({
     })),
     ...rosmarinusInternalCollections.map((collection) => ({
       resource: { db: databaseName, collection },
-      // GridFS checks existing indexes before the first upload in each process.
-      actions: collection.startsWith("media_fs.") ? [...writeActions, "listIndexes"] : writeActions,
+      actions: writeActions,
     })),
   ],
   roles: [],

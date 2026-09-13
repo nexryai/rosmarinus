@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +17,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 )
 
 type fakeAuthenticator struct {
@@ -42,15 +41,23 @@ type fakeMediaUploadStore struct {
 	items []*domainmedia.Media
 }
 
-func (s *fakeMediaUploadStore) CreateLocal(_ context.Context, _ string, actorID, name, publicBaseURL, contentType string, size int64, digest string, width, height int, source io.Reader) (*domainmedia.Media, error) {
-	if _, err := io.Copy(io.Discard, source); err != nil {
-		return nil, err
-	}
+func (s *fakeMediaUploadStore) Prepare(_ context.Context, _ string, actorID, name, contentType string, size int64, digest string, width, height int) (*domainmedia.Media, objectstorage.PresignedUpload, error) {
 	id := fmt.Sprintf("%024x", len(s.items)+1)
-	item := &domainmedia.Media{ID: id, OwnerActorID: actorID, Name: name, PublicURL: strings.TrimRight(publicBaseURL, "/") + "/" + id, ContentType: contentType, Size: size, SHA256: digest, Width: width, Height: height, State: domainmedia.StateReady}
+	item := &domainmedia.Media{ID: id, OwnerActorID: actorID, Name: name, PublicURL: "https://objects.test/" + id, ContentType: contentType, Size: size, SHA256: digest, Width: width, Height: height, State: domainmedia.StatePending}
 	s.items = append(s.items, item)
-	return item, nil
+	return item, objectstorage.PresignedUpload{URL: "https://s3.test/upload", Headers: http.Header{"Content-Type": {contentType}}, ExpiresAt: time.Now()}, nil
 }
+
+func (s *fakeMediaUploadStore) Complete(_ context.Context, actorID, id string) (*domainmedia.Media, error) {
+	for _, item := range s.items {
+		if item.ID == id && item.OwnerActorID == actorID {
+			item.State = domainmedia.StateReady
+			return item, nil
+		}
+	}
+	return nil, errors.New("not found")
+}
+func (s *fakeMediaUploadStore) Delete(_ context.Context, actorID, id string) error { return nil }
 
 type fakeAccountLookup struct {
 	value *account.Account
@@ -446,7 +453,7 @@ func TestHandlerDoesNotExposeInternalErrors(t *testing.T) {
 	}
 }
 
-func TestHandlerStoresOriginalAndBrowserGeneratedThumbnail(t *testing.T) {
+func TestHandlerPreparesDirectObjectStorageUpload(t *testing.T) {
 	_, executor, actorsStore := testHandler()
 	uploads := &fakeMediaUploadStore{}
 	handler := NewHandlerCompleteWithMedia(
@@ -455,25 +462,8 @@ func TestHandlerStoresOriginalAndBrowserGeneratedThumbnail(t *testing.T) {
 		NewInstanceInfo("Rosmarinus", "https://example.test", "test"), nil, nil,
 		uploads, 1<<20, nil, nil, time.Hour,
 	)
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	original, err := writer.CreateFormFile("file", "photo.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = original.Write([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR"))
-	thumbnail, err := writer.CreateFormFile("thumbnail", "photo.thumbnail.webp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = thumbnail.Write([]byte("RIFF\x0c\x00\x00\x00WEBPVP8 "))
-	_ = writer.WriteField("width", "1600")
-	_ = writer.WriteField("height", "800")
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/actors/actor-1/media", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/actors/actor-1/media", strings.NewReader(`{"name":"photo.png","content_type":"image/png","size":16,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","width":1600,"height":800}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-CSRF-Token", "csrf-token")
 	req.Header.Set("Idempotency-Key", "upload-request-123456")
 	recorder := httptest.NewRecorder()
@@ -481,10 +471,10 @@ func TestHandlerStoresOriginalAndBrowserGeneratedThumbnail(t *testing.T) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if len(uploads.items) != 2 || uploads.items[0].OwnerActorID != "actor-1" || uploads.items[0].Width != 1600 || uploads.items[1].ContentType != "image/webp" {
+	if len(uploads.items) != 1 || uploads.items[0].OwnerActorID != "actor-1" || uploads.items[0].Width != 1600 {
 		t.Fatalf("uploads = %+v", uploads.items)
 	}
-	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"preview_url":"https://example.test/media/`)) {
+	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"upload_url":"https://s3.test/upload"`)) {
 		t.Fatalf("response = %s", recorder.Body.String())
 	}
 }

@@ -57,6 +57,7 @@ func (r *fakeEmojiRepository) FindLocalByName(_ context.Context, name string) (*
 type fakeMediaRepository struct {
 	items      map[string]domainmedia.Media
 	storedBody string
+	deletedID  string
 }
 
 func (r *fakeMediaRepository) FindByID(_ context.Context, id string) (*domainmedia.Media, error) {
@@ -67,10 +68,16 @@ func (r *fakeMediaRepository) FindByID(_ context.Context, id string) (*domainmed
 	return &value, nil
 }
 
-func (r *fakeMediaRepository) CreateLocal(_ context.Context, _, actorID, name, publicBaseURL, contentType string, size int64, digest string, _, _ int, source io.Reader) (*domainmedia.Media, error) {
+func (r *fakeMediaRepository) Store(_ context.Context, _, actorID, name, contentType string, size int64, digest string, _, _ int, source io.Reader) (*domainmedia.Media, error) {
 	body, _ := io.ReadAll(source)
 	r.storedBody = string(body)
-	return &domainmedia.Media{ID: "media-imported", OwnerActorID: actorID, Name: name, PublicURL: publicBaseURL + "/media-imported", ContentType: contentType, Size: size, SHA256: digest, State: domainmedia.StateReady}, nil
+	return &domainmedia.Media{ID: "media-imported", OwnerActorID: actorID, Name: name, PublicURL: "https://objects.test/media-imported", ContentType: contentType, Size: size, SHA256: digest, State: domainmedia.StateReady}, nil
+}
+
+func (r *fakeMediaRepository) Delete(_ context.Context, _ string, id string) error {
+	r.deletedID = id
+	delete(r.items, id)
+	return nil
 }
 
 type fakeFetcher struct {
@@ -110,6 +117,21 @@ func TestCreateFromMediaRegistersLocalActivityPubEmoji(t *testing.T) {
 	}
 }
 
+func TestDeleteRemovesManagedEmojiMedia(t *testing.T) {
+	repository := &fakeEmojiRepository{items: map[string]emojis.Emoji{"emoji-1": {ID: "emoji-1", Name: "rosemary", MediaID: "media-1"}}}
+	media := &fakeMediaRepository{items: map[string]domainmedia.Media{"media-1": {ID: "media-1", OwnerActorID: "actor-1"}}}
+	service := New(repository, media, nil, "https://local.test", log.New(io.Discard, "", 0))
+	if err := service.Delete(context.Background(), "emoji-1"); err != nil {
+		t.Fatal(err)
+	}
+	if media.deletedID != "media-1" {
+		t.Fatalf("deleted media = %q", media.deletedID)
+	}
+	if _, ok := repository.items["emoji-1"]; ok {
+		t.Fatal("emoji metadata was not deleted")
+	}
+}
+
 func TestImportRemoteCopiesValidatedBytesToLocalMedia(t *testing.T) {
 	repository := &fakeEmojiRepository{items: map[string]emojis.Emoji{
 		"remote-1": {ID: "remote-1", Host: "remote.test", Name: "party", OriginalURL: "https://remote.test/party.webp"},
@@ -125,7 +147,7 @@ func TestImportRemoteCopiesValidatedBytesToLocalMedia(t *testing.T) {
 	if fetcher.url != "https://remote.test/party.webp" || media.storedBody != "remote image" {
 		t.Fatalf("remote image was not copied: url=%q body=%q", fetcher.url, media.storedBody)
 	}
-	if created.Name != "party_here" || created.Host != "" || created.PublicURL != "https://local.test/media/media-imported" || created.URI != "https://local.test/emojis/party_here" {
+	if created.Name != "party_here" || created.Host != "" || created.PublicURL != "https://objects.test/media-imported" || created.URI != "https://local.test/emojis/party_here" {
 		t.Fatalf("unexpected imported emoji: %+v", created)
 	}
 }

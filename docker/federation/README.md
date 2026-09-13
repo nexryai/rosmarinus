@@ -63,17 +63,17 @@ The Go integration test performs this real federation sequence:
    metadata, tracks authenticated receive/successful delivery
    timestamps and status, and keeps per-instance relationship counts current.
 
-Rosmarinus stores validated remote media source URLs directly; it does not
-download, transform, or proxy images. Instance NodeInfo, root HTML, and manifest
+Rosmarinus copies validated remote images into its S3-compatible object store
+without transforming them. Instance NodeInfo, root HTML, and manifest
 discovery defaults to a 30-second operation timeout. The federation fixture's
 `MEDIA_ALLOWED_PRIVATE_NETWORKS` value explicitly allows its Docker-only
 ActivityPub, media, and metadata endpoints through Rosmarinus's shared
 private-network SSRF boundary. Production deployments should leave it empty.
 Override the metadata timeout with `INSTANCE_METADATA_TIMEOUT` when necessary.
 
-The fixture MongoDB service role grants `listIndexes` on `media_fs.files` and
-`media_fs.chunks`: the Go GridFS driver checks the bucket indexes on its first
-local upload. The local Salvia upload phase exercises this restricted role.
+The fixture includes MinIO and exposes its public bucket through
+`https://rosmarinus.test/objects/`. Phase 15 verifies that a backend PUT is
+publicly readable and federates as a local Note attachment.
 
 The workflow runs on relevant pull requests and pushes, weekly against latest
 Misskey, and manually with an optional branch, tag, or commit in `misskey_ref`.

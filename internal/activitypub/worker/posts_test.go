@@ -16,6 +16,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/queue"
@@ -352,6 +353,7 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	note, err := noteRepo.CreateLocalNote(context.Background(), domainnotes.Note{
 		ID: "note-to-delete", URI: "https://rosmarinus.example/notes/note-to-delete",
 		AuthorID: local.ID, AttributedTo: local.URI, Text: "obsolete", Visibility: domainnotes.VisibilityPublic,
+		Attachments: []domainnotes.Attachment{{MediaID: "media-1", Type: "Image", MediaType: "image/png", URL: "https://objects.example/object-1"}},
 	})
 	if err != nil {
 		t.Fatalf("CreateLocalNote returned error: %v", err)
@@ -366,6 +368,9 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 		&fakeRepo{local: local, remote: remote}, noteRepo, followRepo, &fakeBlockRepo{}, &fakeReactionRepo{}, &fakeReportRepo{}, q, &fakeClient{}, local)
 	cleanupRepo := &fakeAccountCleanupRepo{}
 	h.SetAccountCleanupRepository(cleanupRepo)
+	mediaRepo := &fakeMediaRepo{record: &domainmedia.Media{ID: "media-1", ObjectKey: "object-1", OwnerActorID: local.ID}}
+	mediaStorage := &fakeObjectStorage{}
+	h.SetMediaRepository(mediaRepo, nil, mediaStorage)
 	deleted, err := h.DeletePost(context.Background(), connector.PostDeleteCommand{ActorID: local.ID, NoteID: note.ID})
 	if err != nil {
 		t.Fatalf("DeletePost returned error: %v", err)
@@ -378,6 +383,9 @@ func TestDeletePostSoftDeletesAndDeliversTombstone(t *testing.T) {
 	}
 	if cleanupRepo.noteID != note.ID {
 		t.Fatalf("note dependencies were not cleaned: %+v", cleanupRepo)
+	}
+	if !mediaStorage.deleted || mediaRepo.record != nil {
+		t.Fatalf("note media was not deleted: storage=%+v record=%+v", mediaStorage, mediaRepo.record)
 	}
 	if len(q.tasks) != 1 {
 		t.Fatalf("delivery task count = %d", len(q.tasks))

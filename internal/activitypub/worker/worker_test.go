@@ -19,6 +19,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -290,28 +291,26 @@ func (f *fakeMediaRepo) FindByID(_ context.Context, id string) (*domainmedia.Med
 	return nil, nil
 }
 
-func (f *fakeMediaRepo) UpsertPending(_ context.Context, originalURL, publicURL string) (*domainmedia.Media, error) {
+func (f *fakeMediaRepo) ListByOwner(_ context.Context, actorID string) ([]domainmedia.Media, error) {
+	if f.record != nil && f.record.OwnerActorID == actorID {
+		return []domainmedia.Media{*f.record}, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeMediaRepo) CreatePendingLocal(context.Context, string, string, string, string, string, string, int64, string, int, int) (*domainmedia.Media, error) {
+	return nil, nil
+}
+
+func (f *fakeMediaRepo) UpsertPending(_ context.Context, originalURL, objectKey, publicURL string) (*domainmedia.Media, error) {
 	if f.record == nil {
 		const id = "507f1f77bcf86cd799439011"
 		f.record = &domainmedia.Media{
-			ID: id, OriginalURL: originalURL,
-			PublicURL: strings.TrimRight(publicURL, "/") + "/" + id, State: domainmedia.StatePending,
+			ID: id, ObjectKey: objectKey, OriginalURL: originalURL,
+			PublicURL: publicURL, State: domainmedia.StatePending,
 		}
 	}
 	return f.record, nil
-}
-
-func (f *fakeMediaRepo) StoreBlob(_ context.Context, _ string, source io.Reader, _ string, _ int64, _ string) error {
-	body, err := io.ReadAll(source)
-	if err != nil {
-		return err
-	}
-	f.body = bytes.Clone(body)
-	return nil
-}
-
-func (f *fakeMediaRepo) OpenBlob(_ context.Context, _ string) (io.ReadCloser, error) {
-	return io.NopCloser(bytes.NewReader(f.body)), nil
 }
 
 func (f *fakeMediaRepo) MarkReady(_ context.Context, id, contentType string, size int64, digest string) (*domainmedia.Media, error) {
@@ -332,6 +331,35 @@ func (f *fakeMediaRepo) MarkFailed(_ context.Context, id, message string) error 
 	}
 	return nil
 }
+
+func (f *fakeMediaRepo) Delete(_ context.Context, id string) error {
+	if f.record != nil && f.record.ID == id {
+		f.record = nil
+	}
+	return nil
+}
+
+type fakeObjectStorage struct {
+	body    []byte
+	deleted bool
+}
+
+func (s *fakeObjectStorage) Put(_ context.Context, _ string, source io.Reader, _ objectstorage.Object) error {
+	body, err := io.ReadAll(source)
+	s.body = bytes.Clone(body)
+	return err
+}
+func (s *fakeObjectStorage) Delete(context.Context, string) error { s.deleted = true; return nil }
+func (s *fakeObjectStorage) Stat(context.Context, string) (objectstorage.Object, error) {
+	return objectstorage.Object{}, nil
+}
+func (s *fakeObjectStorage) ReadPrefix(context.Context, string, int64) ([]byte, error) {
+	return bytes.Clone(s.body), nil
+}
+func (s *fakeObjectStorage) PresignPut(context.Context, string, objectstorage.Object) (objectstorage.PresignedUpload, error) {
+	return objectstorage.PresignedUpload{}, nil
+}
+func (s *fakeObjectStorage) PublicURL(key string) string { return "https://objects.example/" + key }
 
 type fakeMediaFetcher struct {
 	result mediafetch.Result
@@ -376,14 +404,15 @@ func (f *fakeQueue) Enqueue(ctx context.Context, task queue.Task) error {
 func TestScheduleAndFetchMedia(t *testing.T) {
 	repo := &fakeMediaRepo{}
 	queued := &fakeQueue{}
+	storage := &fakeObjectStorage{}
 	h := &Handler{
 		cfg: config.Config{PublicURL: "https://rosmarinus.example"}, queue: queued,
-		media: repo, mediaFetcher: fakeMediaFetcher{result: mediafetch.Result{Body: []byte("cached"), ContentType: "image/png"}},
+		media: repo, mediaStorage: storage, mediaFetcher: fakeMediaFetcher{result: mediafetch.Result{Body: []byte("cached"), ContentType: "image/png"}},
 	}
 	if err := h.ScheduleMedia(context.Background(), "https://remote.example/file.png"); err != nil {
 		t.Fatalf("ScheduleMedia returned error: %v", err)
 	}
-	if queued.task.Type != queue.TaskMedia || repo.record.PublicURL != "https://rosmarinus.example/media/"+repo.record.ID {
+	if queued.task.Type != queue.TaskMedia || !strings.HasPrefix(repo.record.PublicURL, "https://objects.example/") {
 		t.Fatalf("unexpected scheduled media: task=%+v media=%+v", queued.task, repo.record)
 	}
 	payload, err := json.Marshal(queued.task.Payload)
@@ -393,15 +422,15 @@ func TestScheduleAndFetchMedia(t *testing.T) {
 	if err := h.HandleMediaFetchTask(context.Background(), asynq.NewTask(queue.TaskMedia, payload)); err != nil {
 		t.Fatalf("HandleMediaFetchTask returned error: %v", err)
 	}
-	if repo.record.State != domainmedia.StateReady || string(repo.body) != "cached" || repo.record.SHA256 == "" {
-		t.Fatalf("media was not cached: record=%+v body=%q", repo.record, repo.body)
+	if repo.record.State != domainmedia.StateReady || string(storage.body) != "cached" || repo.record.SHA256 == "" {
+		t.Fatalf("media was not cached: record=%+v body=%q", repo.record, storage.body)
 	}
 }
 
 func TestScheduleMediaRejectsUnsafeURLAndSkipsReadyMedia(t *testing.T) {
 	repo := &fakeMediaRepo{}
 	queued := &fakeQueue{}
-	h := &Handler{cfg: config.Config{PublicURL: "https://rosmarinus.example"}, queue: queued, media: repo, mediaFetcher: fakeMediaFetcher{}}
+	h := &Handler{cfg: config.Config{PublicURL: "https://rosmarinus.example"}, queue: queued, media: repo, mediaStorage: &fakeObjectStorage{}, mediaFetcher: fakeMediaFetcher{}}
 	if err := h.ScheduleMedia(context.Background(), "https://127.0.0.1/file.png"); err == nil {
 		t.Fatal("unsafe URL was scheduled")
 	}

@@ -74,6 +74,11 @@ Rosmarinus does not process images or generate thumbnails. Do not introduce a
 backend image-transformation assumption into API clients; Canvas output is a
 browser-owned presentation or upload artifact.
 
+Send user-selected images directly to the configured S3-compatible object
+store with the signed URL returned by Rosmarinus. Use the shared uploader for
+reservation, SHA-256 calculation, `PUT`, completion, and cleanup; never expose
+storage credentials or treat a successful `PUT` as ready before completion.
+
 Use same-origin HTTPS for passkey ceremonies, the REST API, and SSE. Build the
 SPA into `internal/salvia/dist`, embed those assets in the Rosmarinus
 executable, and serve them from the Rosmarinus HTTP server. Client-side history

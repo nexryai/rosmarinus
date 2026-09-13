@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 
 	apactors "github.com/nexryai/rosmarinus/internal/activitypub/actors"
@@ -37,6 +38,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
 	"github.com/nexryai/rosmarinus/internal/domain/reports"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
 )
 
@@ -91,6 +93,7 @@ type Handler struct {
 	cleanup          cleanup.Repository
 	media            domainmedia.Repository
 	mediaFetcher     MediaFetcher
+	mediaStorage     objectstorage.Store
 	instances        instances.Repository
 	metadataFetcher  InstanceMetadataFetcher
 	queue            QueueClient
@@ -144,9 +147,12 @@ func (h *Handler) SetAccountCleanupRepository(repository cleanup.Repository) {
 	h.cleanup = repository
 }
 
-func (h *Handler) SetMediaRepository(repository domainmedia.Repository, fetcher MediaFetcher) {
+func (h *Handler) SetMediaRepository(repository domainmedia.Repository, fetcher MediaFetcher, storage ...objectstorage.Store) {
 	h.media = repository
 	h.mediaFetcher = fetcher
+	if len(storage) > 0 {
+		h.mediaStorage = storage[0]
+	}
 	h.resolver.SetMediaScheduler(h)
 }
 
@@ -255,10 +261,19 @@ func (h *Handler) ScheduleMedia(ctx context.Context, rawURL string) error {
 	if err := h.mediaFetcher.ValidateURL(target); err != nil {
 		return err
 	}
-	publicBase := strings.TrimRight(h.cfg.PublicURL, "/") + "/media"
-	mediaRecord, err := h.media.UpsertPending(ctx, target.String(), publicBase)
+	if h.mediaStorage == nil {
+		return fmt.Errorf("media object storage is not configured")
+	}
+	var mediaRecord *domainmedia.Media
+	for range 8 {
+		objectKey := uuid.NewString()
+		mediaRecord, err = h.media.UpsertPending(ctx, target.String(), objectKey, h.mediaStorage.PublicURL(objectKey))
+		if !errors.Is(err, domainmedia.ErrObjectKeyConflict) {
+			break
+		}
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("reserve remote media object: %w", err)
 	}
 	if mediaRecord.State == domainmedia.StateReady {
 		return nil
@@ -274,8 +289,8 @@ func (h *Handler) HandleMediaFetchTask(ctx context.Context, task *asynq.Task) er
 	if payload.Version != 1 || payload.MediaID == "" || payload.URL == "" {
 		return fmt.Errorf("invalid media fetch task payload")
 	}
-	if h.media == nil || h.mediaFetcher == nil {
-		return fmt.Errorf("media repository and fetcher are required")
+	if h.media == nil || h.mediaFetcher == nil || h.mediaStorage == nil {
+		return fmt.Errorf("media repository, fetcher, and object storage are required")
 	}
 	record, err := h.media.FindByID(ctx, payload.MediaID)
 	if err != nil {
@@ -306,7 +321,7 @@ func (h *Handler) HandleMediaFetchTask(ctx context.Context, task *asynq.Task) er
 	}
 	digestBytes := sha256.Sum256(result.Body)
 	digest := hex.EncodeToString(digestBytes[:])
-	if err := h.media.StoreBlob(ctx, record.ID, bytes.NewReader(result.Body), result.ContentType, int64(len(result.Body)), digest); err != nil {
+	if err := h.mediaStorage.Put(ctx, record.ObjectKey, bytes.NewReader(result.Body), objectstorage.Object{ContentType: result.ContentType, Size: int64(len(result.Body)), SHA256: digest}); err != nil {
 		_ = h.media.MarkFailed(ctx, record.ID, err.Error())
 		return err
 	}
@@ -346,6 +361,20 @@ func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task)
 		}
 	} else if actor.Host == nil {
 		return fmt.Errorf("remote account delete task actor is local")
+	}
+	if payload.Local && h.media != nil && h.mediaStorage != nil {
+		ownedMedia, err := h.media.ListByOwner(ctx, actor.ID)
+		if err != nil {
+			return err
+		}
+		for _, record := range ownedMedia {
+			if err := h.mediaStorage.Delete(ctx, record.ObjectKey); err != nil {
+				return fmt.Errorf("delete Actor media object: %w", err)
+			}
+			if err := h.media.Delete(ctx, record.ID); err != nil {
+				return fmt.Errorf("delete Actor media metadata: %w", err)
+			}
+		}
 	}
 	result, err := h.cleanup.CleanupActor(ctx, actor.ID)
 	if err != nil {

@@ -1,4 +1,4 @@
-import { type ChangeEvent, type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
 
 import { IconAlertTriangle, IconChartBar, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
 
@@ -6,7 +6,9 @@ import { api, type CreatePostInput } from "../lib/api";
 import { css } from "../lib/css";
 import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
+import { uploadImage } from "../lib/uploader";
 import { EmojiText } from "./EmojiText";
+import { ImageFileInput } from "./ImageFileInput";
 import { Mfm } from "./Mfm";
 import { Button, ErrorBanner, Modal } from "./ui";
 import { Dropdown, type DropdownOption } from "./ui/Dropdown";
@@ -229,16 +231,6 @@ const styles = {
         position: "relative",
         cursor: "pointer",
     },
-    fileInput: {
-        position: "absolute",
-        width: 1,
-        height: 1,
-        margin: -1,
-        padding: 0,
-        overflow: "hidden",
-        clipPath: "inset(50%)",
-        whiteSpace: "nowrap",
-    },
     sensitive: {
         display: "flex",
         alignItems: "center",
@@ -331,9 +323,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
     );
     const validChoices = choices.map((choice) => choice.text.trim()).filter(Boolean);
     const canSubmit = text.trim().length > 0 || images.length > 0 || (usePoll && validChoices.length >= 2);
-    const selectImages = async (event: ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files ?? []).slice(0, 4 - images.length);
-        event.target.value = "";
+    const selectImages = async (files: File[]) => {
         try {
             const pending = await Promise.all(files.map(async (file) => ({ file, id: crypto.randomUUID(), intentKey: crypto.randomUUID(), thumbnail: await createCanvasThumbnail(file) })));
             setImages((current) => [...current, ...pending]);
@@ -346,8 +336,13 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
         if (!canSubmit) return;
         setBusy(true);
         setError("");
+        let uploaded: Awaited<ReturnType<typeof uploadImage>>[] = [];
+        let committed = false;
         try {
-            const uploaded = await Promise.all(images.map((image) => api.uploadImage(csrf, actor.id, image.file, image.thumbnail, image.intentKey)));
+            const results = await Promise.allSettled(images.map((image) => uploadImage(csrf, actor.id, image.file, { width: image.thumbnail.originalWidth, height: image.thumbnail.originalHeight }, image.intentKey)));
+            uploaded = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+            const failed = results.find((result) => result.status === "rejected");
+            if (failed?.status === "rejected") throw failed.reason;
             await onSubmit(
                 {
                     text: text.trim(),
@@ -361,8 +356,10 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                 },
                 postIntentKey.current,
             );
+            committed = true;
             onClose();
         } catch (reason) {
+            if (!committed) await Promise.all(uploaded.map((item) => api.deleteMedia(csrf, actor.id, item.id).catch(() => undefined)));
             setError(reason instanceof Error ? reason.message : "投稿できませんでした");
         } finally {
             setBusy(false);
@@ -456,7 +453,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                         <label className={rules.iconToggle} style={{ ...styles.iconToggle, ...styles.upload }}>
                             <IconPhoto />
                             画像
-                            <input accept="image/jpeg,image/png,image/gif,image/webp" disabled={images.length >= 4} multiple onChange={(event) => void selectImages(event)} style={styles.fileInput} type="file" />
+                            <ImageFileInput disabled={images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
                         </label>
                     </div>
                     {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}

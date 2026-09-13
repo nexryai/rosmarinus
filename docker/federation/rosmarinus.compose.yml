@@ -9,6 +9,8 @@ services:
         condition: service_healthy
       rosmarinus-redis:
         condition: service_healthy
+      rosmarinus-object-storage-init:
+        condition: service_completed_successfully
     environment:
       HOST: ${ROSMARINUS_HOST:-127.0.0.1:8080}
       PUBLIC_URL: ${ROSMARINUS_PUBLIC_URL:-http://127.0.0.1:8080}
@@ -20,6 +22,13 @@ services:
       RUN_WORKERS: "true"
       LOCAL_ACTOR_USERNAME: relay
       LOCAL_ACTOR_TYPE: Service
+      OBJECT_STORAGE_ENDPOINT: http://rosmarinus-object-storage:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_BUCKET: rosmarinus
+      OBJECT_STORAGE_ACCESS_KEY_ID: rosmarinus
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: rosmarinus-fixture-only
+      OBJECT_STORAGE_PUBLIC_URL: http://127.0.0.1:9000/rosmarinus
+      OBJECT_STORAGE_PATH_STYLE: "true"
     ports:
       - "${ROSMARINUS_HTTP_PORT:-8080}:3000"
 
@@ -47,3 +56,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  rosmarinus-object-storage:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: rosmarinus
+      MINIO_ROOT_PASSWORD: rosmarinus-fixture-only
+    ports:
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rosmarinus-object-storage-init:
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      rosmarinus-object-storage:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mc alias set local http://rosmarinus-object-storage:9000 rosmarinus rosmarinus-fixture-only && mc mb --ignore-existing local/rosmarinus && mc anonymous set download local/rosmarinus"]

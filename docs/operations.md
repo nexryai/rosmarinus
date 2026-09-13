@@ -1,6 +1,6 @@
 # Rosmarinus Operations
 
-## MongoDB and Redis
+## MongoDB, Redis, and object storage
 
 `MONGO_URI` and `MONGO_DATABASE` select Rosmarinus's durable federation store.
 Startup requires a writable primary and bootstraps indexes only for
@@ -20,10 +20,23 @@ replayed inbound activities from duplicating completed domain side effects.
 Never use broad key deletion or database flushes as routine queue maintenance;
 use the inspection and promotion commands below.
 
+All uploaded and remotely cached image bytes live in an S3-compatible object
+store. Configure `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`,
+`OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY_ID`,
+`OBJECT_STORAGE_SECRET_ACCESS_KEY`, `OBJECT_STORAGE_PUBLIC_URL`, and
+`OBJECT_STORAGE_PATH_STYLE`; signed browser uploads expire according to
+`OBJECT_STORAGE_PRESIGN_TTL` (default `15m`). The bucket must allow public GET
+for immutable object URLs and CORS `PUT` requests from the Rosemary origin.
+Keep credentials server-side. MongoDB contains only object keys and validated
+metadata. GridFS is no longer read or written, and old GridFS images are
+deliberately not migrated; back up the object bucket together with MongoDB.
+Explicit media deletion, managed-emoji deletion or replacement, Note deletion,
+and local Actor cleanup remove the corresponding managed objects.
+
 ## Database ID migration
 
 `go run ./cmd/migrateids` inventories every Rosmarinus-owned MongoDB document
-ID and known internal Account, Actor, Note, media, settings, and GridFS
+ID and known internal Account, Actor, Note, and settings
 reference without writing. With a current backup available and all Rosmarinus
 writers stopped, rerun it as `go run ./cmd/migrateids --apply`. The command
 uses `MONGO_URI` and `MONGO_DATABASE`, applies the re-keying in one transaction,
@@ -31,10 +44,9 @@ backfills Poll and inbox-receipt natural keys, records a migration audit with a
 valid ObjectID-string ID, and verifies the stored ID and reference formats.
 
 Deploy the matching Rosmarinus build before the migration. Public ActivityPub
-URIs and media URLs are preserved. Migrated Actor, Note, media, reaction, and
-notification documents retain former string IDs in indexed `legacyIds`
-aliases, while GridFS file and chunk references move to the canonical media
-ID. Do not remove legacy aliases: federated peers and browsers may retain
+URIs are preserved. Migrated Actor, Note, reaction, and notification
+documents retain former string IDs in indexed `legacyIds` aliases. Do not
+remove non-media legacy aliases: federated peers and browsers may retain
 established resource URLs indefinitely. The older `migrateactorids` command is
 retained only for deployments that have not yet applied its Actor-only v1
 migration; `migrateids` is the authoritative full-store migration.

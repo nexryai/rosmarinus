@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -26,8 +27,9 @@ type EmojiRepository interface {
 }
 
 type MediaRepository interface {
-	CreateLocal(context.Context, string, string, string, string, string, int64, string, int, int, io.Reader) (*domainmedia.Media, error)
+	Store(context.Context, string, string, string, string, int64, string, int, int, io.Reader) (*domainmedia.Media, error)
 	FindByID(context.Context, string) (*domainmedia.Media, error)
+	Delete(context.Context, string, string) error
 }
 
 type MediaFetcher interface {
@@ -52,6 +54,9 @@ func (s *Service) CreateFromMedia(ctx context.Context, actorID, name, mediaID st
 		return nil, err
 	}
 	created, err := s.emojis.CreateLocal(ctx, s.localEmoji(name, media))
+	if err != nil {
+		_ = s.media.Delete(ctx, actorID, media.ID)
+	}
 	if err == nil && s.logger != nil {
 		s.logger.Printf("emoji: local emoji created id=%s name=%s media_id=%s", created.ID, created.Name, media.ID)
 	}
@@ -74,9 +79,17 @@ func (s *Service) Update(ctx context.Context, actorID, id, name, mediaID string)
 		if err != nil {
 			return nil, err
 		}
-		updated.OriginalURL, updated.PublicURL, updated.MediaType = media.PublicURL, media.PublicURL, media.ContentType
+		updated.OriginalURL, updated.PublicURL, updated.MediaType, updated.MediaID = media.PublicURL, media.PublicURL, media.ContentType, media.ID
 	}
 	result, err := s.emojis.UpdateLocal(ctx, id, updated)
+	if err != nil && updated.MediaID != "" && updated.MediaID != current.MediaID {
+		_ = s.media.Delete(ctx, actorID, updated.MediaID)
+	}
+	if err == nil && current.MediaID != "" && updated.MediaID != current.MediaID {
+		if deleteErr := s.media.Delete(ctx, actorID, current.MediaID); deleteErr != nil && s.logger != nil {
+			s.logger.Printf("emoji: remove replaced media id=%s: %v", current.MediaID, deleteErr)
+		}
+	}
 	if err == nil && s.logger != nil {
 		s.logger.Printf("emoji: local emoji updated id=%s name=%s", result.ID, result.Name)
 	}
@@ -84,6 +97,18 @@ func (s *Service) Update(ctx context.Context, actorID, id, name, mediaID string)
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {
+	current, err := s.emojis.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if current == nil || current.Host != "" {
+		return emojis.ErrNotFound
+	}
+	if current.MediaID != "" {
+		if err := s.media.Delete(ctx, "", current.MediaID); err != nil && !errors.Is(err, domainmedia.ErrNotFound) {
+			return fmt.Errorf("delete emoji media: %w", err)
+		}
+	}
 	if err := s.emojis.DeleteLocal(ctx, id); err != nil {
 		return err
 	}
@@ -119,11 +144,14 @@ func (s *Service) ImportRemote(ctx context.Context, actorID, sourceID, name stri
 	digestBytes := sha256.Sum256(fetched.Body)
 	digest := hex.EncodeToString(digestBytes[:])
 	filename := remoteFilename(source.OriginalURL, name)
-	media, err := s.media.CreateLocal(ctx, "emoji-import\x00"+source.ID+"\x00"+name, actorID, filename, s.publicURL+"/media", fetched.ContentType, int64(len(fetched.Body)), digest, 0, 0, bytes.NewReader(fetched.Body))
+	media, err := s.media.Store(ctx, "emoji-import\x00"+source.ID+"\x00"+name, actorID, filename, fetched.ContentType, int64(len(fetched.Body)), digest, 0, 0, bytes.NewReader(fetched.Body))
 	if err != nil {
 		return nil, fmt.Errorf("store imported emoji: %w", err)
 	}
 	created, err := s.emojis.CreateLocal(ctx, s.localEmoji(name, media))
+	if err != nil {
+		_ = s.media.Delete(ctx, actorID, media.ID)
+	}
 	if err == nil && s.logger != nil {
 		s.logger.Printf("emoji: remote emoji imported source_id=%s id=%s name=%s", source.ID, created.ID, created.Name)
 	}
@@ -148,7 +176,7 @@ func (s *Service) ownedReadyMedia(ctx context.Context, actorID, mediaID string) 
 }
 
 func (s *Service) localEmoji(name string, media *domainmedia.Media) emojis.Emoji {
-	return emojis.Emoji{Name: name, URI: s.emojiURI(name), OriginalURL: media.PublicURL, PublicURL: media.PublicURL, MediaType: media.ContentType}
+	return emojis.Emoji{Name: name, URI: s.emojiURI(name), OriginalURL: media.PublicURL, PublicURL: media.PublicURL, MediaType: media.ContentType, MediaID: media.ID}
 }
 
 func (s *Service) emojiURI(name string) string {

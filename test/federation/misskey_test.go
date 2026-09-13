@@ -26,6 +26,8 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
@@ -44,12 +46,20 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	// public and direct flows, verifying the persisted local Actor uses an
 	// ObjectID-string ID and safe network policy permits the controlled topology.
 	cfg := config.Config{
-		Host:          "rosmarinus.test",
-		PublicURL:     "https://rosmarinus.test",
-		MongoURI:      envRequired(t, "MONGO_URI"),
-		MongoDatabase: envRequired(t, "MONGO_DATABASE"),
-		RedisAddr:     envRequired(t, "REDIS_ADDR"),
-		UserAgent:     "rosmarinus-federation-test/1.0",
+		Host:                     "rosmarinus.test",
+		PublicURL:                "https://rosmarinus.test",
+		MongoURI:                 envRequired(t, "MONGO_URI"),
+		MongoDatabase:            envRequired(t, "MONGO_DATABASE"),
+		RedisAddr:                envRequired(t, "REDIS_ADDR"),
+		ObjectStorageEndpoint:    envRequired(t, "OBJECT_STORAGE_ENDPOINT"),
+		ObjectStorageRegion:      envRequired(t, "OBJECT_STORAGE_REGION"),
+		ObjectStorageBucket:      envRequired(t, "OBJECT_STORAGE_BUCKET"),
+		ObjectStorageAccessKeyID: envRequired(t, "OBJECT_STORAGE_ACCESS_KEY_ID"),
+		ObjectStorageSecretKey:   envRequired(t, "OBJECT_STORAGE_SECRET_ACCESS_KEY"),
+		ObjectStoragePublicURL:   envRequired(t, "OBJECT_STORAGE_PUBLIC_URL"),
+		ObjectStoragePathStyle:   true,
+		ObjectStoragePresignTTL:  15 * time.Minute,
+		UserAgent:                "rosmarinus-federation-test/1.0",
 		MediaAllowedPrivateNetworks: []string{
 			"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
 		},
@@ -71,6 +81,11 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	reactionRepo := mongostore.NewReactionRepository(db)
 	pollRepo := mongostore.NewPollRepository(db)
 	mediaRepo := mongostore.NewMediaRepository(db)
+	mediaStorage, err := objectstorage.New(ctx, objectstorage.Config{Endpoint: cfg.ObjectStorageEndpoint, Region: cfg.ObjectStorageRegion, Bucket: cfg.ObjectStorageBucket, AccessKeyID: cfg.ObjectStorageAccessKeyID, SecretAccessKey: cfg.ObjectStorageSecretKey, PublicURL: cfg.ObjectStoragePublicURL, PathStyle: cfg.ObjectStoragePathStyle, PresignTTL: cfg.ObjectStoragePresignTTL})
+	if err != nil {
+		t.Fatalf("configure object storage: %v", err)
+	}
+	mediaUploads := mediafetch.NewUploadService(mediaRepo, mediaStorage)
 	emojiRepo := mongostore.NewEmojiRepository(db)
 	instanceRepo := mongostore.NewInstanceRepository(db)
 	activityReceiptRepo := mongostore.NewActivityReceiptRepository(db)
@@ -118,6 +133,7 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	)
 	worker.SetPollRepository(pollRepo)
 	worker.SetEmojiRepository(emojiRepo)
+	worker.SetMediaRepository(mediaRepo, nil, mediaStorage)
 	worker.SetActivityReceiptRepository(activityReceiptRepo)
 	worker.SetAccountCleanupRepository(mongostore.NewAccountCleanupRepository(db))
 	worker.SetInstanceRepository(instanceRepo, instancemetadata.New(30*time.Second, cfg.UserAgent, nil, misskey.httpClient))
@@ -783,6 +799,8 @@ waitForRemoteNoteEvent:
 		reactionRepo:        reactionRepo,
 		pollRepo:            pollRepo,
 		mediaRepo:           mediaRepo,
+		mediaUploads:        mediaUploads,
+		mediaStorage:        mediaStorage,
 		instanceRepo:        instanceRepo,
 		activityReceiptRepo: activityReceiptRepo,
 		localActor:          localActor,

@@ -107,6 +107,26 @@ func TestLoadMediaConfig(t *testing.T) {
 	}
 }
 
+func TestLoadObjectStorageConfig(t *testing.T) {
+	values := map[string]string{
+		"OBJECT_STORAGE_ENDPOINT":          "https://s3.example.test",
+		"OBJECT_STORAGE_REGION":            "ap-northeast-1",
+		"OBJECT_STORAGE_BUCKET":            "images",
+		"OBJECT_STORAGE_ACCESS_KEY_ID":     "access",
+		"OBJECT_STORAGE_SECRET_ACCESS_KEY": "secret",
+		"OBJECT_STORAGE_PUBLIC_URL":        "https://media.example.test",
+		"OBJECT_STORAGE_PATH_STYLE":        "true",
+		"OBJECT_STORAGE_PRESIGN_TTL":       "10m",
+	}
+	cfg, err := Load(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ObjectStorageEndpoint != values["OBJECT_STORAGE_ENDPOINT"] || cfg.ObjectStorageRegion != "ap-northeast-1" || cfg.ObjectStorageBucket != "images" || !cfg.ObjectStoragePathStyle || cfg.ObjectStoragePresignTTL != 10*time.Minute {
+		t.Fatalf("object storage config = %+v", cfg)
+	}
+}
+
 func TestLoadQueueControls(t *testing.T) {
 	cfg, err := Load(func(key string) (string, bool) {
 		switch key {

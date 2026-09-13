@@ -3,7 +3,9 @@ package federation_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +28,8 @@ import (
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	domainpolls "github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/domain/reactions"
+	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/realtime"
 	mongostore "github.com/nexryai/rosmarinus/internal/store/mongo"
 )
@@ -42,6 +46,8 @@ type misskeyFederationPhaseState struct {
 	reactionRepo        reactions.Repository
 	pollRepo            domainpolls.Repository
 	mediaRepo           *mongostore.MediaRepository
+	mediaUploads        *mediafetch.UploadService
+	mediaStorage        objectstorage.Store
 	instanceRepo        instances.Repository
 	activityReceiptRepo activities.ReceiptRepository
 	localActor          *actors.Actor
@@ -254,7 +260,8 @@ func runLatestMisskeyFederationPhases13To24(t *testing.T, state misskeyFederatio
 	// delivered Create(Note)s.
 	const localNoteText = "Hello from Rosmarinus federation delivery :party:"
 	const misskeyLocalNoteText = "Hello from Rosmarinus federation delivery \u200B:party:\u200B"
-	localMedia, err := mediaRepo.CreateLocal(ctx, "federation-fixture", localActor.ID, "salvia.png", cfg.PublicURL+"/media", "image/png", int64(len(avatarPNG)), "federation-fixture", 1, 1, bytes.NewReader(avatarPNG))
+	digest := fmt.Sprintf("%x", sha256.Sum256(avatarPNG))
+	localMedia, err := state.mediaUploads.Store(ctx, "federation-fixture", localActor.ID, "salvia.png", "image/png", int64(len(avatarPNG)), digest, 1, 1, bytes.NewReader(avatarPNG))
 	if err != nil || localMedia == nil {
 		t.Fatalf("store local Salvia upload: media=%+v err=%v", localMedia, err)
 	}
@@ -263,7 +270,7 @@ func runLatestMisskeyFederationPhases13To24(t *testing.T, state misskeyFederatio
 	if status != http.StatusOK || localMediaType != "image/png" || !bytes.Equal(localMediaBody, avatarPNG) {
 		t.Fatalf("serve local Salvia upload: status=%d content_type=%q bytes=%d", status, localMediaType, len(localMediaBody))
 	}
-	worker.SetMediaRepository(mediaRepo, nil)
+	worker.SetMediaRepository(mediaRepo, nil, state.mediaStorage)
 	createdLocal, err := worker.CreatePost(ctx, connector.PostCreateCommand{
 		ActorID:    localActor.ID,
 		Text:       localNoteText,

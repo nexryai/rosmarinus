@@ -53,6 +53,7 @@ type emojiDocument struct {
 }
 
 type attachmentDocument struct {
+	MediaID   string `bson:"mediaId,omitempty"`
 	URI       string `bson:"uri,omitempty"`
 	Type      string `bson:"type,omitempty"`
 	MediaType string `bson:"mediaType,omitempty"`
@@ -324,6 +325,7 @@ func toDomainAttachments(src []attachmentDocument) []domainnotes.Attachment {
 	out := make([]domainnotes.Attachment, 0, len(src))
 	for _, attachment := range src {
 		out = append(out, domainnotes.Attachment{
+			MediaID:   attachment.MediaID,
 			URI:       attachment.URI,
 			Type:      attachment.Type,
 			MediaType: attachment.MediaType,
@@ -344,6 +346,7 @@ func fromDomainAttachments(src []domainnotes.Attachment) []attachmentDocument {
 	out := make([]attachmentDocument, 0, len(src))
 	for _, attachment := range src {
 		out = append(out, attachmentDocument{
+			MediaID:   attachment.MediaID,
 			URI:       attachment.URI,
 			Type:      attachment.Type,
 			MediaType: attachment.MediaType,
