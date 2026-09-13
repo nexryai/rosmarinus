@@ -83,4 +83,32 @@ describe("Rosmarinus API client", () => {
         expect(form.get("width")).toBe("1600");
         expect(new Headers(init.headers).get("Idempotency-Key")).toBe("upload-intent-123456");
     });
+
+    it("loads management metadata for observed remote emojis", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            jsonResponse({
+                version: 1,
+                data: [{ id: "remote-1", host: "remote.test", name: "party", uri: "https://remote.test/emojis/party", url: "https://remote.test/party.webp", original_url: "https://remote.test/party.webp" }],
+                next: "cursor",
+            }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        const result = await api.emojiCatalog("remote", { query: "party", host: "remote.test" });
+
+        expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/emojis?scope=remote&query=party&host=remote.test&limit=30");
+        expect(result).toMatchObject({ data: [{ id: "remote-1", host: "remote.test", name: "party" }], next: "cursor" });
+    });
+
+    it("sends the selected Actor when importing an observed emoji", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ version: 1, data: { id: "local-1", host: "", name: "party_here", url: "https://local.test/media/1" } }, 201));
+        vi.stubGlobal("fetch", fetchMock);
+
+        await api.importEmoji("csrf", "actor-1", "remote-1", "party_here");
+
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe("/api/v1/emojis/import");
+        expect(new Headers(init.headers).get("X-CSRF-Token")).toBe("csrf");
+        expect(JSON.parse(String(init.body))).toEqual({ actor_id: "actor-1", source_id: "remote-1", name: "party_here" });
+    });
 });

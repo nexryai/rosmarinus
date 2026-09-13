@@ -17,6 +17,20 @@ type Cursor struct {
 	ID        string
 }
 
+type EmojiCursor struct {
+	Host string
+	Name string
+	ID   string
+}
+
+type EmojiListQuery struct {
+	Remote bool
+	Query  string
+	Host   string
+	After  EmojiCursor
+	Limit  int
+}
+
 type Note struct {
 	Note      notes.Note
 	Author    *actors.Actor
@@ -71,6 +85,6 @@ type Reader interface {
 	ListProfileNotes(context.Context, string, string, Cursor, int) ([]Note, error)
 	ListConnections(context.Context, string, string, string, string, int) ([]Connection, error)
 	ListNotifications(context.Context, string, string, Cursor, int, *bool) ([]Notification, error)
-	ListLocalEmojis(context.Context, string, int) ([]emojis.Emoji, error)
+	ListEmojis(context.Context, EmojiListQuery) ([]emojis.Emoji, error)
 	FindProfile(context.Context, string, string) (*Profile, error)
 }

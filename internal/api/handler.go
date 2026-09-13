@@ -21,6 +21,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/account"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
@@ -57,6 +58,13 @@ type RemoteProfileResolver interface {
 	ResolveRemoteActor(context.Context, string) (*actors.Actor, error)
 }
 
+type EmojiAdmin interface {
+	CreateFromMedia(context.Context, string, string, string) (*emojis.Emoji, error)
+	Update(context.Context, string, string, string, string) (*emojis.Emoji, error)
+	Delete(context.Context, string) error
+	ImportRemote(context.Context, string, string, string) (*emojis.Emoji, error)
+}
+
 type Handler struct {
 	authenticator  Authenticator
 	actors         ActorStore
@@ -69,6 +77,7 @@ type Handler struct {
 	accounts       AccountLookup
 	mediaUploads   MediaUploadStore
 	remoteProfiles RemoteProfileResolver
+	emojiAdmin     EmojiAdmin
 	mediaMaxBytes  int64
 	authRoutes     http.Handler
 	logger         *log.Logger
@@ -105,6 +114,10 @@ func NewHandlerCompleteWithMedia(authenticator Authenticator, actorStore ActorSt
 }
 
 func NewHandlerCompleteWithMediaAndRemoteProfiles(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerCompleteWithEmojiAdmin(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, mediaUploads, remoteProfiles, nil, mediaMaxBytes, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerCompleteWithEmojiAdmin(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
@@ -120,6 +133,7 @@ func NewHandlerCompleteWithMediaAndRemoteProfiles(authenticator Authenticator, a
 		accounts:       accounts,
 		mediaUploads:   mediaUploads,
 		remoteProfiles: remoteProfiles,
+		emojiAdmin:     emojiAdmin,
 		mediaMaxBytes:  mediaMaxBytes,
 		authRoutes:     authRoutes,
 		logger:         logger,
@@ -171,8 +185,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.noteResource(w, r, accountID, segments[1:])
 		return
 	}
-	if len(segments) == 1 && segments[0] == "emojis" {
-		h.emojis(w, r)
+	if len(segments) >= 1 && segments[0] == "emojis" {
+		h.emojiResource(w, r, accountID, segments[1:])
 		return
 	}
 	if len(segments) == 1 && segments[0] == "settings" {

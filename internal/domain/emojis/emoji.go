@@ -2,7 +2,13 @@ package emojis
 
 import (
 	"context"
+	"errors"
 	"time"
+)
+
+var (
+	ErrNameConflict = errors.New("emoji name already exists")
+	ErrNotFound     = errors.New("emoji not found")
 )
 
 type Emoji struct {

@@ -358,7 +358,26 @@ func (h *Handler) emojis(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "invalid_limit", err.Error())
 		return
 	}
-	items, err := h.reader.ListLocalEmojis(r.Context(), r.URL.Query().Get("after"), limit)
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	if scope == "" {
+		scope = "local"
+	}
+	if scope != "local" && scope != "remote" {
+		h.writeError(w, http.StatusBadRequest, "invalid_emoji_scope", "scope must be local or remote")
+		return
+	}
+	after, err := decodeEmojiCursor(r.URL.Query().Get("after"))
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid_cursor", "after is not a valid cursor")
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	host := strings.TrimSpace(r.URL.Query().Get("host"))
+	if len(query) > 100 || len(host) > 255 {
+		h.writeError(w, http.StatusBadRequest, "invalid_emoji_filter", "emoji query or host is too long")
+		return
+	}
+	items, err := h.reader.ListEmojis(r.Context(), readmodel.EmojiListQuery{Remote: scope == "remote", Query: query, Host: host, After: after, Limit: limit})
 	if err != nil {
 		h.internalError(w, r, fmt.Errorf("list local emoji: %w", err))
 		return
@@ -369,9 +388,29 @@ func (h *Handler) emojis(w http.ResponseWriter, r *http.Request) {
 	}
 	next := ""
 	if len(items) == limit {
-		next = items[len(items)-1].Name
+		last := items[len(items)-1]
+		next = encodeEmojiCursor(readmodel.EmojiCursor{Host: last.Host, Name: last.Name, ID: last.ID})
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": views, "next": next})
+}
+
+func encodeEmojiCursor(cursor readmodel.EmojiCursor) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(cursor.Host + "\x00" + cursor.Name + "\x00" + cursor.ID))
+}
+
+func decodeEmojiCursor(raw string) (readmodel.EmojiCursor, error) {
+	if raw == "" {
+		return readmodel.EmojiCursor{}, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return readmodel.EmojiCursor{}, err
+	}
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 || parts[2] == "" {
+		return readmodel.EmojiCursor{}, fmt.Errorf("emoji cursor is incomplete")
+	}
+	return readmodel.EmojiCursor{Host: parts[0], Name: parts[1], ID: parts[2]}, nil
 }
 
 func (h *Handler) requireOwnedActorQuery(w http.ResponseWriter, r *http.Request, accountID string) (string, bool) {
@@ -544,9 +583,15 @@ type profileView struct {
 }
 
 type emojiView struct {
-	Name      string `json:"name"`
-	URL       string `json:"url"`
-	MediaType string `json:"media_type,omitempty"`
+	ID          string     `json:"id,omitempty"`
+	Host        string     `json:"host,omitempty"`
+	Name        string     `json:"name"`
+	URI         string     `json:"uri,omitempty"`
+	URL         string     `json:"url"`
+	OriginalURL string     `json:"original_url,omitempty"`
+	MediaType   string     `json:"media_type,omitempty"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
 }
 
 func projectNote(item readmodel.Note) noteView {
@@ -651,7 +696,16 @@ func projectEmoji(emoji emojis.Emoji) emojiView {
 	if url == "" {
 		url = emoji.OriginalURL
 	}
-	return emojiView{Name: emoji.Name, URL: url, MediaType: emoji.MediaType}
+	view := emojiView{ID: emoji.ID, Host: emoji.Host, Name: emoji.Name, URI: emoji.URI, URL: url, OriginalURL: emoji.OriginalURL, MediaType: emoji.MediaType}
+	if !emoji.CreatedAt.IsZero() {
+		createdAt := emoji.CreatedAt
+		view.CreatedAt = &createdAt
+	}
+	if !emoji.UpdatedAt.IsZero() {
+		updatedAt := emoji.UpdatedAt
+		view.UpdatedAt = &updatedAt
+	}
+	return view
 }
 
 func nonNilStrings(values []string) []string {

@@ -26,6 +26,7 @@ type fakeReader struct {
 	notifications []readmodel.Notification
 	profile       *readmodel.Profile
 	unread        *bool
+	emojiQuery    readmodel.EmojiListQuery
 	calls         int
 }
 
@@ -76,7 +77,8 @@ func (f *fakeReader) ListNotifications(_ context.Context, accountID, actorID str
 	return f.notifications, nil
 }
 
-func (f *fakeReader) ListLocalEmojis(context.Context, string, int) ([]emojis.Emoji, error) {
+func (f *fakeReader) ListEmojis(_ context.Context, query readmodel.EmojiListQuery) ([]emojis.Emoji, error) {
+	f.emojiQuery = query
 	f.calls++
 	return []emojis.Emoji{{Name: "salvia", PublicURL: "https://example.test/emoji.webp"}}, nil
 }

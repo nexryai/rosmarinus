@@ -161,7 +161,8 @@ and every Actor mutation is authorized again by Rosmarinus.
 ## Phase 4: Add REST Client And SSE Reconciliation
 
 Backend checkpoint: Rosmarinus now exposes the versioned passkey/session,
-Actor, timeline, Note, social mutation, notification, profile, emoji, instance,
+Actor, timeline, Note, social mutation, notification, profile, searchable emoji
+administration, instance,
 settings, and `GET /api/v1/events` contracts documented in
 `docs/salvia-integration.md`. The unchecked work below is SPA implementation.
 
@@ -185,8 +186,8 @@ Pub/Sub message arriving.
 
 ## Phase 5: Build Core Social Features
 
-- [x] Build home/public timelines with stable pagination and deterministic
-      deduplication.
+- [x] Build the home timeline with stable pagination and deterministic
+      deduplication; retire the public discovery page from Salvia navigation.
 - [x] Render notes, replies, quotes, renotes, content warnings, visibility,
       polls, attachments, mentions, and custom emoji reactions from sanitized
       API projections.
@@ -198,6 +199,8 @@ Pub/Sub message arriving.
       suspended states, and safe external-link/media behavior.
 - [x] Add remote-user lookup by handle or Actor URL and route successful
       resolution into the profile follow/unfollow flow.
+- [x] Add local custom-emoji create/edit/delete management plus searchable
+      observed-remote browsing and server-side media import.
 - [x] Generate image upload previews and thumbnails with Canvas, test
       orientation and size handling, and keep the original file available when
       the upload contract requires it.

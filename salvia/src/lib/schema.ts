@@ -5,8 +5,21 @@ const strings = z
     .nullish()
     .transform((value) => value ?? []);
 
-export const emojiSchema = z.object({ name: z.string(), url: z.string(), media_type: z.string().optional() });
+export const emojiSchema = z.object({
+    name: z.string(),
+    url: z.string(),
+    media_type: z.string().optional(),
+});
+export const managedEmojiSchema = emojiSchema.extend({
+    id: z.string(),
+    host: z.string().default(""),
+    uri: z.string().default(""),
+    original_url: z.string().default(""),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+});
 export type Emoji = z.infer<typeof emojiSchema>;
+export type ManagedEmoji = z.infer<typeof managedEmojiSchema>;
 
 // Older Rosmarinus responses exposed Go field names for nonempty profile fields.
 const profileFieldSchema = z.union([z.object({ name: z.string(), value: z.string() }), z.object({ Name: z.string(), Value: z.string() }).transform((field) => ({ name: field.Name, value: field.Value }))]);

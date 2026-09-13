@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -301,12 +302,29 @@ func (r *SalviaReader) listPinnedNotes(ctx context.Context, viewerActorID string
 	return ordered, nil
 }
 
-func (r *SalviaReader) ListLocalEmojis(ctx context.Context, afterName string, limit int) ([]emojis.Emoji, error) {
+func (r *SalviaReader) ListEmojis(ctx context.Context, query readmodel.EmojiListQuery) ([]emojis.Emoji, error) {
 	filter := bson.M{"host": ""}
-	if afterName != "" {
-		filter["name"] = bson.M{"$gt": afterName}
+	if query.Remote {
+		filter = bson.M{"host": bson.M{"$ne": ""}}
 	}
-	cursor, err := r.db.Collection("emojis").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}).SetLimit(int64(limit)))
+	if host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(query.Host), ".")); host != "" {
+		if !query.Remote {
+			return []emojis.Emoji{}, nil
+		}
+		filter["host"] = host
+	}
+	if value := strings.TrimSpace(query.Query); value != "" {
+		filter["name"] = bson.M{"$regex": regexp.QuoteMeta(value), "$options": "i"}
+	}
+	if query.After.ID != "" {
+		cursorFilter := bson.M{"$or": bson.A{
+			bson.M{"host": bson.M{"$gt": query.After.Host}},
+			bson.M{"host": query.After.Host, "name": bson.M{"$gt": query.After.Name}},
+			bson.M{"host": query.After.Host, "name": query.After.Name, "_id": bson.M{"$gt": query.After.ID}},
+		}}
+		filter = bson.M{"$and": bson.A{filter, cursorFilter}}
+	}
+	cursor, err := r.db.Collection("emojis").Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "host", Value: 1}, {Key: "name", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(query.Limit)))
 	if err != nil {
 		return nil, err
 	}

@@ -239,7 +239,10 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/actors/{actorId}/follow-requests` | Pending requests for an owned Actor |
 | `GET` | `/api/v1/actors/{actorId}/notifications` | Actor-scoped notifications |
 | `GET` | `/api/v1/notifications` | Account-scoped notifications |
-| `GET` | `/api/v1/emojis` | Local custom emoji catalog |
+| `GET` | `/api/v1/emojis?scope=local\|remote` | Searchable local or observed-remote custom emoji catalog |
+| `POST` | `/api/v1/emojis` | Register a local custom emoji from ready media owned by the selected Actor |
+| `PATCH`, `DELETE` | `/api/v1/emojis/{emojiId}` | Update or delete a local custom emoji |
+| `POST` | `/api/v1/emojis/import` | Copy an observed remote custom emoji into local media and register it locally |
 | `GET` | `/api/v1/instance` | Browser-safe instance metadata |
 | `GET`, `PATCH` | `/api/v1/settings` | Account UI settings |
 | `GET`, `PATCH` | `/api/v1/actors/{actorId}/settings` | Per-Actor UI and compose defaults |
@@ -251,6 +254,20 @@ before projection. The public and home timelines, profile Note lists, Note
 threads, and notifications use opaque created-time/ID cursors. Connection and
 emoji cursors are likewise opaque to the SPA even where their current
 representation is a stable record ID or name.
+
+The custom-emoji management routes are account-administration operations, but
+media-backed create/update/import requests still include `actor_id`.
+Rosmarinus verifies that the Actor belongs to the authenticated account and
+that selected media is ready and owned by that Actor. Remote imports resolve
+only an observed emoji ID, fetch its recorded HTTPS source through the bounded
+SSRF-protected media fetcher, preserve the validated original bytes in local
+media, and never decode or transform the image. Local names accept only ASCII
+letters, digits, and underscores and remain unique at the MongoDB index.
+
+Catalog management projections add `id`, `host`, `uri`, `original_url`, and
+timestamps to the normal `{ "name", "url", "media_type" }` emoji reference.
+`scope=remote` can be filtered by `query` and exact `host`; no raw federation
+object or internal MongoDB representation is returned.
 
 Note detail, timeline, profile Note, and thread responses project reply,
 quote, and renote references with the referenced author's safe profile fields

@@ -12,7 +12,7 @@ const actors = [
 ] as Actor[];
 const session = { account_id: "account", csrf_token: "csrf", username: "owner", display_name: "Owner" } as Session;
 
-describe("AppShell mobile account controls", () => {
+describe("AppShell navigation and mobile account controls", () => {
     afterEach(cleanup);
 
     it("keeps settings and Actor switching reachable from the mobile header", async () => {
@@ -45,5 +45,20 @@ describe("AppShell mobile account controls", () => {
 
         expect(document.querySelector("main > header")).not.toBeVisible();
         expect(screen.getByRole("banner", { name: "モバイルアカウント操作" })).toBeVisible();
+    });
+
+    it("replaces the discovery timeline with custom emoji management", async () => {
+        const navigate = vi.fn();
+        const user = userEvent.setup();
+        render(
+            <AppShell actors={actors} onActorChange={vi.fn()} onCompose={vi.fn()} onLogout={vi.fn()} onNavigate={navigate} page="emojis" selectedActor={actors[0]} session={session}>
+                content
+            </AppShell>,
+        );
+
+        expect(screen.queryByRole("button", { name: "みつける" })).not.toBeInTheDocument();
+        const links = screen.getAllByRole("button", { name: "絵文字" });
+        await user.click(links[0]);
+        expect(navigate).toHaveBeenCalledWith("/emojis");
     });
 });

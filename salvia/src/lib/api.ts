@@ -13,6 +13,8 @@ import {
     emojiSchema,
     type Instance,
     instanceSchema,
+    type ManagedEmoji,
+    managedEmojiSchema,
     type Note,
     type Notification,
     noteSchema,
@@ -171,7 +173,17 @@ export const api = {
     },
     note: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema), { signal })).data,
     thread: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: "100" })}`, pageEnvelope(noteSchema), { signal })).data,
-    emojis: async (): Promise<Emoji[]> => (await request("/emojis?limit=100", pageEnvelope(emojiSchema))).data,
+    emojiCatalog: async (scope: "local" | "remote", filters: { after?: string; query?: string; host?: string } = {}): Promise<{ data: ManagedEmoji[]; next: string }> => {
+        const result = await request(`/emojis${query({ scope, after: filters.after, query: filters.query, host: filters.host, limit: "30" })}`, pageEnvelope(managedEmojiSchema));
+        return { data: result.data, next: result.next };
+    },
+    emojis: async (): Promise<Emoji[]> => (await request("/emojis?scope=local&limit=100", pageEnvelope(emojiSchema))).data,
+    createEmoji: async (csrf: string, actorID: string, name: string, mediaID: string): Promise<ManagedEmoji> => (await request("/emojis", envelope(managedEmojiSchema), { method: "POST", body: { actor_id: actorID, name, media_id: mediaID }, csrf })).data,
+    updateEmoji: async (csrf: string, actorID: string, id: string, name: string, mediaID = ""): Promise<ManagedEmoji> => (await request(`/emojis/${encodeURIComponent(id)}`, envelope(managedEmojiSchema), { method: "PATCH", body: { actor_id: actorID, name, ...(mediaID ? { media_id: mediaID } : {}) }, csrf })).data,
+    deleteEmoji: async (csrf: string, id: string): Promise<void> => {
+        await request(`/emojis/${encodeURIComponent(id)}`, envelope(z.object({ id: z.string() })), { method: "DELETE", csrf });
+    },
+    importEmoji: async (csrf: string, actorID: string, sourceID: string, name: string): Promise<ManagedEmoji> => (await request("/emojis/import", envelope(managedEmojiSchema), { method: "POST", body: { actor_id: actorID, source_id: sourceID, name }, csrf })).data,
     instance: async (): Promise<Instance> => (await request("/instance", envelope(instanceSchema))).data,
     accountSettings: async (): Promise<AccountSettings> => (await request("/settings", envelope(accountSettingsSchema))).data,
     updateAccountSettings: async (csrf: string, patch: Partial<AccountSettings>): Promise<AccountSettings> => (await request("/settings", envelope(accountSettingsSchema), { method: "PATCH", body: patch, csrf })).data,
@@ -179,4 +191,4 @@ export const api = {
     updateActorSettings: async (csrf: string, actorID: string, patch: Partial<ActorSettings>): Promise<ActorSettings> => (await request(`/actors/${encodeURIComponent(actorID)}/settings`, envelope(actorSettingsSchema), { method: "PATCH", body: patch, csrf })).data,
 };
 
-export type Page = "home" | "public" | "users" | "notifications" | "follow-requests" | "settings" | "profile" | "note";
+export type Page = "home" | "emojis" | "users" | "notifications" | "follow-requests" | "settings" | "profile" | "note";

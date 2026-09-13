@@ -35,6 +35,73 @@ func NewEmojiRepository(db *mongo.Database) *EmojiRepository {
 	return &EmojiRepository{collection: db.Collection("emojis")}
 }
 
+func (r *EmojiRepository) FindByID(ctx context.Context, id string) (*emojis.Emoji, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, nil
+	}
+	return r.findOne(ctx, bson.M{"_id": id})
+}
+
+func (r *EmojiRepository) CreateLocal(ctx context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
+	emoji.Host = ""
+	emoji.Name = normalizeEmojiName(emoji.Name)
+	if !validEmojiName(emoji.Name) || (emoji.PublicURL == "" && emoji.OriginalURL == "") {
+		return nil, fmt.Errorf("valid local emoji name and public or original URL are required")
+	}
+	if emoji.PublicURL == "" {
+		emoji.PublicURL = emoji.OriginalURL
+	}
+	if emoji.OriginalURL == "" {
+		emoji.OriginalURL = emoji.PublicURL
+	}
+	var err error
+	emoji.ID, err = newDocumentID(ctx, r.collection)
+	if err != nil {
+		return nil, fmt.Errorf("generate local emoji id: %w", err)
+	}
+	now := time.Now().UTC()
+	emoji.CreatedAt, emoji.UpdatedAt = now, now
+	if _, err := r.collection.InsertOne(ctx, fromEmoji(emoji)); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, emojis.ErrNameConflict
+		}
+		return nil, err
+	}
+	return r.FindByID(ctx, emoji.ID)
+}
+
+func (r *EmojiRepository) UpdateLocal(ctx context.Context, id string, emoji emojis.Emoji) (*emojis.Emoji, error) {
+	emoji.Name = normalizeEmojiName(emoji.Name)
+	if !validEmojiName(emoji.Name) || emoji.PublicURL == "" || emoji.OriginalURL == "" {
+		return nil, fmt.Errorf("valid local emoji name and URLs are required")
+	}
+	result, err := r.collection.UpdateOne(ctx, bson.M{"_id": id, "host": ""}, bson.M{"$set": bson.M{
+		"name": emoji.Name, "uri": emoji.URI, "originalUrl": emoji.OriginalURL,
+		"publicUrl": emoji.PublicURL, "mediaType": emoji.MediaType, "updatedAt": time.Now().UTC(),
+	}})
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, emojis.ErrNameConflict
+		}
+		return nil, err
+	}
+	if result.MatchedCount == 0 {
+		return nil, emojis.ErrNotFound
+	}
+	return r.FindByID(ctx, id)
+}
+
+func (r *EmojiRepository) DeleteLocal(ctx context.Context, id string) error {
+	result, err := r.collection.DeleteOne(ctx, bson.M{"_id": id, "host": ""})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return emojis.ErrNotFound
+	}
+	return nil
+}
+
 func (r *EmojiRepository) UpsertLocal(ctx context.Context, emoji emojis.Emoji) (*emojis.Emoji, error) {
 	emoji.Host = ""
 	emoji.Name = normalizeEmojiName(emoji.Name)

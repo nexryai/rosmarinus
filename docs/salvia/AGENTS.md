@@ -117,6 +117,11 @@ Account
 - Treat every API entity ID as an opaque server-issued string. Do not generate
   IDs, parse ObjectID timestamps, or infer resource type or local/remote status
   from prefixes, length, or other formatting.
+- Use the dedicated custom-emoji catalog for local administration and observed
+  remote browsing. Register local emoji from media uploaded for an owned Actor;
+  import remote emoji by its opaque observed ID so Rosmarinus can copy it
+  through its media security boundary. Never fetch an import source directly
+  in the browser.
 - Support zero, one, and multiple Actor states. Make creation, switching,
   profile editing, suspension/deletion status, and command context clear.
 - Do not infer authorization from data already rendered in the browser.

@@ -10,6 +10,7 @@ import { Button, ErrorBanner, Loading } from "./components/ui";
 import { ApiError, api, type Page } from "./lib/api";
 import { css } from "./lib/css";
 import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "./lib/schema";
+import { EmojiManagerPage } from "./pages/EmojiManagerPage";
 import { FollowRequestsPage } from "./pages/FollowRequestsPage";
 import { NotePage } from "./pages/NotePage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -118,7 +119,7 @@ const rules = {
 };
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
-    if (path === "/public") return { page: "public" };
+    if (path === "/emojis" || path === "/public") return { page: "emojis" };
     if (path === "/users") return { page: "users" };
     if (path === "/notifications") return { page: "notifications" };
     if (path === "/follow-requests") return { page: "follow-requests" };
@@ -328,17 +329,16 @@ function App() {
                     refreshKey={refreshKey}
                 />
             )}
-            {route.page === "public" && (
-                <TimelinePage
+            {route.page === "emojis" && (
+                <EmojiManagerPage
                     actorID={selectedActor.id}
                     csrf={session.csrf_token}
-                    emojis={emojis}
-                    kind="public"
-                    liveRefreshKey={liveTimelineKey}
-                    onCompose={(kind, note) => void openComposer({ kind, target: note })}
-                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
-                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
-                    refreshKey={refreshKey}
+                    onCatalogChanged={() =>
+                        void api
+                            .emojis()
+                            .then(setEmojis)
+                            .catch(() => undefined)
+                    }
                 />
             )}
             {route.page === "users" && <UserSearchPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} />}
