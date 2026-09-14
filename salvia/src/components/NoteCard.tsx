@@ -7,6 +7,7 @@ import type { Emoji, Note } from "../lib/schema";
 import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
+import { NoteMedia } from "./NoteMedia";
 import { NoteSurface } from "./NoteSurface";
 import { QuotedNoteCard } from "./QuotedNoteCard";
 import { ThreadNote } from "./ThreadNote";
@@ -119,35 +120,6 @@ const styles = {
         overflowWrap: "break-word",
         whiteSpace: "pre-wrap",
         lineHeight: "1.75rem",
-    },
-    attachments: {
-        maxHeight: "32rem",
-        marginTop: "0.75rem",
-        display: "grid",
-        gap: "0.25rem",
-        overflow: "hidden",
-        borderRadius: "1rem",
-    },
-    attachmentImage: {
-        width: "100%",
-        height: "100%",
-        maxHeight: "24rem",
-        objectFit: "cover",
-        background: "var(--panel-muted)",
-    },
-    attachmentButton: {
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-        cursor: "zoom-in",
-    },
-    attachmentFile: {
-        padding: "1rem",
-        display: "block",
-        border: "1px solid var(--border)",
-        borderRadius: "0.75rem",
-        fontSize: "0.875rem",
-        textDecoration: "underline",
     },
     poll: {
         marginTop: "0.75rem",
@@ -304,14 +276,6 @@ const rules = {
     pickerButton: css({
         "&:hover": {
             background: "var(--accent-soft)",
-        },
-    }),
-    attachmentButton: css({
-        "&:hover img": {
-            transform: "scale(1.015)",
-        },
-        "& img": {
-            transition: "transform 160ms cubic-bezier(.2,.8,.2,1)",
         },
     }),
 };
@@ -501,21 +465,7 @@ export function NoteCard({
                             </div>
                         )}
                         {revealed && displayedNote.text && <Mfm emojis={displayedNote.emojis} style={styles.text} text={displayedNote.text} />}
-                        {revealed && displayedNote.attachments.length > 0 && (
-                            <div style={{ ...styles.attachments, ...(displayedNote.attachments.length > 1 ? { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } : {}) }}>
-                                {displayedNote.attachments.map((attachment) =>
-                                    attachment.media_type?.startsWith("image/") ? (
-                                        <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.attachmentButton} key={attachment.url} onClick={() => setViewerIndex(imageAttachments.indexOf(attachment))} style={styles.attachmentButton} type="button">
-                                            <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.url} style={styles.attachmentImage} />
-                                        </button>
-                                    ) : (
-                                        <a href={attachment.url} key={attachment.url} rel="noreferrer" style={styles.attachmentFile} target="_blank">
-                                            {attachment.name || "添付ファイル"}
-                                        </a>
-                                    ),
-                                )}
-                            </div>
-                        )}
+                        {revealed && displayedNote.attachments.length > 0 && <NoteMedia attachments={displayedNote.attachments} onOpenImage={setViewerIndex} />}
                         {displayedNote.quote && <QuotedNoteCard onOpen={onOpenNote} onOpenProfile={onOpenProfile} quote={displayedNote.quote} />}
                         {displayedNote.poll && (
                             <div style={styles.poll}>
