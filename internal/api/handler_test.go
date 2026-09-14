@@ -212,6 +212,11 @@ func (e *fakeExecutor) MarkNotificationRead(_ context.Context, accountID, actorI
 	return connector.NotificationRead{NotificationID: notificationID, IsRead: true}, err
 }
 
+func (e *fakeExecutor) MarkAllNotificationsRead(_ context.Context, accountID, actorID string) (connector.NotificationsRead, error) {
+	err := e.record(connector.CommandNotificationsMarkAll, actorID, accountID)
+	return connector.NotificationsRead{Count: 3}, err
+}
+
 type fakeReceiptStore struct {
 	receipts map[string]idempotency.Receipt
 }
@@ -429,6 +434,7 @@ func TestHandlerMapsFollowApprovalAndNotificationRead(t *testing.T) {
 		{http.MethodPatch, "/api/v1/actors/actor-1/follow-requests/remote-1", `{"status":"accepted"}`, connector.CommandFollowApprove},
 		{http.MethodPatch, "/api/v1/actors/actor-1/follow-requests/remote-1", `{"status":"rejected_and_blocked"}`, connector.CommandFollowRejectAndBlock},
 		{http.MethodPatch, "/api/v1/actors/actor-1/notifications/notification-1", `{"is_read":true}`, connector.CommandNotificationMarkRead},
+		{http.MethodPatch, "/api/v1/actors/actor-1/notifications", `{"is_read":true}`, connector.CommandNotificationsMarkAll},
 	}
 	for _, test := range tests {
 		t.Run(test.command, func(t *testing.T) {

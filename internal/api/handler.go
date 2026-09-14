@@ -566,9 +566,27 @@ func (h *Handler) notifications(w http.ResponseWriter, r *http.Request, accountI
 		h.listNotifications(w, r, accountID, actorID)
 		return
 	}
+	if len(segments) == 0 && r.Method == http.MethodPatch {
+		var body struct {
+			IsRead bool `json:"is_read"`
+		}
+		if !h.decodeJSON(w, r, &body, false) {
+			return
+		}
+		if !body.IsRead {
+			h.writeError(w, http.StatusUnprocessableEntity, "invalid_read_state", "is_read must be true")
+			return
+		}
+		h.execute(w, r, accountID, connector.CommandNotificationsMarkAll, actorID, struct{}{}, http.StatusOK)
+		return
+	}
+	if len(segments) == 1 && segments[0] == "unread-count" && r.Method == http.MethodGet {
+		h.countUnreadNotifications(w, r, accountID, actorID)
+		return
+	}
 	if len(segments) != 1 || r.Method != http.MethodPatch {
 		if len(segments) == 0 {
-			h.methodNotAllowed(w, http.MethodGet)
+			h.methodNotAllowed(w, http.MethodGet, http.MethodPatch)
 		} else {
 			h.methodOrNotFound(w, r, http.MethodPatch, len(segments) == 1)
 		}
@@ -681,6 +699,8 @@ func (h *Handler) publishMutationEvent(ctx context.Context, accountID, actorID, 
 		eventType = "reaction.changed"
 	case connector.CommandNotificationMarkRead:
 		eventType = "notification.read"
+	case connector.CommandNotificationsMarkAll:
+		eventType = "notification.read"
 	case connector.CommandFollowApprove:
 		eventType = "follow.approval.completed"
 	case connector.CommandFollowReject:
@@ -716,6 +736,8 @@ func mutationEventData(command string, result any) map[string]string {
 		data["note_id"] = value.NoteID
 	case connector.NotificationRead:
 		data["notification_id"] = value.NotificationID
+	case connector.NotificationsRead:
+		data["count"] = strconv.FormatInt(value.Count, 10)
 	case connector.FollowDeleted:
 		data["followee_id"] = value.FolloweeID
 	case connector.BlockCreated:

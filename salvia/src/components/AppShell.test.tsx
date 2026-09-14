@@ -74,4 +74,16 @@ describe("AppShell navigation and mobile account controls", () => {
         await user.click(links[0]);
         expect(navigate).toHaveBeenCalledWith("/emojis");
     });
+
+    it("shows the selected Actor's unread notification count in desktop and mobile navigation", () => {
+        render(
+            <AppShell actors={actors} onActorChange={vi.fn()} onCompose={vi.fn()} onLogout={vi.fn()} onNavigate={vi.fn()} page="home" selectedActor={actors[0]} session={session} unreadNotificationCount={123}>
+                content
+            </AppShell>,
+        );
+
+        const notificationButtons = screen.getAllByRole("button", { name: "通知（未読123件）", hidden: true });
+        expect(notificationButtons).toHaveLength(2);
+        for (const button of notificationButtons) expect(button).toHaveTextContent("99+");
+    });
 });

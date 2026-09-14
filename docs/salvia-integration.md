@@ -200,6 +200,7 @@ stored in MongoDB.
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/blocks` | Block or unblock the body `target` |
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/mutes` | Mute with optional `expires_at`, or unmute the body `target` |
 | `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted`, `rejected`, or `rejected_and_blocked` |
+| `PATCH` | `/api/v1/actors/{actorId}/notifications` | Mark every unread notification for the owned Actor as read |
 | `PATCH` | `/api/v1/actors/{actorId}/notifications/{notificationId}` | Set `is_read` to `true` |
 
 Every endpoint is session-scoped. Mutations require `X-CSRF-Token` and an
@@ -258,6 +259,7 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/actors/{actorId}/following` | Actors followed by an owned Actor |
 | `GET` | `/api/v1/actors/{actorId}/follow-requests` | Pending requests for an owned Actor |
 | `GET` | `/api/v1/actors/{actorId}/notifications` | Actor-scoped notifications |
+| `GET` | `/api/v1/actors/{actorId}/notifications/unread-count` | Exact unread notification count for the owned Actor |
 | `GET` | `/api/v1/notifications` | Account-scoped notifications |
 | `GET` | `/api/v1/emojis?scope=local\|remote` | Searchable local or observed-remote custom emoji catalog |
 | `POST` | `/api/v1/emojis` | Register a local custom emoji from ready media owned by the selected Actor |
@@ -317,6 +319,12 @@ Rosmarinus stores the emoji metadata received with a federated reaction so the
 notification and Note remain renderable even when the reaction code contains
 a remote host suffix. Legacy reaction rows are resolved against the validated
 emoji catalog when possible and otherwise retain their literal reaction code.
+
+The navigation unread badge uses the Actor-scoped `unread-count` endpoint and
+refreshes after notification SSE invalidations. Opening the default Actor
+notification view marks all of that Actor's notifications read with the bulk
+`PATCH`; the mutation emits `notification.read` even though individual
+notification bodies are not copied into SSE.
 
 Profile projections include viewer-specific `follow_status` and
 `blocked_by_viewer`, `muted_by_viewer`, and optional `mute_expires_at`, plus

@@ -91,6 +91,7 @@ type Reader interface {
 	ListProfileNotes(context.Context, string, string, Cursor, int) ([]Note, error)
 	ListConnections(context.Context, string, string, string, string, int) ([]Connection, error)
 	ListNotifications(context.Context, string, string, Cursor, int, *bool) ([]Notification, error)
+	CountUnreadNotifications(context.Context, string, string) (int64, error)
 	ListEmojis(context.Context, EmojiListQuery) ([]emojis.Emoji, error)
 	FindProfile(context.Context, string, string) (*Profile, error)
 }

@@ -69,6 +69,9 @@ func (e *recordingExecutor) DeleteActor(context.Context, string, ActorDeleteComm
 func (e *recordingExecutor) MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error) {
 	return NotificationRead{}, nil
 }
+func (e *recordingExecutor) MarkAllNotificationsRead(context.Context, string, string) (NotificationsRead, error) {
+	return NotificationsRead{}, nil
+}
 
 func TestExecuteCommandBuildsPostCommand(t *testing.T) {
 	executor := &recordingExecutor{}

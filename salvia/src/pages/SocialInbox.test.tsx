@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../lib/api";
 import type { Actor, Connection, Notification } from "../lib/schema";
@@ -10,6 +10,11 @@ import { NotificationsPage } from "./NotificationsPage";
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob" } as Actor;
 
 describe("social inbox mutations", () => {
+    beforeEach(() => {
+        vi.spyOn(api, "notificationUnreadCount").mockResolvedValue(0);
+        vi.spyOn(api, "markAllNotificationsRead").mockResolvedValue(0);
+    });
+
     afterEach(() => {
         cleanup();
         vi.restoreAllMocks();
@@ -69,19 +74,21 @@ describe("social inbox mutations", () => {
         expect(screen.queryByText("@bob")).not.toBeInTheDocument();
     });
 
-    it("marks an Actor notification read", async () => {
+    it("marks all Actor notifications read when the page opens", async () => {
         const item = { id: "notification-1", actor_id: "alice", kind: "followRequest", created_at: "2026-01-01T00:00:00Z", is_read: false, read_at: null, source: remote } as Notification;
         vi.spyOn(api, "notifications").mockResolvedValue([item]);
-        const markRead = vi.spyOn(api, "markNotificationRead").mockResolvedValue(undefined);
+        vi.mocked(api.notificationUnreadCount).mockResolvedValue(1);
+        vi.mocked(api.markAllNotificationsRead).mockResolvedValue(1);
         const onOpenProfile = vi.fn();
+        const onUnreadCountChange = vi.fn();
         const user = userEvent.setup();
-        render(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={onOpenProfile} refreshKey={0} />);
+        render(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={onOpenProfile} onUnreadCountChange={onUnreadCountChange} refreshKey={0} />);
 
         await user.click(await screen.findByRole("button", { name: "Bobのプロフィールを開く" }));
-        await user.click(await screen.findByRole("button", { name: "既読" }));
 
         expect(onOpenProfile).toHaveBeenCalledWith("bob");
-        expect(markRead).toHaveBeenCalledWith("csrf", "alice", "notification-1");
+        expect(api.markAllNotificationsRead).toHaveBeenCalledWith("csrf", "alice");
+        expect(onUnreadCountChange).toHaveBeenCalledWith(0);
         expect(screen.queryByRole("button", { name: "既読" })).not.toBeInTheDocument();
     });
 

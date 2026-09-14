@@ -29,6 +29,7 @@ const (
 	CommandActorUpdate          = "actor.update"
 	CommandActorDelete          = "actor.delete"
 	CommandNotificationMarkRead = "notification.mark_read"
+	CommandNotificationsMarkAll = "notification.mark_all_read"
 )
 
 type ActorOwnershipLookup interface {
@@ -58,6 +59,10 @@ type CommandExecutor interface {
 type MuteCommandExecutor interface {
 	CreateMute(context.Context, MuteCreateCommand) (MuteCreated, error)
 	DeleteMute(context.Context, MuteDeleteCommand) (MuteDeleted, error)
+}
+
+type NotificationBulkCommandExecutor interface {
+	MarkAllNotificationsRead(context.Context, string, string) (NotificationsRead, error)
 }
 
 type FollowApproveData struct {
@@ -318,6 +323,10 @@ type NotificationMarkReadData struct {
 type NotificationRead struct {
 	NotificationID string `json:"notification_id" bson:"notification_id"`
 	IsRead         bool   `json:"is_read" bson:"is_read"`
+}
+
+type NotificationsRead struct {
+	Count int64 `json:"count" bson:"count"`
 }
 
 type ActorCreateCommand struct {
@@ -712,6 +721,13 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 			return nil, actorID, fmt.Errorf("notification_id is required")
 		}
 		result, err := executor.MarkNotificationRead(ctx, accountID, actorID, command.NotificationID)
+		return result, actorID, err
+	case CommandNotificationsMarkAll:
+		bulkExecutor, ok := executor.(NotificationBulkCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("bulk notification command executor is not configured")
+		}
+		result, err := bulkExecutor.MarkAllNotificationsRead(ctx, accountID, actorID)
 		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData

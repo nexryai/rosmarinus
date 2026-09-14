@@ -245,6 +245,14 @@ func (r *SalviaReader) ListNotifications(ctx context.Context, accountID, actorID
 	return result, nil
 }
 
+func (r *SalviaReader) CountUnreadNotifications(ctx context.Context, accountID, actorID string) (int64, error) {
+	filter := bson.M{"recipientAccountId": accountID, "isRead": bson.M{"$ne": true}}
+	if actorID != "" {
+		filter["recipientActorId"] = actorID
+	}
+	return r.db.Collection("notifications").CountDocuments(ctx, filter)
+}
+
 func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID string) (*readmodel.Profile, error) {
 	blockedViewer, err := r.actorBlocks(ctx, actorID, viewerActorID)
 	if err != nil || blockedViewer {

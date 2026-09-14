@@ -79,6 +79,22 @@ func (r *NotificationRepository) MarkRead(ctx context.Context, accountID, actorI
 	})
 }
 
+func (r *NotificationRepository) MarkAllRead(ctx context.Context, accountID, actorID string) (int64, error) {
+	if accountID == "" || actorID == "" {
+		return 0, fmt.Errorf("notification account and actor are required")
+	}
+	now := time.Now().UTC()
+	result, err := r.collection.UpdateMany(ctx, bson.M{
+		"recipientAccountId": accountID,
+		"recipientActorId":   actorID,
+		"isRead":             bson.M{"$ne": true},
+	}, bson.M{"$set": bson.M{"isRead": true, "readAt": now}})
+	if err != nil {
+		return 0, err
+	}
+	return result.ModifiedCount, nil
+}
+
 func (r *NotificationRepository) findOne(ctx context.Context, filter bson.M) (*notifications.Notification, error) {
 	var doc notificationDocument
 	if err := r.collection.FindOne(ctx, filter).Decode(&doc); err != nil {

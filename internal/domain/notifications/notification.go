@@ -30,4 +30,5 @@ type Notification struct {
 type Repository interface {
 	Upsert(context.Context, Notification) (*Notification, error)
 	MarkRead(context.Context, string, string, string) (*Notification, error)
+	MarkAllRead(context.Context, string, string) (int64, error)
 }

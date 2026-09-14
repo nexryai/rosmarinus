@@ -142,6 +142,7 @@ function App() {
     const [composerSettings, setComposerSettings] = useState<ActorSettings>();
     const [refreshKey, setRefreshKey] = useState(0);
     const [liveTimelineKey, setLiveTimelineKey] = useState(0);
+    const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
     const [error, setError] = useState("");
 
     const loadWorkspace = useCallback(async () => {
@@ -250,6 +251,17 @@ function App() {
         };
     }, [authState, loadWorkspace, selectedActorID]);
 
+    useEffect(() => {
+        if (authState !== "authenticated" || !selectedActorID) return;
+        const controller = new AbortController();
+        void refreshKey;
+        void api
+            .notificationUnreadCount(selectedActorID, controller.signal)
+            .then(setUnreadNotificationCount)
+            .catch(() => undefined);
+        return () => controller.abort();
+    }, [authState, refreshKey, selectedActorID]);
+
     const selectedActor = useMemo(() => actors.find((actor) => actor.id === selectedActorID), [actors, selectedActorID]);
     const navigate = (path: string) => {
         window.history.pushState({}, "", path);
@@ -315,7 +327,7 @@ function App() {
     if (!selectedActor) return <NoActor csrf={session.csrf_token} onCreated={loadWorkspace} onLogout={logout} />;
 
     return (
-        <AppShell actors={actors.filter(actorCanAct)} onActorChange={(id) => void chooseActor(id)} onCompose={() => void openComposer()} onLogout={() => void logout()} onNavigate={navigate} page={route.page} selectedActor={selectedActor} session={session}>
+        <AppShell actors={actors.filter(actorCanAct)} onActorChange={(id) => void chooseActor(id)} onCompose={() => void openComposer()} onLogout={() => void logout()} onNavigate={navigate} page={route.page} selectedActor={selectedActor} session={session} unreadNotificationCount={unreadNotificationCount}>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {route.page === "home" && (
                 <TimelinePage
@@ -344,7 +356,15 @@ function App() {
             )}
             {route.page === "users" && <UserSearchPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} />}
             {route.page === "notifications" && (
-                <NotificationsPage actorID={selectedActor.id} csrf={session.csrf_token} onActorChange={(id) => void chooseActor(id)} onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />
+                <NotificationsPage
+                    actorID={selectedActor.id}
+                    csrf={session.csrf_token}
+                    onActorChange={(id) => void chooseActor(id)}
+                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
+                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
+                    onUnreadCountChange={setUnreadNotificationCount}
+                    refreshKey={refreshKey}
+                />
             )}
             {route.page === "follow-requests" && <FollowRequestsPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} refreshKey={refreshKey} />}
             {route.page === "settings" && <SettingsPage accountSettings={settings} actors={actors} csrf={session.csrf_token} onActorsChanged={loadWorkspace} onSettingsChanged={setSettings} selectedActor={selectedActor} />}

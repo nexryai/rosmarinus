@@ -401,6 +401,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Options: options.Index().SetName("idx_notifications_account_read_created_at"),
 		},
 		{
+			Keys:    bson.D{{Key: "recipientAccountId", Value: 1}, {Key: "recipientActorId", Value: 1}, {Key: "isRead", Value: 1}},
+			Options: options.Index().SetName("idx_notifications_account_actor_read"),
+		},
+		{
 			Keys:    bson.D{{Key: "recipientAccountId", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
 			Options: options.Index().SetName("idx_notifications_account_created_at"),
 		},

@@ -344,6 +344,32 @@ func (r *fakeNotificationRepo) MarkRead(_ context.Context, accountID, actorID, n
 	return nil, nil
 }
 
+func (r *fakeNotificationRepo) MarkAllRead(_ context.Context, accountID, actorID string) (int64, error) {
+	var count int64
+	for _, notification := range r.notifications {
+		if notification.RecipientAccountID == accountID && notification.RecipientActorID == actorID && !notification.IsRead {
+			notification.IsRead = true
+			count++
+		}
+	}
+	return count, nil
+}
+
+func TestMarkAllNotificationsReadScopesRecipientAccountAndActor(t *testing.T) {
+	repo := &fakeNotificationRepo{notifications: map[string]*notifications.Notification{
+		"matching": {ID: "notification-1", RecipientAccountID: "account-1", RecipientActorID: "actor-1"},
+		"other":    {ID: "notification-2", RecipientAccountID: "account-1", RecipientActorID: "actor-2"},
+	}}
+	h := &Handler{notifications: repo}
+	result, err := h.MarkAllNotificationsRead(context.Background(), "account-1", "actor-1")
+	if err != nil {
+		t.Fatalf("MarkAllNotificationsRead returned error: %v", err)
+	}
+	if result.Count != 1 || !repo.notifications["matching"].IsRead || repo.notifications["other"].IsRead {
+		t.Fatalf("unexpected result=%+v notifications=%+v", result, repo.notifications)
+	}
+}
+
 func TestMarkNotificationReadScopesRecipientAccountAndActor(t *testing.T) {
 	repo := &fakeNotificationRepo{notifications: map[string]*notifications.Notification{
 		"key": {

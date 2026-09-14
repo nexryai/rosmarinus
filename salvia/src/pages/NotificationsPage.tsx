@@ -171,7 +171,23 @@ const rules = {
     }),
 };
 
-export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, onOpenProfile, refreshKey }: { actorID: string; csrf: string; onActorChange: (actorID: string) => void; onOpenNote: (noteID: string) => void; onOpenProfile: (actorID: string) => void; refreshKey: number }) {
+export function NotificationsPage({
+    actorID,
+    csrf,
+    onActorChange,
+    onOpenNote,
+    onOpenProfile,
+    onUnreadCountChange,
+    refreshKey,
+}: {
+    actorID: string;
+    csrf: string;
+    onActorChange: (actorID: string) => void;
+    onOpenNote: (noteID: string) => void;
+    onOpenProfile: (actorID: string) => void;
+    onUnreadCountChange?: (count: number) => void;
+    refreshKey: number;
+}) {
     const [items, setItems] = useState<Notification[]>([]);
     const [scope, setScope] = useState<"actor" | "account">("actor");
     const [loading, setLoading] = useState(true);
@@ -181,14 +197,26 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, on
         async (signal?: AbortSignal) => {
             setLoading(true);
             try {
-                setItems(scope === "actor" ? await api.notifications(actorID, signal) : await api.accountNotifications(signal));
+                if (scope === "actor") {
+                    const [notifications, unreadCount] = await Promise.all([api.notifications(actorID, signal), api.notificationUnreadCount(actorID, signal)]);
+                    if (signal?.aborted) return;
+                    setItems(notifications);
+                    if (unreadCount > 0) {
+                        await api.markAllNotificationsRead(csrf, actorID);
+                        if (signal?.aborted) return;
+                        setItems((current) => current.map((item) => ({ ...item, is_read: true })));
+                        onUnreadCountChange?.(0);
+                    }
+                } else {
+                    setItems(await api.accountNotifications(signal));
+                }
             } catch (reason) {
                 if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "通知を読み込めませんでした");
             } finally {
                 if (!signal?.aborted) setLoading(false);
             }
         },
-        [actorID, scope],
+        [actorID, csrf, onUnreadCountChange, scope],
     );
     useEffect(() => {
         void refreshKey;
@@ -200,7 +228,7 @@ export function NotificationsPage({ actorID, csrf, onActorChange, onOpenNote, on
         if (item.is_read) return;
         setBusyID(item.id);
         try {
-            await api.markNotificationRead(csrf, actorID, item.id);
+            await api.markNotificationRead(csrf, item.actor_id, item.id);
             setItems((current) => current.map((value) => (value.id === item.id ? { ...value, is_read: true } : value)));
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "既読にできませんでした");

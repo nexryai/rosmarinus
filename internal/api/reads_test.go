@@ -26,6 +26,7 @@ type fakeReader struct {
 	notifications []readmodel.Notification
 	profile       *readmodel.Profile
 	unread        *bool
+	unreadCount   int64
 	emojiQuery    readmodel.EmojiListQuery
 	calls         int
 }
@@ -75,6 +76,30 @@ func (f *fakeReader) ListNotifications(_ context.Context, accountID, actorID str
 	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
 	f.unread = unread
 	return f.notifications, nil
+}
+
+func (f *fakeReader) CountUnreadNotifications(_ context.Context, accountID, actorID string) (int64, error) {
+	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
+	return f.unreadCount, nil
+}
+
+func TestUnreadNotificationCountIsActorScoped(t *testing.T) {
+	reader := &fakeReader{unreadCount: 7}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors/actor-1/notifications/unread-count", nil))
+	if recorder.Code != http.StatusOK || reader.accountID != "account-1" || reader.actorID != "actor-1" {
+		t.Fatalf("status=%d account=%q actor=%q body=%s", recorder.Code, reader.accountID, reader.actorID, recorder.Body.String())
+	}
+	var body struct {
+		Data struct {
+			Count int64 `json:"count"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil || body.Data.Count != 7 {
+		t.Fatalf("response=%+v err=%v", body, err)
+	}
 }
 
 func (f *fakeReader) ListEmojis(_ context.Context, query readmodel.EmojiListQuery) ([]emojis.Emoji, error) {

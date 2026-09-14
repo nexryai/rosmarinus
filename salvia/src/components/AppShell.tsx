@@ -74,6 +74,28 @@ const styles = {
         color: "var(--accent-ink)",
         background: "var(--accent-soft)",
     },
+    navIcon: {
+        position: "relative",
+        display: "grid",
+        placeItems: "center",
+    },
+    notificationBadge: {
+        minWidth: "1.125rem",
+        height: "1.125rem",
+        paddingInline: "0.25rem",
+        position: "absolute",
+        top: "-0.625rem",
+        left: "0.75rem",
+        display: "grid",
+        placeItems: "center",
+        border: "2px solid var(--panel)",
+        borderRadius: "9999px",
+        color: "#fff",
+        background: "var(--danger)",
+        fontSize: "0.625rem",
+        lineHeight: 1,
+        fontWeight: 800,
+    },
     compose: {
         width: "100%",
         marginTop: "1.5rem",
@@ -337,6 +359,7 @@ export function AppShell({
     page,
     selectedActor,
     session,
+    unreadNotificationCount = 0,
 }: {
     actors: Actor[];
     children: ReactNode;
@@ -347,6 +370,7 @@ export function AppShell({
     page: Page;
     selectedActor: Actor;
     session: Session;
+    unreadNotificationCount?: number;
 }) {
     return (
         <div className={rules.layout} style={styles.layout}>
@@ -359,8 +383,23 @@ export function AppShell({
                 </button>
                 <nav aria-label="メインナビゲーション" className={rules.nav}>
                     {navigation.map((item) => (
-                        <button aria-current={page === item.page ? "page" : undefined} className={rules.navItem} key={item.page} onClick={() => onNavigate(item.path)} style={{ ...styles.navItem, ...(page === item.page ? styles.navItemActive : {}) }} type="button">
-                            <item.icon />
+                        <button
+                            aria-current={page === item.page ? "page" : undefined}
+                            aria-label={item.page === "notifications" && unreadNotificationCount > 0 ? `通知（未読${unreadNotificationCount}件）` : undefined}
+                            className={rules.navItem}
+                            key={item.page}
+                            onClick={() => onNavigate(item.path)}
+                            style={{ ...styles.navItem, ...(page === item.page ? styles.navItemActive : {}) }}
+                            type="button"
+                        >
+                            <span style={styles.navIcon}>
+                                <item.icon />
+                                {item.page === "notifications" && unreadNotificationCount > 0 && (
+                                    <span aria-hidden="true" style={styles.notificationBadge}>
+                                        {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                                    </span>
+                                )}
+                            </span>
                             {item.label}
                         </button>
                     ))}
@@ -418,8 +457,22 @@ export function AppShell({
                 {navigation
                     .filter((item) => item.page !== "settings")
                     .map((item) => (
-                        <button aria-current={page === item.page ? "page" : undefined} key={item.page} onClick={() => onNavigate(item.path)} style={{ ...styles.mobileItem, ...(page === item.page ? { color: "var(--accent-hover)" } : {}) }} type="button">
-                            <item.icon />
+                        <button
+                            aria-current={page === item.page ? "page" : undefined}
+                            aria-label={item.page === "notifications" && unreadNotificationCount > 0 ? `通知（未読${unreadNotificationCount}件）` : undefined}
+                            key={item.page}
+                            onClick={() => onNavigate(item.path)}
+                            style={{ ...styles.mobileItem, ...(page === item.page ? { color: "var(--accent-hover)" } : {}) }}
+                            type="button"
+                        >
+                            <span style={styles.navIcon}>
+                                <item.icon />
+                                {item.page === "notifications" && unreadNotificationCount > 0 && (
+                                    <span aria-hidden="true" style={styles.notificationBadge}>
+                                        {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                                    </span>
+                                )}
+                            </span>
                             <span>{item.label}</span>
                         </button>
                     ))}

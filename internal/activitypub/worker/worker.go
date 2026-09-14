@@ -185,6 +185,17 @@ func (h *Handler) MarkNotificationRead(ctx context.Context, accountID, actorID, 
 	return connector.NotificationRead{NotificationID: notification.ID, IsRead: notification.IsRead}, nil
 }
 
+func (h *Handler) MarkAllNotificationsRead(ctx context.Context, accountID, actorID string) (connector.NotificationsRead, error) {
+	if h.notifications == nil {
+		return connector.NotificationsRead{}, fmt.Errorf("notification repository is not configured")
+	}
+	count, err := h.notifications.MarkAllRead(ctx, strings.TrimSpace(accountID), strings.TrimSpace(actorID))
+	if err != nil {
+		return connector.NotificationsRead{}, err
+	}
+	return connector.NotificationsRead{Count: count}, nil
+}
+
 func (h *Handler) SetActivityLocker(locker ActivityLocker) {
 	h.locker = locker
 	h.resolver.SetObjectLocker(locker)

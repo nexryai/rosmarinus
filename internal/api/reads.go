@@ -200,6 +200,22 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request, acco
 	h.writeNotifications(w, r, accountID, actorID)
 }
 
+func (h *Handler) countUnreadNotifications(w http.ResponseWriter, r *http.Request, accountID, actorID string) {
+	if _, ok := h.authorizeActor(w, r, accountID, actorID, false); !ok {
+		return
+	}
+	if h.reader == nil {
+		h.internalError(w, r, fmt.Errorf("read service is not configured"))
+		return
+	}
+	count, err := h.reader.CountUnreadNotifications(r.Context(), accountID, actorID)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("count unread notifications: %w", err))
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]int64{"count": count}})
+}
+
 func (h *Handler) accountNotifications(w http.ResponseWriter, r *http.Request, accountID string) {
 	if r.Method != http.MethodGet {
 		h.methodNotAllowed(w, http.MethodGet)

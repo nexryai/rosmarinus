@@ -195,7 +195,8 @@ Pub/Sub message arriving.
       block/unblock, and mandatory follow approve/reject flows.
 - [x] Keep follow as the primary profile action and place block plus
       indefinite/temporary timeline-only mute controls in the profile menu.
-- [x] Build account- and Actor-scoped notification views and mark-read actions.
+- [x] Build account- and Actor-scoped notification views, an Actor unread badge,
+      and automatic bulk mark-read on opening the Actor notification view.
 - [x] Build local and remote Actor profiles with visibility-filtered Note
       lists, clearly labeled pinned Notes, follower/following views, moved and
       suspended states, and safe external-link/media behavior.

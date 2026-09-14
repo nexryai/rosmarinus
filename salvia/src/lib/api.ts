@@ -159,9 +159,11 @@ export const api = {
     },
     notifications: async (actorID: string, signal?: AbortSignal): Promise<Notification[]> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications?limit=50`, pageEnvelope(notificationSchema), { signal })).data,
     accountNotifications: async (signal?: AbortSignal): Promise<Notification[]> => (await request("/notifications?limit=50", pageEnvelope(notificationSchema), { signal })).data,
+    notificationUnreadCount: async (actorID: string, signal?: AbortSignal): Promise<number> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications/unread-count`, envelope(z.object({ count: z.number().int().nonnegative() })), { signal })).data.count,
     markNotificationRead: async (csrf: string, actorID: string, notificationID: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/notifications/${encodeURIComponent(notificationID)}`, envelope(z.unknown()), { method: "PATCH", body: { is_read: true }, csrf, idempotent: true });
     },
+    markAllNotificationsRead: async (csrf: string, actorID: string): Promise<number> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications`, envelope(z.object({ count: z.number().int().nonnegative() })), { method: "PATCH", body: { is_read: true }, csrf, idempotent: true })).data.count,
     followRequests: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/follow-requests?limit=50`, pageEnvelope(connectionSchema))).data,
     following: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/following?limit=100`, pageEnvelope(connectionSchema))).data,
     decideFollowRequest: async (csrf: string, actorID: string, followerID: string, status: "accepted" | "rejected" | "rejected_and_blocked"): Promise<void> => {
