@@ -429,11 +429,11 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 }
 
 func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M) (*readmodel.NoteReference, error) {
-	// One nested quote preserves renoted quote cards without allowing cycles in API projections.
-	return r.findNoteReferenceWithQuote(ctx, noteID, visibility, true)
+	// One nested reply or quote preserves the target's context without allowing cycles in API projections.
+	return r.findNoteReferenceWithContext(ctx, noteID, visibility, true)
 }
 
-func (r *SalviaReader) findNoteReferenceWithQuote(ctx context.Context, noteID string, visibility bson.M, includeQuote bool) (*readmodel.NoteReference, error) {
+func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID string, visibility bson.M, includeContext bool) (*readmodel.NoteReference, error) {
 	if noteID == "" {
 		return nil, nil
 	}
@@ -450,8 +450,12 @@ func (r *SalviaReader) findNoteReferenceWithQuote(ctx context.Context, noteID st
 		return nil, err
 	}
 	reference := &readmodel.NoteReference{Note: *toNote(doc), Author: author}
-	if includeQuote {
-		reference.Quote, err = r.findNoteReferenceWithQuote(ctx, doc.QuoteID, visibility, false)
+	if includeContext {
+		reference.Reply, err = r.findNoteReferenceWithContext(ctx, doc.ReplyID, visibility, false)
+		if err != nil {
+			return nil, err
+		}
+		reference.Quote, err = r.findNoteReferenceWithContext(ctx, doc.QuoteID, visibility, false)
 		if err != nil {
 			return nil, err
 		}

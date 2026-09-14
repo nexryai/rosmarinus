@@ -281,9 +281,9 @@ quote, and renote references with the referenced author's safe profile fields
 plus the custom emoji and attachment metadata required for in-card rendering.
 Raw federation documents
 and internal attachment URIs are never returned.
-Renote references include one visibility-checked `quote` reference when their
-target is itself a quote Note, allowing Salvia to retain the quoted card without
-an unbounded recursive projection.
+Renote references include one visibility-checked `reply` or `quote` reference
+when their target is itself a reply or quote Note, allowing Salvia to retain the
+reply context or quoted card without an unbounded recursive projection.
 
 Actor projections include `emojis`, an array of
 `{ "name": string, "url": string, "media_type"?: string }` references resolved

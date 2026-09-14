@@ -180,6 +180,17 @@ describe("NoteCard social actions", () => {
                 author: originalAuthor,
                 emojis: [{ name: "salvia", url: "https://remote.test/salvia.webp", media_type: "image/webp" }],
                 attachments: [{ media_type: "image/jpeg", name: "元ノートの画像", sensitive: false, url: "https://remote.test/image.jpg" }],
+                reply: {
+                    id: "reply-target",
+                    uri: "https://remote.test/notes/reply-target",
+                    text: "リノート元の返信先",
+                    sensitive: false,
+                    visibility: "public",
+                    created_at: "2026-08-30T00:00:00Z",
+                    author: { ...author, id: "dave", name: "Dave", username: "dave", uri: "https://remote.test/users/dave" },
+                    emojis: [],
+                    attachments: [],
+                },
                 quote: {
                     id: "quoted-note",
                     uri: "https://remote.test/notes/quoted",
@@ -199,6 +210,7 @@ describe("NoteCard social actions", () => {
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
         expect(screen.getByAltText(":salvia:")).toHaveAttribute("src", "https://remote.test/salvia.webp");
         expect(screen.getByRole("button", { name: "画像を表示: 元ノートの画像" })).toBeInTheDocument();
+        expect(screen.getByRole("article", { name: "返信先のノート" })).toHaveTextContent("リノート元の返信先");
         expect(screen.getByText("引用元の本文")).toBeInTheDocument();
 
         await user.click(screen.getByRole("button", { name: /ノートの詳細を開く/ }));

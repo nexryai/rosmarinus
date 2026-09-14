@@ -78,6 +78,7 @@ const noteReferenceBaseSchema = z.object({
 });
 
 const noteReferenceSchema = noteReferenceBaseSchema.extend({
+    reply: noteReferenceBaseSchema.optional(),
     quote: noteReferenceBaseSchema.optional(),
 });
 

@@ -348,10 +348,10 @@ const displayedNoteFor = (note: Note): Note => {
         published_at: null,
         reactions: [],
         poll: undefined,
-        reply_id: undefined,
+        reply_id: note.renote.reply?.id,
         quote_id: note.renote.quote?.id,
         renote_id: undefined,
-        reply: undefined,
+        reply: note.renote.reply,
         quote: note.renote.quote,
         renote: undefined,
     };

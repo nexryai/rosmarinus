@@ -154,6 +154,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 			URL: "https://remote.test/files/public.jpg", Name: "photo", Width: 1200, Height: 800,
 		}},
 		Raw: map[string]any{"private": "federation document"},
+	}, Reply: &readmodel.NoteReference{
+		Note:   notes.Note{ID: "reply-target", URI: "https://remote.test/notes/reply-target", Text: "reply target", Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC)},
+		Author: &actors.Actor{ID: "reply-author", Username: "parent"},
 	}, Quote: &readmodel.NoteReference{
 		Note:   notes.Note{ID: "quoted-note", URI: "https://remote.test/notes/quoted", Text: "quoted text", Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)},
 		Author: &actors.Actor{ID: "quoted-author", Username: "quoted"},
@@ -168,6 +171,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 	}
 	if view.Quote == nil || view.Quote.ID != "quoted-note" || view.Quote.Author == nil || view.Quote.Author.Username != "quoted" {
 		t.Fatalf("nested quote projection = %#v", view.Quote)
+	}
+	if view.Reply == nil || view.Reply.ID != "reply-target" || view.Reply.Author == nil || view.Reply.Author.Username != "parent" {
+		t.Fatalf("nested reply projection = %#v", view.Reply)
 	}
 	encoded, err := json.Marshal(view)
 	if err != nil {

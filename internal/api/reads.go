@@ -548,6 +548,7 @@ type noteReferenceView struct {
 	Author         *actorView         `json:"author,omitempty"`
 	Emojis         []noteEmojiView    `json:"emojis"`
 	Attachments    []attachmentView   `json:"attachments"`
+	Reply          *noteReferenceView `json:"reply,omitempty"`
 	Quote          *noteReferenceView `json:"quote,omitempty"`
 }
 
@@ -659,6 +660,7 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
+	view.Reply = projectShallowNoteReference(reference.Reply)
 	view.Quote = projectShallowNoteReference(reference.Quote)
 	return view
 }
