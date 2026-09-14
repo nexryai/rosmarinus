@@ -125,6 +125,7 @@ const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?:
     if (path === "/follow-requests") return { page: "follow-requests" };
     if (path === "/settings") return { page: "settings" };
     if (path.startsWith("/profiles/")) return { page: "profile", profileID: decodeURIComponent(path.slice(10)) };
+    if (path.startsWith("/users/")) return { page: "profile", profileID: decodeURIComponent(path.slice(7)) };
     if (path.startsWith("/notes/")) return { page: "note", noteID: decodeURIComponent(path.slice(7)) };
     return { page: "home" };
 };

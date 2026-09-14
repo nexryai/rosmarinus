@@ -178,7 +178,7 @@ export function AuthScreen({ mode, onAuthenticated }: { mode: "login" | "setup";
                         </span>
                         <div>
                             <h2 style={styles.headingTitle}>{mode === "setup" ? "初期セットアップ" : "おかえりなさい"}</h2>
-                            <p style={styles.headingText}>{mode === "setup" ? "最初の管理者とパスキーを作成します" : "パスキーで安全にログインします"}</p>
+                            <p style={styles.headingText}>{mode === "setup" ? "最初の管理者とパスキーを作成します" : "このページを見るにはパスキーでのログインが必要です"}</p>
                         </div>
                     </div>
                     {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}

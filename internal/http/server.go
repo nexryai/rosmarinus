@@ -9,8 +9,10 @@ import (
 	"html"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,8 +96,8 @@ func NewHandlerWithAllStoresAndAPI(cfg config.Config, logger *log.Logger, actorL
 	}
 	mux.HandleFunc("/healthz", healthz)
 	mux.HandleFunc("/inbox", inbox(cfg, queueClient))
-	mux.HandleFunc("/users/", actorByID(cfg, actorLookup, emojiLookup, queueClient, logger))
-	mux.HandleFunc("/notes/", noteByID(cfg, noteLookup, pollLookup))
+	mux.Handle("/users/", negotiateObjectRoute("/users/", actorByID(cfg, actorLookup, emojiLookup, queueClient, logger), spaHandler))
+	mux.Handle("/notes/", negotiateObjectRoute("/notes/", noteByID(cfg, noteLookup, pollLookup), spaHandler))
 	mux.HandleFunc("/emojis/", emojiByName(cfg, emojiLookup))
 	mux.HandleFunc("/likes/", likeByID(cfg, reactionLookup, noteLookup, emojiLookup))
 	mux.HandleFunc("/follows/", followByID(cfg, actorLookup))
@@ -511,7 +513,12 @@ func fallback(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLooku
 	actorHandler := actorByUsername(cfg, actorLookup, emojiLookup, logger)
 	return func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/@") {
-			actorHandler(w, r)
+			w.Header().Add("Vary", "Accept")
+			if spaHandler == nil || activityPubRequested(r) {
+				actorHandler(w, r)
+			} else {
+				serveSPA(w, r, spaHandler)
+			}
 			return
 		}
 		if spaHandler != nil {
@@ -520,6 +527,52 @@ func fallback(cfg config.Config, actorLookup ActorLookup, emojiLookup EmojiLooku
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+func negotiateObjectRoute(prefix string, activityPubHandler, spaHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		objectID := strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/")
+		if spaHandler != nil && objectID != "" && !strings.Contains(objectID, "/") {
+			w.Header().Add("Vary", "Accept")
+			if !activityPubRequested(r) {
+				serveSPA(w, r, spaHandler)
+				return
+			}
+		}
+		activityPubHandler.ServeHTTP(w, r)
+	})
+}
+
+func serveSPA(w http.ResponseWriter, r *http.Request, spaHandler http.Handler) {
+	request := r.Clone(r.Context())
+	request.Header.Set("Accept", "text/html")
+	spaHandler.ServeHTTP(w, request)
+}
+
+func activityPubRequested(r *http.Request) bool {
+	for _, value := range strings.Split(r.Header.Get("Accept"), ",") {
+		mediaType, parameters, err := mime.ParseMediaType(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		if quality, ok := parameters["q"]; ok {
+			value, err := strconv.ParseFloat(quality, 64)
+			if err != nil || value <= 0 {
+				continue
+			}
+		}
+		switch strings.ToLower(mediaType) {
+		case "application/activity+json":
+			return true
+		case "application/ld+json":
+			for _, profile := range strings.Fields(parameters["profile"]) {
+				if profile == "https://www.w3.org/ns/activitystreams" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func wellKnown(cfg config.Config, actorLookup ActorLookup) http.HandlerFunc {

@@ -29,11 +29,18 @@ reads.
 The production Salvia build is generated in `internal/salvia/dist`, embedded in
 the Rosmarinus executable, and served by the Rosmarinus HTTP server. Hashed
 assets use immutable caching; `index.html` uses revalidation and acts as the
-browser history fallback. Explicit REST, ActivityPub, WebFinger, NodeInfo,
-inbox, Actor, Note, emoji, follow, and media routes always take precedence.
+browser history fallback. Canonical Actor (`/@{username}`, `/users/{id}`) and
+Note (`/notes/{id}`) object URLs use `Accept` negotiation: requests accepting
+`application/activity+json`, or ActivityStreams-profiled
+`application/ld+json`, receive the federated representation; every other
+browser request receives the SPA. Nested federation resources such as inboxes,
+outboxes, collections, public keys, and Note activities are never routed to the
+SPA. Responses on negotiated routes vary on `Accept`. Explicit REST,
+WebFinger, NodeInfo, emoji, follow, and media routes always take precedence.
 Missing assets and unknown routes that explicitly request JSON or ActivityPub
 receive `404` instead of the SPA fallback. A reverse proxy may front the single
-binary but must preserve this same-origin routing behavior.
+binary but must preserve the `Accept` header and this same-origin routing
+behavior.
 
 ## Ownership
 
@@ -87,6 +94,11 @@ users authenticate again with a migrated passkey credential.
 
 The SPA may call browser WebAuthn APIs, but it never verifies a ceremony,
 stores passkey private material, or receives session/database secrets.
+Apart from the minimum setup and passkey ceremony endpoints required to create
+a session, every `/api/v1` projection and command authenticates the HTTP-only
+session before route dispatch. Direct browser visits without a session may
+load the SPA shell, but Rosemary shows that login is required and cannot read
+Actor, Note, timeline, notification, instance, or other private API data.
 
 ## Account And Actor Authorization
 

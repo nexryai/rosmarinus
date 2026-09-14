@@ -215,6 +215,8 @@ Redis, or ActivityPub implementation details to the browser.
 
 - [x] Embed the production SPA in the Rosmarinus binary and serve immutable hashed SPA
       assets, `index.html`, and history fallback with correct cache policy.
+- [x] Negotiate canonical Actor and Note URLs by `Accept`, serving ActivityPub
+      only to federation clients and the authenticated SPA shell to browsers.
 - [x] Add Content Security Policy, frame, referrer, MIME-sniffing, and other
       browser security headers at the serving boundary.
 - [ ] Verify passkey RP ID and allowed origins for the production same-origin

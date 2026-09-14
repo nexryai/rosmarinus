@@ -238,14 +238,93 @@ func TestSalviaFallbackDoesNotShadowApplicationOrFederationRoutes(t *testing.T) 
 	}{
 		{path: "/settings", wantStatus: http.StatusOK, wantCalls: 1},
 		{path: "/api/v1/session", wantStatus: http.StatusNoContent, wantCalls: 1},
-		{path: "/users/missing", wantStatus: http.StatusNotFound, wantCalls: 1},
-		{path: "/@missing", wantStatus: http.StatusNotFound, wantCalls: 1},
+		{path: "/users/missing", wantStatus: http.StatusOK, wantCalls: 2},
+		{path: "/@missing", wantStatus: http.StatusOK, wantCalls: 3},
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
 		if recorder.Code != test.wantStatus || spaCalls != test.wantCalls {
 			t.Fatalf("path=%s status=%d spa_calls=%d", test.path, recorder.Code, spaCalls)
 		}
+	}
+}
+
+func TestActivityPubObjectRoutesNegotiateWithSalvia(t *testing.T) {
+	actorLookup := fakeActorLookup{actor: &actors.Actor{
+		ID: "actor-id", Username: "alice", URI: "https://example.test/users/actor-id",
+		Inbox: "https://example.test/users/actor-id/inbox", PublicKeyID: "https://example.test/users/actor-id#main-key", PublicKeyPEM: "pem",
+	}}
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{
+		ID: "note-id", URI: "https://example.test/notes/note-id", AttributedTo: "https://example.test/users/actor-id", Visibility: domainnotes.VisibilityPublic,
+	}}
+	spa := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("salvia"))
+	})
+	handler := NewHandlerWithAllStoresAndAPI(testConfig(), nil, actorLookup, noteLookup, nil, nil, nil, nil, nil, nil, nil, spa)
+
+	for _, accept := range []string{"text/html,application/xhtml+xml", "application/json", "*/*", ""} {
+		for _, path := range []string{"/@alice", "/users/actor-id", "/notes/note-id"} {
+			t.Run(path+" browser "+accept, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("Accept", accept)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK || rec.Body.String() != "salvia" {
+					t.Fatalf("status=%d body=%q", rec.Code, rec.Body.String())
+				}
+				if got := rec.Header().Values("Vary"); len(got) == 0 || !strings.Contains(strings.Join(got, ","), "Accept") {
+					t.Fatalf("Vary = %v", got)
+				}
+			})
+		}
+	}
+
+	for _, accept := range []string{
+		"application/activity+json",
+		`application/ld+json; profile="https://www.w3.org/ns/activitystreams"`,
+		"application/activity+json, */*",
+	} {
+		for _, path := range []string{"/@alice", "/users/actor-id", "/notes/note-id"} {
+			t.Run(path+" "+accept, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				req.Header.Set("Accept", accept)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/activity+json") {
+					t.Fatalf("status=%d content-type=%q body=%q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+				}
+			})
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/notes/note-id", nil)
+	req.Header.Set("Accept", "application/activity+json; q=0.0, text/html")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || rec.Body.String() != "salvia" {
+		t.Fatalf("zero-quality ActivityPub status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestNestedActivityPubRoutesAreNotNegotiatedToSalvia(t *testing.T) {
+	actorLookup := fakeActorLookup{actor: &actors.Actor{ID: "actor-id", Username: "alice", URI: "https://example.test/users/actor-id"}}
+	noteLookup := fakeNoteLookup{note: &domainnotes.Note{ID: "note-id", URI: "https://example.test/notes/note-id", AttributedTo: actorLookup.actor.URI, Visibility: domainnotes.VisibilityPublic}}
+	spaCalls := 0
+	spa := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { spaCalls++ })
+	handler := NewHandlerWithAllStoresAndAPI(testConfig(), nil, actorLookup, noteLookup, nil, nil, nil, nil, nil, nil, nil, spa)
+
+	for _, path := range []string{"/users/actor-id/outbox", "/notes/note-id/activity"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/activity+json") {
+			t.Fatalf("path=%s status=%d content-type=%q body=%q", path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+		}
+	}
+	if spaCalls != 0 {
+		t.Fatalf("spa calls = %d", spaCalls)
 	}
 }
 

@@ -248,9 +248,25 @@ func (s *fakeReceiptStore) Fail(_ context.Context, accountID, requestID, code st
 
 func TestHandlerRequiresAuthentication(t *testing.T) {
 	handler := NewHandler(fakeAuthenticator{err: ErrUnauthenticated}, &fakeActorStore{}, &fakeExecutor{}, nil, nil, 0)
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors", nil))
-	assertError(t, recorder, http.StatusUnauthorized, "unauthenticated")
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodGet, path: "/api/v1/session"},
+		{method: http.MethodGet, path: "/api/v1/actors"},
+		{method: http.MethodGet, path: "/api/v1/timelines/public"},
+		{method: http.MethodGet, path: "/api/v1/notes/note-1"},
+		{method: http.MethodGet, path: "/api/v1/profiles/actor-1"},
+		{method: http.MethodGet, path: "/api/v1/notifications"},
+		{method: http.MethodGet, path: "/api/v1/instance"},
+		{method: http.MethodPost, path: "/api/v1/actors/actor-1/posts"},
+	} {
+		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(test.method, test.path, nil))
+			assertError(t, recorder, http.StatusUnauthorized, "unauthenticated")
+		})
+	}
 }
 
 func TestHandlerSessionReturnsActiveAccountProjection(t *testing.T) {
