@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../lib/api";
@@ -81,5 +81,62 @@ describe("TimelinePage remote notes", () => {
         rerender(<TimelinePage {...props} liveRefreshKey={1} refreshKey={2} />);
         expect(await screen.findByText("手動更新で見つけたノート")).toBeInTheDocument();
         expect(document.querySelector("[data-live-entry]")).toBeNull();
+    });
+
+    it("loads the next page near the end and preserves it across live refreshes", async () => {
+        let intersect: IntersectionObserverCallback = () => undefined;
+        const observe = vi.fn();
+        class FakeIntersectionObserver {
+            readonly root = null;
+            readonly rootMargin: string;
+            readonly thresholds = [0];
+
+            constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+                intersect = callback;
+                this.rootMargin = options?.rootMargin ?? "0px";
+            }
+
+            disconnect() {}
+            observe = observe;
+            takeRecords() {
+                return [];
+            }
+            unobserve() {}
+        }
+        vi.stubGlobal("IntersectionObserver", FakeIntersectionObserver);
+        const first = {
+            id: "note-first",
+            uri: "https://remote.test/notes/first",
+            text: "最初のページ",
+            sensitive: false,
+            visibility: "public",
+            created_at: "2026-09-08T00:00:00Z",
+            attachments: [],
+            emojis: [],
+            reactions: [],
+        } as unknown as Note;
+        const older = { ...first, id: "note-older", uri: "https://remote.test/notes/older", text: "次のページ" };
+        const arrived = { ...first, id: "note-arrived", uri: "https://remote.test/notes/arrived", text: "新着ノート" };
+        const timeline = vi
+            .spyOn(api, "timeline")
+            .mockResolvedValueOnce({ data: [first], next: "page-2" })
+            .mockResolvedValueOnce({ data: [first, older], next: "page-3" })
+            .mockResolvedValueOnce({ data: [arrived, first], next: "fresh-page-2" });
+        const props = { actorID: "local-actor", csrf: "csrf", emojis: [], kind: "home" as const, onCompose: vi.fn(), onOpenNote: vi.fn(), onOpenProfile: vi.fn() };
+        const { rerender } = render(<TimelinePage {...props} liveRefreshKey={0} refreshKey={0} />);
+
+        expect(await screen.findByText("最初のページ")).toBeInTheDocument();
+        expect(observe).toHaveBeenCalled();
+        await act(async () => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+
+        expect(await screen.findByText("次のページ")).toBeInTheDocument();
+        expect(screen.getAllByText("最初のページ")).toHaveLength(1);
+        expect(timeline).toHaveBeenNthCalledWith(2, "home", "local-actor", "page-2", undefined);
+
+        rerender(<TimelinePage {...props} liveRefreshKey={1} refreshKey={1} />);
+
+        expect(await screen.findByText("新着ノート")).toBeInTheDocument();
+        expect(screen.getByText("次のページ")).toBeInTheDocument();
+        await waitFor(() => expect(timeline).toHaveBeenCalledTimes(3));
     });
 });
