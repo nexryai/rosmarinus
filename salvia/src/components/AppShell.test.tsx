@@ -47,6 +47,19 @@ describe("AppShell navigation and mobile account controls", () => {
         expect(screen.getByRole("banner", { name: "モバイルアカウント操作" })).toBeVisible();
     });
 
+    it("keeps the mobile navigation above the iOS home indicator", () => {
+        render(
+            <AppShell actors={actors} onActorChange={vi.fn()} onCompose={vi.fn()} onLogout={vi.fn()} onNavigate={vi.fn()} page="home" selectedActor={actors[0]} session={session}>
+                content
+            </AppShell>,
+        );
+
+        const navigation = screen.getByRole("navigation", { name: "モバイルナビゲーション" });
+        expect(navigation.getAttribute("style")).toContain("height: calc(4.25rem + env(safe-area-inset-bottom))");
+        expect(navigation).toHaveStyle({ boxSizing: "border-box" });
+        expect(document.head.querySelector("style[data-salvia-css]")?.textContent).toContain("padding-bottom:env(safe-area-inset-bottom)");
+    });
+
     it("replaces the discovery timeline with custom emoji management", async () => {
         const navigate = vi.fn();
         const user = userEvent.setup();

@@ -188,8 +188,9 @@ const styles = {
         zIndex: 30,
         insetInline: 0,
         bottom: 0,
-        height: "4.25rem",
+        height: "calc(4.25rem + env(safe-area-inset-bottom))",
         paddingInline: "0.5rem",
+        boxSizing: "border-box",
         alignItems: "center",
         justifyContent: "space-around",
         borderTop: "1px solid var(--border)",
@@ -273,7 +274,7 @@ const rules = {
     }),
     main: css({
         paddingTop: "var(--shell-header-height)",
-        paddingBottom: "5rem",
+        paddingBottom: "calc(5rem + env(safe-area-inset-bottom))",
         "@media (width >= 64rem)": {
             paddingTop: 0,
             paddingBottom: 0,
@@ -311,6 +312,7 @@ const rules = {
     }),
     mobileNav: css({
         display: "flex",
+        paddingBottom: "env(safe-area-inset-bottom)",
         background: "var(--panel)",
         "@supports (color: color-mix(in lab, red, red))": {
             background: "color-mix(in srgb, var(--panel) 94%, transparent)",
