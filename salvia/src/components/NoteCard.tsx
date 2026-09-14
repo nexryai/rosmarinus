@@ -9,6 +9,7 @@ import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
 import { NoteSurface } from "./NoteSurface";
 import { QuotedNoteCard } from "./QuotedNoteCard";
+import { ThreadNote } from "./ThreadNote";
 import { Avatar, Button } from "./ui";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 
@@ -369,6 +370,7 @@ export function NoteCard({
     onVote,
     emojis = [],
     pinned = false,
+    showReplyContext = true,
 }: {
     note: Note;
     ownActorID: string;
@@ -382,6 +384,7 @@ export function NoteCard({
     onVote: (noteID: string, choice: number) => Promise<void>;
     emojis?: Emoji[];
     pinned?: boolean;
+    showReplyContext?: boolean;
 }) {
     const displayedNote = displayedNoteFor(note);
     const isRenote = Boolean(note.renote_id || note.renote);
@@ -407,6 +410,7 @@ export function NoteCard({
     };
     return (
         <NoteSurface>
+            {showReplyContext && displayedNote.reply && <ThreadNote label="返信先のノート" lineAfter note={displayedNote.reply} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} style={{ gridColumn: "1 / -1", marginTop: "-0.5rem", padding: 0, paddingBottom: "0.5rem" }} />}
             {pinned && (
                 <div className={rules.pinned} style={styles.pinned}>
                     <IconPinFilled />

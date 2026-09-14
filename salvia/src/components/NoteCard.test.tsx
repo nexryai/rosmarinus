@@ -125,6 +125,35 @@ describe("NoteCard social actions", () => {
         expect(onOpenNote).toHaveBeenCalledWith("quote-1");
     });
 
+    it("renders the reply target above a reply like Misskey", async () => {
+        const onOpenNote = vi.fn();
+        const reply = {
+            ...note,
+            id: "reply-1",
+            text: "返信本文",
+            reply_id: "parent-1",
+            reply: {
+                id: "parent-1",
+                uri: "https://example.test/notes/parent-1",
+                text: "返信先の本文",
+                sensitive: false,
+                visibility: "public",
+                created_at: "2026-09-01T00:00:00Z",
+                author,
+                attachments: [],
+                emojis: [],
+            },
+        } as Note;
+        const user = userEvent.setup();
+        render(<NoteCard note={reply} ownActorID="alice" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getByRole("article", { name: "返信先のノート" })).toHaveTextContent("返信先の本文");
+        expect(screen.getByText("返信本文")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "返信先のノートを開く: Bob" }));
+
+        expect(onOpenNote).toHaveBeenCalledWith("parent-1");
+    });
+
     it("renders a renote as Misskey-style attribution followed by the original note", async () => {
         const user = userEvent.setup();
         const onOpenNote = vi.fn();

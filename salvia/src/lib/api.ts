@@ -187,7 +187,7 @@ export const api = {
         await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
     },
     note: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema), { signal })).data,
-    thread: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: "100" })}`, pageEnvelope(noteSchema), { signal })).data,
+    thread: async (actorID: string, noteID: string, signal?: AbortSignal, limit = 100): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: String(limit) })}`, pageEnvelope(noteSchema), { signal })).data,
     emojiCatalog: async (scope: "local" | "remote", filters: { after?: string; query?: string; host?: string } = {}): Promise<{ data: ManagedEmoji[]; next: string }> => {
         const result = await request(`/emojis${query({ scope, after: filters.after, query: filters.query, host: filters.host, limit: "30" })}`, pageEnvelope(managedEmojiSchema));
         return { data: result.data, next: result.next };
