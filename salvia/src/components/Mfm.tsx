@@ -268,7 +268,7 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm")
             case "mention":
                 return (
                     <span key={key} style={styles.mention}>
-                        @{node.props.acct}
+                        {node.props.acct}
                     </span>
                 );
             case "hashtag":

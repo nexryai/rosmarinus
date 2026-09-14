@@ -35,6 +35,15 @@ describe("federated text rendering", () => {
         expect(container).toHaveTextContent("$[unixtime 999999999999999999999]");
     });
 
+    it("renders local and remote mentions with one leading at-sign", () => {
+        const { container } = render(<Mfm text="@alice から @bob@remote.test への返信" />);
+
+        expect(screen.getByText("@alice")).toBeInTheDocument();
+        expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
+        expect(container).not.toHaveTextContent("@@alice");
+        expect(container).not.toHaveTextContent("@@bob@remote.test");
+    });
+
     it("keeps numbers in code on a text font before falling back to Twemoji", () => {
         render(<Mfm text="`123😀`" />);
 
