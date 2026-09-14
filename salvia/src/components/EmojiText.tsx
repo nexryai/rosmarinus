@@ -6,17 +6,21 @@ import type { Emoji } from "../lib/schema";
 
 const styles = {
     emoji: {
-        width: "1.5em",
-        height: "1.5em",
+        width: "auto",
+        height: "2em",
         marginInline: "0.1em",
         display: "inline-block",
         objectFit: "contain",
-        verticalAlign: "-0.35em",
+        verticalAlign: "middle",
+    },
+    normalEmoji: {
+        height: "1.25em",
+        verticalAlign: "-0.25em",
     },
 } satisfies Record<string, CSSProperties>;
 
-export function CustomEmoji({ emoji, label, style }: { emoji: Emoji; label?: string; style?: CSSProperties }) {
-    return <img alt={label ?? `:${emoji.name}:`} draggable={false} loading="lazy" referrerPolicy="no-referrer" src={emoji.url} style={{ ...styles.emoji, ...style }} title={`:${emoji.name}:`} />;
+export function CustomEmoji({ emoji, label, normal = false, style }: { emoji: Emoji; label?: string; normal?: boolean; style?: CSSProperties }) {
+    return <img alt={label ?? `:${emoji.name}:`} decoding="async" draggable={false} loading="lazy" referrerPolicy="no-referrer" src={emoji.url} style={{ ...styles.emoji, ...(normal ? styles.normalEmoji : {}), ...style }} title={`:${emoji.name}:`} />;
 }
 
 export function EmojiText({ emojis = [], text }: { emojis?: Emoji[]; text: string }) {
@@ -37,7 +41,7 @@ export function EmojiText({ emojis = [], text }: { emojis?: Emoji[]; text: strin
                 if (node.type === "unicodeEmoji") return node.props.emoji;
                 if (node.type === "plain") return node.children.map((child) => child.props.text).join("");
                 const emoji = byName.get(node.props.name);
-                return emoji ? <CustomEmoji emoji={emoji} key={key} /> : <span key={key}>:{node.props.name}:</span>;
+                return emoji ? <CustomEmoji emoji={emoji} key={key} normal /> : <span key={key}>:{node.props.name}:</span>;
             })}
         </>
     );

@@ -15,7 +15,11 @@ describe("federated text rendering", () => {
         expect(screen.getByText("太字😀").tagName).toBe("STRONG");
         expect(screen.getByText("取消").tagName).toBe("S");
         expect(screen.getByRole("link", { name: "安全" })).toHaveAttribute("href", "https://remote.test/path");
-        expect(screen.getByAltText(":party:")).toHaveAttribute("src", emojis[0].url);
+        const emoji = screen.getByAltText(":party:");
+        expect(emoji).toHaveAttribute("src", emojis[0].url);
+        expect(emoji.style.width).toBe("auto");
+        expect(emoji.style.height).toBe("2em");
+        expect(emoji.style.verticalAlign).toBe("middle");
         expect(screen.getByText("かんじ").tagName).toBe("RT");
         expect(container.querySelector("script")).toBeNull();
     });
@@ -25,7 +29,11 @@ describe("federated text rendering", () => {
 
         expect(container).toHaveTextContent("**Alice😀**");
         expect(container.querySelector("strong")).toBeNull();
-        expect(screen.getByAltText(":party:")).toHaveAttribute("src", emojis[0].url);
+        const emoji = screen.getByAltText(":party:");
+        expect(emoji).toHaveAttribute("src", emojis[0].url);
+        expect(emoji.style.width).toBe("auto");
+        expect(emoji.style.height).toBe("1.25em");
+        expect(emoji.style.verticalAlign).toBe("-0.25em");
     });
 
     it("keeps unsupported functions visible and tolerates an invalid unixtime", () => {

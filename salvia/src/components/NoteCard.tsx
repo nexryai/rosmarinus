@@ -512,7 +512,7 @@ export function NoteCard({
                                     style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
                                     type="button"
                                 >
-                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} /> : <span>{reaction.reaction}</span>}
+                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
                                     <b style={styles.reactionCount}>{reaction.count}</b>
                                 </button>
                             ))}
