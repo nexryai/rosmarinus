@@ -215,6 +215,10 @@ const styles = {
         fontSize: "0.75rem",
         fontVariantNumeric: "tabular-nums",
     },
+    replyAction: {
+        display: "flex",
+        gap: "0.25rem",
+    },
     deleteAction: {
         marginLeft: "auto",
     },
@@ -493,8 +497,9 @@ export function NoteCard({
                             </div>
                         )}
                         <footer style={styles.actions}>
-                            <button aria-label="返信" className={rules.action} onClick={() => onReply(displayedNote)} style={styles.action} type="button">
+                            <button aria-label={displayedNote.replies_count > 0 ? `返信（${displayedNote.replies_count}件）` : "返信"} className={rules.action} onClick={() => onReply(displayedNote)} style={{ ...styles.action, ...styles.replyAction }} type="button">
                                 <IconMessageCircle />
+                                {displayedNote.replies_count > 0 && <b style={styles.reactionCount}>{displayedNote.replies_count}</b>}
                             </button>
                             <button aria-label="リノート" className={rules.action} disabled={busy} onClick={() => void act(() => onRenote(displayedNote))} style={styles.action} type="button">
                                 <IconRepeat />

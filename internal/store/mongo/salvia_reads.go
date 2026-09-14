@@ -379,6 +379,24 @@ func (r *SalviaReader) listNoteDocuments(ctx context.Context, filter bson.M, lim
 
 func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, docs []noteDocument) ([]readmodel.Note, error) {
 	result := make([]readmodel.Note, 0, len(docs))
+	noteIDs := make([]string, 0, len(docs)*4)
+	seenNoteIDs := make(map[string]struct{}, len(docs)*4)
+	for _, doc := range docs {
+		for _, noteID := range []string{doc.ID, doc.ReplyID, doc.QuoteID, doc.RenoteID} {
+			if noteID == "" {
+				continue
+			}
+			if _, exists := seenNoteIDs[noteID]; exists {
+				continue
+			}
+			seenNoteIDs[noteID] = struct{}{}
+			noteIDs = append(noteIDs, noteID)
+		}
+	}
+	repliesCount, err := r.replyCounts(ctx, noteIDs)
+	if err != nil {
+		return nil, err
+	}
 	blocked, err := r.blockedActorIDs(ctx, viewerActorID)
 	if err != nil {
 		return nil, err
@@ -388,7 +406,7 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 		return nil, err
 	}
 	for _, doc := range docs {
-		item := readmodel.Note{Note: *toNote(doc)}
+		item := readmodel.Note{Note: *toNote(doc), RepliesCount: repliesCount[doc.ID]}
 		var err error
 		item.Author, err = r.findActor(ctx, doc.AuthorID)
 		if err != nil {
@@ -415,15 +433,51 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 		if err != nil {
 			return nil, err
 		}
+		if item.Reply != nil {
+			item.Reply.RepliesCount = repliesCount[doc.ReplyID]
+		}
 		item.Quote, err = r.findNoteReference(ctx, doc.QuoteID, visibility)
 		if err != nil {
 			return nil, err
+		}
+		if item.Quote != nil {
+			item.Quote.RepliesCount = repliesCount[doc.QuoteID]
 		}
 		item.Renote, err = r.findNoteReference(ctx, doc.RenoteID, visibility)
 		if err != nil {
 			return nil, err
 		}
+		if item.Renote != nil {
+			item.Renote.RepliesCount = repliesCount[doc.RenoteID]
+		}
 		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (r *SalviaReader) replyCounts(ctx context.Context, noteIDs []string) (map[string]int, error) {
+	result := make(map[string]int, len(noteIDs))
+	if len(noteIDs) == 0 {
+		return result, nil
+	}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"replyId": bson.M{"$in": noteIDs}, "deletedAt": nil}}},
+		{{Key: "$group", Value: bson.M{"_id": "$replyId", "count": bson.M{"$sum": 1}}}},
+	}
+	cursor, err := r.db.Collection("notes").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var rows []struct {
+		NoteID string `bson:"_id"`
+		Count  int    `bson:"count"`
+	}
+	if err := cursor.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.NoteID] = row.Count
 	}
 	return result, nil
 }

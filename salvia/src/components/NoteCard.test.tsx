@@ -6,7 +6,7 @@ import type { Actor, Note } from "../lib/schema";
 import { NoteCard } from "./NoteCard";
 
 const author = { id: "bob", username: "bob", name: "Bob" } as Actor;
-const note = { id: "note-1", uri: "https://example.test/notes/1", text: "hello", visibility: "public", created_at: new Date().toISOString(), author, attachments: [], emojis: [], reactions: [] } as unknown as Note;
+const note = { id: "note-1", uri: "https://example.test/notes/1", text: "hello", visibility: "public", created_at: new Date().toISOString(), replies_count: 0, author, attachments: [], emojis: [], reactions: [] } as unknown as Note;
 
 describe("NoteCard social actions", () => {
     afterEach(() => {
@@ -32,6 +32,12 @@ describe("NoteCard social actions", () => {
         expect(onQuote).toHaveBeenCalledWith(note);
         expect(onRenote).toHaveBeenCalledWith(note);
         expect(onReact).toHaveBeenCalledWith(note.id, "👍", false);
+    });
+
+    it("shows a positive reply count beside the reply icon", () => {
+        render(<NoteCard note={{ ...note, replies_count: 12 }} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getByRole("button", { name: "返信（12件）" })).toHaveTextContent("12");
     });
 
     it("uses a flat mobile surface and a centered desktop card capped at 64rem", () => {
@@ -139,6 +145,7 @@ describe("NoteCard social actions", () => {
                 sensitive: false,
                 visibility: "public",
                 created_at: "2026-09-01T00:00:00Z",
+                replies_count: 0,
                 author,
                 attachments: [],
                 emojis: [],
@@ -177,6 +184,7 @@ describe("NoteCard social actions", () => {
                 sensitive: false,
                 visibility: "public",
                 created_at: "2026-09-01T00:00:00Z",
+                replies_count: 4,
                 author: originalAuthor,
                 emojis: [{ name: "salvia", url: "https://remote.test/salvia.webp", media_type: "image/webp" }],
                 attachments: [{ media_type: "image/jpeg", name: "元ノートの画像", sensitive: false, url: "https://remote.test/image.jpg" }],
@@ -187,6 +195,7 @@ describe("NoteCard social actions", () => {
                     sensitive: false,
                     visibility: "public",
                     created_at: "2026-08-30T00:00:00Z",
+                    replies_count: 0,
                     author: { ...author, id: "dave", name: "Dave", username: "dave", uri: "https://remote.test/users/dave" },
                     emojis: [],
                     attachments: [],
@@ -198,6 +207,7 @@ describe("NoteCard social actions", () => {
                     sensitive: false,
                     visibility: "public",
                     created_at: "2026-08-31T00:00:00Z",
+                    replies_count: 0,
                     author: { ...author, id: "carol", name: "Carol", username: "carol", uri: "https://quoted.test/users/carol" },
                     emojis: [],
                     attachments: [],
@@ -212,9 +222,10 @@ describe("NoteCard social actions", () => {
         expect(screen.getByRole("button", { name: "画像を表示: 元ノートの画像" })).toBeInTheDocument();
         expect(screen.getByRole("article", { name: "返信先のノート" })).toHaveTextContent("リノート元の返信先");
         expect(screen.getByText("引用元の本文")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "返信（4件）" })).toHaveTextContent("4");
 
         await user.click(screen.getByRole("button", { name: /ノートの詳細を開く/ }));
-        await user.click(screen.getByRole("button", { name: "返信" }));
+        await user.click(screen.getByRole("button", { name: "返信（4件）" }));
         await user.click(screen.getByRole("button", { name: "Aliceさんがリノート" }));
         await user.click(screen.getByRole("button", { name: "引用ノートを開く: Carol" }));
 

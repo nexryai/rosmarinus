@@ -15,6 +15,7 @@ const makeNote = (id: string, text: string, replyID?: string) =>
         sensitive: false,
         visibility: "public",
         created_at: "2026-09-01T00:00:00Z",
+        replies_count: 0,
         author,
         attachments: [],
         emojis: [],

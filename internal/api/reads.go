@@ -492,6 +492,7 @@ type noteView struct {
 	Attachments    []attachmentView      `json:"attachments"`
 	CreatedAt      time.Time             `json:"created_at"`
 	PublishedAt    *time.Time            `json:"published_at,omitempty"`
+	RepliesCount   int                   `json:"replies_count"`
 	Author         *actorView            `json:"author,omitempty"`
 	Poll           *pollView             `json:"poll,omitempty"`
 	Reactions      []reactionSummaryView `json:"reactions"`
@@ -545,6 +546,7 @@ type noteReferenceView struct {
 	Sensitive      bool               `json:"sensitive"`
 	Visibility     string             `json:"visibility"`
 	CreatedAt      time.Time          `json:"created_at"`
+	RepliesCount   int                `json:"replies_count"`
 	Author         *actorView         `json:"author,omitempty"`
 	Emojis         []noteEmojiView    `json:"emojis"`
 	Attachments    []attachmentView   `json:"attachments"`
@@ -602,7 +604,7 @@ func projectNote(item readmodel.Note) noteView {
 		ReplyID: item.Note.ReplyID, QuoteID: item.Note.QuoteID, RenoteID: item.Note.RenoteID,
 		Visibility: string(item.Note.Visibility), MentionURIs: nonNilStrings(item.Note.MentionURIs),
 		Hashtags: nonNilStrings(item.Note.Hashtags), CreatedAt: item.Note.CreatedAt,
-		PublishedAt: item.Note.PublishedAt, Emojis: make([]noteEmojiView, 0, len(item.Note.Emojis)),
+		PublishedAt: item.Note.PublishedAt, RepliesCount: item.RepliesCount, Emojis: make([]noteEmojiView, 0, len(item.Note.Emojis)),
 		Attachments: make([]attachmentView, 0, len(item.Note.Attachments)),
 		Reactions:   make([]reactionSummaryView, 0, len(item.Reactions)),
 	}
@@ -643,7 +645,7 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 	view := &noteReferenceView{
 		ID: reference.Note.ID, URI: reference.Note.URI, Text: reference.Note.Text,
 		ContentWarning: reference.Note.ContentWarning, Sensitive: reference.Note.Sensitive,
-		Visibility: string(reference.Note.Visibility), CreatedAt: reference.Note.CreatedAt,
+		Visibility: string(reference.Note.Visibility), CreatedAt: reference.Note.CreatedAt, RepliesCount: reference.RepliesCount,
 		Emojis:      make([]noteEmojiView, 0, len(reference.Note.Emojis)),
 		Attachments: make([]attachmentView, 0, len(reference.Note.Attachments)),
 	}

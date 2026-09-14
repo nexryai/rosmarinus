@@ -32,21 +32,23 @@ type EmojiListQuery struct {
 }
 
 type Note struct {
-	Note      notes.Note
-	Author    *actors.Actor
-	Poll      *polls.Poll
-	Reactions []ReactionSummary
-	MyVotes   []int
-	Reply     *NoteReference
-	Quote     *NoteReference
-	Renote    *NoteReference
+	Note         notes.Note
+	Author       *actors.Actor
+	Poll         *polls.Poll
+	Reactions    []ReactionSummary
+	MyVotes      []int
+	RepliesCount int
+	Reply        *NoteReference
+	Quote        *NoteReference
+	Renote       *NoteReference
 }
 
 type NoteReference struct {
-	Note   notes.Note
-	Author *actors.Actor
-	Reply  *NoteReference
-	Quote  *NoteReference
+	Note         notes.Note
+	Author       *actors.Actor
+	RepliesCount int
+	Reply        *NoteReference
+	Quote        *NoteReference
 }
 
 type ReactionSummary struct {

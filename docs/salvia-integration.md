@@ -279,6 +279,8 @@ object or internal MongoDB representation is returned.
 Note detail, timeline, profile Note, and thread responses project reply,
 quote, and renote references with the referenced author's safe profile fields
 plus the custom emoji and attachment metadata required for in-card rendering.
+Notes and their direct references include `replies_count`, derived from active
+reply records for the reply action display.
 Raw federation documents
 and internal attachment URIs are never returned.
 Renote references include one visibility-checked `reply` or `quote` reference

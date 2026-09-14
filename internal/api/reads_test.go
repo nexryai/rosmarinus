@@ -145,7 +145,7 @@ func TestReadTimelineReturnsSafeProjectionAndCursor(t *testing.T) {
 }
 
 func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
-	reference := &readmodel.NoteReference{Note: notes.Note{
+	reference := &readmodel.NoteReference{RepliesCount: 3, Note: notes.Note{
 		ID: "remote-note", URI: "https://remote.test/notes/1", Text: "hello :salvia:",
 		Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC),
 		Emojis: []notes.Emoji{{Name: "salvia", IconURL: "https://remote.test/emoji.webp", MediaType: "image/webp"}},
@@ -165,6 +165,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 	view := projectNoteReference(reference)
 	if view == nil || len(view.Emojis) != 1 || view.Emojis[0].IconURL != "https://remote.test/emoji.webp" {
 		t.Fatalf("emoji projection = %#v", view)
+	}
+	if view.RepliesCount != 3 {
+		t.Fatalf("replies count = %d", view.RepliesCount)
 	}
 	if len(view.Attachments) != 1 || view.Attachments[0].URL != "https://remote.test/files/public.jpg" || view.Attachments[0].Width != 1200 {
 		t.Fatalf("attachment projection = %#v", view)

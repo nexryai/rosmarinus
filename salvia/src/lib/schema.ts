@@ -66,6 +66,7 @@ const noteReferenceBaseSchema = z.object({
     sensitive: z.boolean(),
     visibility: z.string(),
     created_at: z.string(),
+    replies_count: z.number().int().nonnegative().default(0),
     author: actorSchema.optional(),
     emojis: z
         .array(emojiSchema)
@@ -104,6 +105,7 @@ export const noteSchema = z.object({
         .transform((value) => value ?? []),
     created_at: z.string(),
     published_at: z.string().nullish(),
+    replies_count: z.number().int().nonnegative().default(0),
     author: actorSchema.optional(),
     poll: z
         .object({
