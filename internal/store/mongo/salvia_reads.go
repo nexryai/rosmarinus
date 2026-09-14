@@ -479,21 +479,21 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 				return nil, err
 			}
 		}
-		item.Reply, err = r.findNoteReference(ctx, doc.ReplyID, visibility)
+		item.Reply, err = r.findNoteReference(ctx, doc.ReplyID, visibility, viewerActorID, blocked, false)
 		if err != nil {
 			return nil, err
 		}
 		if item.Reply != nil {
 			item.Reply.RepliesCount = repliesCount[doc.ReplyID]
 		}
-		item.Quote, err = r.findNoteReference(ctx, doc.QuoteID, visibility)
+		item.Quote, err = r.findNoteReference(ctx, doc.QuoteID, visibility, viewerActorID, blocked, false)
 		if err != nil {
 			return nil, err
 		}
 		if item.Quote != nil {
 			item.Quote.RepliesCount = repliesCount[doc.QuoteID]
 		}
-		item.Renote, err = r.findNoteReference(ctx, doc.RenoteID, visibility)
+		item.Renote, err = r.findNoteReference(ctx, doc.RenoteID, visibility, viewerActorID, blocked, true)
 		if err != nil {
 			return nil, err
 		}
@@ -532,12 +532,12 @@ func (r *SalviaReader) replyCounts(ctx context.Context, noteIDs []string) (map[s
 	return result, nil
 }
 
-func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M) (*readmodel.NoteReference, error) {
+func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeReactions bool) (*readmodel.NoteReference, error) {
 	// One nested reply or quote preserves the target's context without allowing cycles in API projections.
-	return r.findNoteReferenceWithContext(ctx, noteID, visibility, true)
+	return r.findNoteReferenceWithContext(ctx, noteID, visibility, viewerActorID, blockedActorIDs, true, includeReactions)
 }
 
-func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID string, visibility bson.M, includeContext bool) (*readmodel.NoteReference, error) {
+func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeContext, includeReactions bool) (*readmodel.NoteReference, error) {
 	if noteID == "" {
 		return nil, nil
 	}
@@ -554,12 +554,18 @@ func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID 
 		return nil, err
 	}
 	reference := &readmodel.NoteReference{Note: *toNote(doc), Author: author}
-	if includeContext {
-		reference.Reply, err = r.findNoteReferenceWithContext(ctx, doc.ReplyID, visibility, false)
+	if includeReactions {
+		reference.Reactions, err = r.reactionSummary(ctx, doc.ID, viewerActorID, blockedActorIDs)
 		if err != nil {
 			return nil, err
 		}
-		reference.Quote, err = r.findNoteReferenceWithContext(ctx, doc.QuoteID, visibility, false)
+	}
+	if includeContext {
+		reference.Reply, err = r.findNoteReferenceWithContext(ctx, doc.ReplyID, visibility, viewerActorID, blockedActorIDs, false, false)
+		if err != nil {
+			return nil, err
+		}
+		reference.Quote, err = r.findNoteReferenceWithContext(ctx, doc.QuoteID, visibility, viewerActorID, blockedActorIDs, false, false)
 		if err != nil {
 			return nil, err
 		}

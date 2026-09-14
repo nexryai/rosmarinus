@@ -296,9 +296,11 @@ Notes and their direct references include `replies_count`, derived from active
 reply records for the reply action display.
 Raw federation documents
 and internal attachment URIs are never returned.
-Renote references include one visibility-checked `reply` or `quote` reference
-when their target is itself a reply or quote Note, allowing Salvia to retain the
-reply context or quoted card without an unbounded recursive projection.
+Renote references additionally include viewer-aware `reactions` for the
+original Note, plus one visibility-checked `reply` or `quote` reference when
+their target is itself a reply or quote Note. This lets Salvia retain the
+original engagement state, reply context, and quoted card without an unbounded
+recursive projection.
 
 Actor projections include `emojis`, an array of
 `{ "name": string, "url": string, "media_type"?: string }` references resolved

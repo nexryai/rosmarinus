@@ -138,6 +138,10 @@ describe("NoteCard social actions", () => {
                 sensitive: false,
                 visibility: "public",
                 created_at: "2026-09-01T00:00:00Z",
+                replies_count: 0,
+                emojis: [],
+                attachments: [],
+                reactions: [],
                 author: {
                     ...author,
                     avatar_url: "https://remote.test/avatar.jpg",
@@ -172,6 +176,7 @@ describe("NoteCard social actions", () => {
                 visibility: "public",
                 created_at: "2026-09-01T00:00:00Z",
                 replies_count: 0,
+                reactions: [],
                 author,
                 attachments: [],
                 emojis: [],
@@ -192,6 +197,7 @@ describe("NoteCard social actions", () => {
         const onOpenNote = vi.fn();
         const onOpenProfile = vi.fn();
         const onReply = vi.fn();
+        const onReact = vi.fn().mockResolvedValue(undefined);
         const originalAuthor = {
             ...author,
             id: "remote-bob",
@@ -211,6 +217,7 @@ describe("NoteCard social actions", () => {
                 visibility: "public",
                 created_at: "2026-09-01T00:00:00Z",
                 replies_count: 4,
+                reactions: [{ reaction: "👍", count: 3, reacted: true }],
                 author: originalAuthor,
                 emojis: [{ name: "salvia", url: "https://remote.test/salvia.webp", media_type: "image/webp" }],
                 attachments: [{ media_type: "image/jpeg", name: "元ノートの画像", sensitive: false, url: "https://remote.test/image.jpg" }],
@@ -222,6 +229,7 @@ describe("NoteCard social actions", () => {
                     visibility: "public",
                     created_at: "2026-08-30T00:00:00Z",
                     replies_count: 0,
+                    reactions: [],
                     author: { ...author, id: "dave", name: "Dave", username: "dave", uri: "https://remote.test/users/dave" },
                     emojis: [],
                     attachments: [],
@@ -234,13 +242,14 @@ describe("NoteCard social actions", () => {
                     visibility: "public",
                     created_at: "2026-08-31T00:00:00Z",
                     replies_count: 0,
+                    reactions: [],
                     author: { ...author, id: "carol", name: "Carol", username: "carol", uri: "https://quoted.test/users/carol" },
                     emojis: [],
                     attachments: [],
                 },
             },
         } as Note;
-        render(<NoteCard note={renote} ownActorID="carol" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={onReply} onVote={vi.fn()} />);
+        render(<NoteCard note={renote} ownActorID="carol" onDelete={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={onReact} onRenote={vi.fn()} onReply={onReply} onVote={vi.fn()} />);
 
         expect(screen.getByText("Aliceさんがリノート")).toBeInTheDocument();
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
@@ -249,15 +258,18 @@ describe("NoteCard social actions", () => {
         expect(screen.getByRole("article", { name: "返信先のノート" })).toHaveTextContent("リノート元の返信先");
         expect(screen.getByText("引用元の本文")).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "返信（4件）" })).toHaveTextContent("4");
+        expect(screen.getByRole("button", { name: /👍.*3/ })).toHaveAttribute("aria-pressed", "true");
 
         await user.click(screen.getByRole("button", { name: /ノートの詳細を開く/ }));
         await user.click(screen.getByRole("button", { name: "返信（4件）" }));
+        await user.click(screen.getByRole("button", { name: /👍.*3/ }));
         await user.click(screen.getByRole("button", { name: "Aliceさんがリノート" }));
         await user.click(screen.getByRole("button", { name: "引用ノートを開く: Carol" }));
 
         expect(onOpenNote).toHaveBeenCalledWith("original-1");
         expect(onOpenNote).toHaveBeenCalledWith("quoted-note");
         expect(onReply).toHaveBeenCalledWith(expect.objectContaining({ id: "original-1", author: originalAuthor }));
+        expect(onReact).toHaveBeenCalledWith("original-1", "👍", true);
         expect(onOpenProfile).toHaveBeenCalledWith("alice");
     });
 

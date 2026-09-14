@@ -46,6 +46,7 @@ type Note struct {
 type NoteReference struct {
 	Note         notes.Note
 	Author       *actors.Actor
+	Reactions    []ReactionSummary
 	RepliesCount int
 	Reply        *NoteReference
 	Quote        *NoteReference

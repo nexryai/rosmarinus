@@ -540,19 +540,20 @@ type reactionSummaryView struct {
 }
 
 type noteReferenceView struct {
-	ID             string             `json:"id"`
-	URI            string             `json:"uri"`
-	Text           string             `json:"text"`
-	ContentWarning *string            `json:"content_warning,omitempty"`
-	Sensitive      bool               `json:"sensitive"`
-	Visibility     string             `json:"visibility"`
-	CreatedAt      time.Time          `json:"created_at"`
-	RepliesCount   int                `json:"replies_count"`
-	Author         *actorView         `json:"author,omitempty"`
-	Emojis         []noteEmojiView    `json:"emojis"`
-	Attachments    []attachmentView   `json:"attachments"`
-	Reply          *noteReferenceView `json:"reply,omitempty"`
-	Quote          *noteReferenceView `json:"quote,omitempty"`
+	ID             string                `json:"id"`
+	URI            string                `json:"uri"`
+	Text           string                `json:"text"`
+	ContentWarning *string               `json:"content_warning,omitempty"`
+	Sensitive      bool                  `json:"sensitive"`
+	Visibility     string                `json:"visibility"`
+	CreatedAt      time.Time             `json:"created_at"`
+	RepliesCount   int                   `json:"replies_count"`
+	Author         *actorView            `json:"author,omitempty"`
+	Emojis         []noteEmojiView       `json:"emojis"`
+	Attachments    []attachmentView      `json:"attachments"`
+	Reactions      []reactionSummaryView `json:"reactions"`
+	Reply          *noteReferenceView    `json:"reply,omitempty"`
+	Quote          *noteReferenceView    `json:"quote,omitempty"`
 }
 
 type connectionView struct {
@@ -651,6 +652,7 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 		Visibility: string(reference.Note.Visibility), CreatedAt: reference.Note.CreatedAt, RepliesCount: reference.RepliesCount,
 		Emojis:      make([]noteEmojiView, 0, len(reference.Note.Emojis)),
 		Attachments: make([]attachmentView, 0, len(reference.Note.Attachments)),
+		Reactions:   make([]reactionSummaryView, 0, len(reference.Reactions)),
 	}
 	if reference.Author != nil {
 		author := projectActor(reference.Author)
@@ -664,6 +666,14 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 			Type: attachment.Type, MediaType: attachment.MediaType, URL: attachment.URL,
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
+	}
+	for _, reaction := range reference.Reactions {
+		projected := reactionSummaryView{Reaction: reaction.Reaction, Count: reaction.Count, Reacted: reaction.Reacted}
+		if reaction.Emoji != nil {
+			emoji := emojiView{Name: reaction.Emoji.Name, URL: reaction.Emoji.URL, MediaType: reaction.Emoji.MediaType}
+			projected.Emoji = &emoji
+		}
+		view.Reactions = append(view.Reactions, projected)
 	}
 	view.Reply = projectShallowNoteReference(reference.Reply)
 	view.Quote = projectShallowNoteReference(reference.Quote)

@@ -342,8 +342,6 @@ const actorHandle = (actor: Note["author"]) => {
     }
 };
 
-const emptyReactions: Note["reactions"] = [];
-
 const displayedNoteFor = (note: Note): Note => {
     if (!note.renote) return note;
     return {
@@ -352,7 +350,7 @@ const displayedNoteFor = (note: Note): Note => {
         mention_uris: [],
         hashtags: [],
         published_at: null,
-        reactions: emptyReactions,
+        reactions: note.renote.reactions,
         poll: undefined,
         reply_id: note.renote.reply?.id,
         quote_id: note.renote.quote?.id,

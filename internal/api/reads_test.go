@@ -145,7 +145,10 @@ func TestReadTimelineReturnsSafeProjectionAndCursor(t *testing.T) {
 }
 
 func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
-	reference := &readmodel.NoteReference{RepliesCount: 3, Note: notes.Note{
+	reference := &readmodel.NoteReference{RepliesCount: 3, Reactions: []readmodel.ReactionSummary{{
+		Reaction: ":party@remote.test:", Count: 4, Reacted: true,
+		Emoji: &emojis.Reference{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"},
+	}}, Note: notes.Note{
 		ID: "remote-note", URI: "https://remote.test/notes/1", Text: "hello :salvia:",
 		Visibility: notes.VisibilityPublic, CreatedAt: time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC),
 		Emojis: []notes.Emoji{{Name: "salvia", IconURL: "https://remote.test/emoji.webp", MediaType: "image/webp"}},
@@ -171,6 +174,9 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 	}
 	if len(view.Attachments) != 1 || view.Attachments[0].URL != "https://remote.test/files/public.jpg" || view.Attachments[0].Width != 1200 {
 		t.Fatalf("attachment projection = %#v", view)
+	}
+	if len(view.Reactions) != 1 || view.Reactions[0].Reaction != ":party@remote.test:" || view.Reactions[0].Count != 4 || !view.Reactions[0].Reacted || view.Reactions[0].Emoji == nil || view.Reactions[0].Emoji.URL != "https://remote.test/party.webp" {
+		t.Fatalf("reaction projection = %#v", view.Reactions)
 	}
 	if view.Quote == nil || view.Quote.ID != "quoted-note" || view.Quote.Author == nil || view.Quote.Author.Username != "quoted" {
 		t.Fatalf("nested quote projection = %#v", view.Quote)
