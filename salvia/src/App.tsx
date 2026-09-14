@@ -10,6 +10,7 @@ import { Button, ErrorBanner, Loading } from "./components/ui";
 import { ApiError, api, type Page } from "./lib/api";
 import { css } from "./lib/css";
 import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "./lib/schema";
+import { AntennaPage } from "./pages/AntennaPage";
 import { EmojiManagerPage } from "./pages/EmojiManagerPage";
 import { FollowRequestsPage } from "./pages/FollowRequestsPage";
 import { NotePage } from "./pages/NotePage";
@@ -17,7 +18,6 @@ import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TimelinePage } from "./pages/TimelinePage";
-import { UserSearchPage } from "./pages/UserSearchPage";
 
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };
@@ -120,7 +120,8 @@ const rules = {
 
 const routeFromPath = (path: string): { page: Page; profileID?: string; noteID?: string } => {
     if (path === "/emojis" || path === "/public") return { page: "emojis" };
-    if (path === "/users") return { page: "users" };
+    if (path === "/users") return { page: "follow-requests" };
+    if (path === "/antennas") return { page: "antennas" };
     if (path === "/notifications") return { page: "notifications" };
     if (path === "/follow-requests") return { page: "follow-requests" };
     if (path === "/settings") return { page: "settings" };
@@ -354,7 +355,17 @@ function App() {
                     }
                 />
             )}
-            {route.page === "users" && <UserSearchPage actorID={selectedActor.id} csrf={session.csrf_token} onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)} />}
+            {route.page === "antennas" && (
+                <AntennaPage
+                    actorID={selectedActor.id}
+                    csrf={session.csrf_token}
+                    emojis={emojis}
+                    onCompose={(kind, note) => void openComposer({ kind, target: note })}
+                    onOpenNote={(id) => navigate(`/notes/${encodeURIComponent(id)}`)}
+                    onOpenProfile={(id) => navigate(`/profiles/${encodeURIComponent(id)}`)}
+                    refreshKey={refreshKey}
+                />
+            )}
             {route.page === "notifications" && (
                 <NotificationsPage
                     actorID={selectedActor.id}

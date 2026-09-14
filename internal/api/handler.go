@@ -341,11 +341,15 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 	case "follow-requests":
 		if len(segments) == 2 && r.Method == http.MethodGet {
 			h.connections(w, r, accountID, actorID, "requests", nil)
+		} else if len(segments) == 3 && segments[2] == "sent" && r.Method == http.MethodGet {
+			h.connections(w, r, accountID, actorID, "sent_requests", nil)
 		} else {
 			h.followRequest(w, r, accountID, actorID, segments[2:])
 		}
 	case "notifications":
 		h.notifications(w, r, accountID, actorID, segments[2:])
+	case "antennas":
+		h.antennas(w, r, accountID, actorID, segments[2:])
 	case "followers", "following":
 		h.connections(w, r, accountID, actorID, segments[1], segments[2:])
 	case "settings":
@@ -738,6 +742,8 @@ func mutationEventData(command string, result any) map[string]string {
 		data["notification_id"] = value.NotificationID
 	case connector.NotificationsRead:
 		data["count"] = strconv.FormatInt(value.Count, 10)
+	case connector.AntennaChanged:
+		data["antenna_id"] = value.AntennaID
 	case connector.FollowDeleted:
 		data["followee_id"] = value.FolloweeID
 	case connector.BlockCreated:

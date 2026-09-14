@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/antennas"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	"github.com/nexryai/rosmarinus/internal/domain/mutes"
@@ -143,6 +145,10 @@ func (r *SalviaReader) ListConnections(ctx context.Context, viewerActorID, actor
 	case "requests":
 		filter["followeeId"] = actorID
 		filter["status"] = string(follows.StatusPending)
+	case "sent_requests":
+		filter["followerId"] = actorID
+		filter["status"] = string(follows.StatusPending)
+		actorField = "followeeId"
 	default:
 		return nil, fmt.Errorf("unknown connection kind %q", kind)
 	}
@@ -243,6 +249,172 @@ func (r *SalviaReader) ListNotifications(ctx context.Context, accountID, actorID
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func (r *SalviaReader) ListAntennas(ctx context.Context, accountID, actorID string) ([]antennas.Antenna, error) {
+	cursor, err := r.db.Collection("antennas").Find(ctx, antennaOwnerFilter(accountID, actorID), options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(antennas.MaxPerActor))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []antennaDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	result := make([]antennas.Antenna, 0, len(docs))
+	for _, doc := range docs {
+		result = append(result, toAntenna(doc))
+	}
+	return result, nil
+}
+
+func (r *SalviaReader) FindAntenna(ctx context.Context, accountID, actorID, antennaID string) (*antennas.Antenna, error) {
+	filter := antennaOwnerFilter(accountID, actorID)
+	filter["_id"] = antennaID
+	var doc antennaDocument
+	if err := r.db.Collection("antennas").FindOne(ctx, filter).Decode(&doc); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	antenna := toAntenna(doc)
+	return &antenna, nil
+}
+
+func (r *SalviaReader) ListAntennaNotes(ctx context.Context, accountID, actorID, antennaID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
+	antenna, err := r.FindAntenna(ctx, accountID, actorID, antennaID)
+	if err != nil || antenna == nil {
+		return nil, err
+	}
+	visibility, err := r.visibleNoteFilter(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := r.blockedActorIDs(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	muted, err := r.mutedActorIDs(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	criteria := bson.A{bson.M{"deletedAt": nil}, visibility}
+	if !antenna.WithReplies {
+		criteria = append(criteria, bson.M{"replyId": bson.M{"$in": bson.A{nil, ""}}})
+	}
+	if antenna.WithFile {
+		criteria = append(criteria, bson.M{"attachments.0": bson.M{"$exists": true}})
+	}
+	if keywordFilter := antennaKeywordFilter(antenna.Keywords, antenna.CaseSensitive); keywordFilter != nil {
+		criteria = append(criteria, keywordFilter)
+	}
+	if excludeFilter := antennaExcludeKeywordFilter(antenna.ExcludeKeywords, antenna.CaseSensitive); excludeFilter != nil {
+		criteria = append(criteria, excludeFilter)
+	}
+	userIDs, err := r.antennaUserIDs(ctx, antenna.Users)
+	if err != nil {
+		return nil, err
+	}
+	switch antenna.Source {
+	case antennas.SourceUsers:
+		criteria = append(criteria, bson.M{"authorId": bson.M{"$in": userIDs}})
+	case antennas.SourceUsersBlacklist:
+		if len(userIDs) > 0 {
+			criteria = append(criteria, bson.M{"authorId": bson.M{"$nin": userIDs}})
+		}
+	}
+	excludedAuthors := append(blocked, muted...)
+	if antenna.LocalOnly || antenna.ExcludeBots {
+		attributeFilter := bson.M{"deletedAt": nil}
+		if antenna.LocalOnly {
+			attributeFilter["host"] = nil
+		}
+		if antenna.ExcludeBots {
+			attributeFilter["isBot"] = bson.M{"$ne": true}
+		}
+		allowed, err := r.actorIDs(ctx, attributeFilter)
+		if err != nil {
+			return nil, err
+		}
+		criteria = append(criteria, bson.M{"authorId": bson.M{"$in": allowed}})
+	}
+	filter := withExcludedAuthors(bson.M{"$and": criteria}, excludedAuthors)
+	filter = withCreatedCursor(filter, after)
+	return r.listNotesWithTimelineMutes(ctx, actorID, filter, limit, -1, muted)
+}
+
+func antennaKeywordFilter(groups [][]string, caseSensitive bool) bson.M {
+	groupFilters := make(bson.A, 0, len(groups))
+	for _, group := range groups {
+		wordFilters := make(bson.A, 0, len(group))
+		for _, keyword := range group {
+			optionsValue := ""
+			if !caseSensitive {
+				optionsValue = "i"
+			}
+			pattern := bson.Regex{Pattern: regexp.QuoteMeta(keyword), Options: optionsValue}
+			wordFilters = append(wordFilters, bson.M{"$or": bson.A{bson.M{"text": pattern}, bson.M{"contentWarning": pattern}}})
+		}
+		if len(wordFilters) > 0 {
+			groupFilters = append(groupFilters, bson.M{"$and": wordFilters})
+		}
+	}
+	if len(groupFilters) == 0 {
+		return nil
+	}
+	return bson.M{"$or": groupFilters}
+}
+
+func antennaExcludeKeywordFilter(groups [][]string, caseSensitive bool) bson.M {
+	include := antennaKeywordFilter(groups, caseSensitive)
+	if include == nil {
+		return nil
+	}
+	return bson.M{"$nor": bson.A{include}}
+}
+
+func (r *SalviaReader) antennaUserIDs(ctx context.Context, users []string) ([]string, error) {
+	if len(users) == 0 {
+		return []string{}, nil
+	}
+	conditions := bson.A{}
+	for _, user := range users {
+		user = strings.TrimSpace(user)
+		if parsed, err := url.Parse(user); err == nil && parsed.IsAbs() && parsed.Host != "" {
+			conditions = append(conditions, bson.M{"uri": user})
+			continue
+		}
+		account := strings.TrimPrefix(user, "@")
+		parts := strings.SplitN(account, "@", 2)
+		condition := bson.M{"usernameLower": strings.ToLower(parts[0]), "deletedAt": nil}
+		if len(parts) == 2 && parts[1] != "" {
+			condition["host"] = strings.ToLower(parts[1])
+		} else {
+			condition["host"] = nil
+		}
+		conditions = append(conditions, condition)
+	}
+	return r.actorIDs(ctx, bson.M{"$or": conditions})
+}
+
+func (r *SalviaReader) actorIDs(ctx context.Context, filter bson.M) ([]string, error) {
+	cursor, err := r.db.Collection("actors").Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	return ids, nil
 }
 
 func (r *SalviaReader) CountUnreadNotifications(ctx context.Context, accountID, actorID string) (int64, error) {

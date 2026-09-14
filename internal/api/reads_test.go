@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/antennas"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	"github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -18,17 +19,19 @@ import (
 )
 
 type fakeReader struct {
-	publicItems   []readmodel.Note
-	note          *readmodel.Note
-	accountID     string
-	actorID       string
-	targetActorID string
-	notifications []readmodel.Notification
-	profile       *readmodel.Profile
-	unread        *bool
-	unreadCount   int64
-	emojiQuery    readmodel.EmojiListQuery
-	calls         int
+	publicItems    []readmodel.Note
+	note           *readmodel.Note
+	accountID      string
+	actorID        string
+	targetActorID  string
+	notifications  []readmodel.Notification
+	profile        *readmodel.Profile
+	unread         *bool
+	unreadCount    int64
+	emojiQuery     readmodel.EmojiListQuery
+	antennas       []antennas.Antenna
+	connectionKind string
+	calls          int
 }
 
 type fakeRemoteProfileResolver struct {
@@ -67,9 +70,52 @@ func (f *fakeReader) ListProfileNotes(_ context.Context, viewerActorID, targetAc
 	return f.publicItems, nil
 }
 
-func (f *fakeReader) ListConnections(_ context.Context, viewerActorID, targetActorID, _, _ string, _ int) ([]readmodel.Connection, error) {
+func (f *fakeReader) ListConnections(_ context.Context, viewerActorID, targetActorID, kind, _ string, _ int) ([]readmodel.Connection, error) {
 	f.actorID, f.targetActorID, f.calls = viewerActorID, targetActorID, f.calls+1
+	f.connectionKind = kind
 	return []readmodel.Connection{{Follow: follows.Follow{ID: "follow-1"}, Actor: &actors.Actor{ID: "remote-1"}}}, nil
+}
+
+func (f *fakeReader) ListAntennas(_ context.Context, accountID, actorID string) ([]antennas.Antenna, error) {
+	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
+	return f.antennas, nil
+}
+
+func (f *fakeReader) FindAntenna(_ context.Context, accountID, actorID, antennaID string) (*antennas.Antenna, error) {
+	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
+	for i := range f.antennas {
+		if f.antennas[i].ID == antennaID {
+			return &f.antennas[i], nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeReader) ListAntennaNotes(_ context.Context, accountID, actorID, _ string, _ readmodel.Cursor, _ int) ([]readmodel.Note, error) {
+	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
+	return f.publicItems, nil
+}
+
+func TestSentFollowRequestsUseOutboundPendingConnections(t *testing.T) {
+	reader := &fakeReader{}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors/actor-1/follow-requests/sent", nil))
+	if recorder.Code != http.StatusOK || reader.connectionKind != "sent_requests" {
+		t.Fatalf("status=%d kind=%q body=%s", recorder.Code, reader.connectionKind, recorder.Body.String())
+	}
+}
+
+func TestAntennaReadsAreAccountAndActorScoped(t *testing.T) {
+	reader := &fakeReader{antennas: []antennas.Antenna{{ID: "antenna-1", Name: "Go", Source: antennas.SourceAll, Keywords: [][]string{{"Go"}}, CreatedAt: time.Now(), UpdatedAt: time.Now()}}}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/actors/actor-1/antennas", nil))
+	if recorder.Code != http.StatusOK || reader.accountID != "account-1" || reader.actorID != "actor-1" || !bytes.Contains(recorder.Body.Bytes(), []byte(`"id":"antenna-1"`)) {
+		t.Fatalf("status=%d account=%q actor=%q body=%s", recorder.Code, reader.accountID, reader.actorID, recorder.Body.String())
+	}
 }
 
 func (f *fakeReader) ListNotifications(_ context.Context, accountID, actorID string, _ readmodel.Cursor, _ int, unread *bool) ([]readmodel.Notification, error) {

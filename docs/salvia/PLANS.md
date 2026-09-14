@@ -51,6 +51,10 @@ part of the target architecture.
   requester through one idempotent REST mutation, with an explicit confirmation
   action in Salvia.
 
+- Completed: manage received and sent follow requests in one tabbed screen,
+  move remote-user lookup into the sent-request workflow, and provide up to five
+  Actor-owned Misskey-style antennas with management and Note browsing views.
+
 - Completed: share outbound blocks across every non-deleted Actor owned by an
   account. Active Actors federate their own Block and Undo while suspended
   Actors retain the local moderation relationship until resumed or deleted.

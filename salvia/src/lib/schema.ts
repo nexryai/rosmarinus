@@ -188,6 +188,23 @@ export const connectionSchema = z.object({
 
 export type Connection = z.infer<typeof connectionSchema>;
 
+export const antennaSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    source: z.enum(["all", "users", "users_blacklist"]),
+    users: z.array(z.string()).default([]),
+    keywords: z.array(z.array(z.string())).default([]),
+    exclude_keywords: z.array(z.array(z.string())).default([]),
+    case_sensitive: z.boolean(),
+    local_only: z.boolean(),
+    exclude_bots: z.boolean(),
+    with_replies: z.boolean(),
+    with_file: z.boolean(),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+export type Antenna = z.infer<typeof antennaSchema>;
+
 export const profileSchema = z.object({
     actor: actorSchema,
     followers_count: z.number(),

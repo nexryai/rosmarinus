@@ -8,6 +8,7 @@ type Result struct {
 	Follows       int64
 	Blocks        int64
 	Mutes         int64
+	Antennas      int64
 	Polls         int64
 	Notifications int64
 }

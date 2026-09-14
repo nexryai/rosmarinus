@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/antennas"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	"github.com/nexryai/rosmarinus/internal/domain/notes"
@@ -94,4 +95,10 @@ type Reader interface {
 	CountUnreadNotifications(context.Context, string, string) (int64, error)
 	ListEmojis(context.Context, EmojiListQuery) ([]emojis.Emoji, error)
 	FindProfile(context.Context, string, string) (*Profile, error)
+}
+
+type AntennaReader interface {
+	ListAntennas(context.Context, string, string) ([]antennas.Antenna, error)
+	FindAntenna(context.Context, string, string, string) (*antennas.Antenna, error)
+	ListAntennaNotes(context.Context, string, string, string, Cursor, int) ([]Note, error)
 }

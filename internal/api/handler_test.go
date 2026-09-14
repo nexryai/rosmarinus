@@ -217,6 +217,21 @@ func (e *fakeExecutor) MarkAllNotificationsRead(_ context.Context, accountID, ac
 	return connector.NotificationsRead{Count: 3}, err
 }
 
+func (e *fakeExecutor) CreateAntenna(_ context.Context, _ string, command connector.AntennaCreateCommand) (connector.AntennaChanged, error) {
+	err := e.record(connector.CommandAntennaCreate, command.ActorID, command)
+	return connector.AntennaChanged{AntennaID: "antenna-1"}, err
+}
+
+func (e *fakeExecutor) UpdateAntenna(_ context.Context, _ string, command connector.AntennaUpdateCommand) (connector.AntennaChanged, error) {
+	err := e.record(connector.CommandAntennaUpdate, command.ActorID, command)
+	return connector.AntennaChanged{AntennaID: command.AntennaID}, err
+}
+
+func (e *fakeExecutor) DeleteAntenna(_ context.Context, _ string, command connector.AntennaDeleteCommand) (connector.AntennaChanged, error) {
+	err := e.record(connector.CommandAntennaDelete, command.ActorID, command)
+	return connector.AntennaChanged{AntennaID: command.AntennaID}, err
+}
+
 type fakeReceiptStore struct {
 	receipts map[string]idempotency.Receipt
 }
@@ -485,6 +500,30 @@ func TestHandlerCreatesTimelineMute(t *testing.T) {
 	command, ok := executor.data.(connector.MuteCreateCommand)
 	if !ok || command.ActorID != "actor-1" || command.ExpiresAt == nil {
 		t.Fatalf("mute command = %#v", executor.data)
+	}
+}
+
+func TestHandlerMapsAntennaMutations(t *testing.T) {
+	handler, executor, _ := testHandler()
+	tests := []struct {
+		method  string
+		path    string
+		body    string
+		command string
+		status  int
+	}{
+		{http.MethodPost, "/api/v1/actors/actor-1/antennas", `{"name":"Go","source":"all","keywords":[["Go"]],"with_replies":true}`, connector.CommandAntennaCreate, http.StatusCreated},
+		{http.MethodPatch, "/api/v1/actors/actor-1/antennas/antenna-1", `{"name":"ActivityPub","source":"all","keywords":[["ActivityPub"]],"with_replies":true}`, connector.CommandAntennaUpdate, http.StatusOK},
+		{http.MethodDelete, "/api/v1/actors/actor-1/antennas/antenna-1", ``, connector.CommandAntennaDelete, http.StatusOK},
+	}
+	for index, test := range tests {
+		recorder := httptest.NewRecorder()
+		request := jsonRequest(test.method, test.path, test.body)
+		request.Header.Set("Idempotency-Key", fmt.Sprintf("antenna-mutation-%d-123456", index))
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != test.status || executor.command != test.command || executor.actorID != "actor-1" {
+			t.Fatalf("%s status=%d command=%q actor=%q body=%s", test.command, recorder.Code, executor.command, executor.actorID, recorder.Body.String())
+		}
 	}
 }
 

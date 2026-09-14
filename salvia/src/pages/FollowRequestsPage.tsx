@@ -1,8 +1,9 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { IconBan, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
+import { IconBan, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
 import { EmojiText } from "../components/EmojiText";
+import { RemoteUserSearch } from "../components/RemoteUserSearch";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
@@ -14,6 +15,7 @@ import type { Connection } from "../lib/schema";
 type FollowRequestAction = "accept" | "accept_and_follow" | "reject" | "reject_and_block";
 type MobileAction = "" | FollowRequestAction;
 type PendingDecision = { action: FollowRequestAction; item: Connection };
+type Tab = "received" | "sent";
 
 const styles = {
     headerIcon: {
@@ -66,6 +68,10 @@ const styles = {
         height: "1.125rem",
         flexShrink: 0,
     },
+    tabs: { padding: "0.75rem 1.25rem", display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--border)" },
+    tab: { minWidth: 0, padding: "0.625rem 0.75rem", flex: 1, borderRadius: "9999px", color: "var(--muted)", fontSize: "0.8125rem", fontWeight: 700 },
+    tabActive: { color: "var(--accent-ink)", background: "var(--accent-soft)" },
+    sentSearch: { borderBottom: "1px solid var(--border)" },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
@@ -128,6 +134,7 @@ const confirmation = (decision: PendingDecision) => {
 
 export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }: { actorID: string; csrf: string; onOpenProfile: (actorID: string) => void; refreshKey: number }) {
     const [items, setItems] = useState<Connection[]>([]);
+    const [tab, setTab] = useState<Tab>("received");
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [busyID, setBusyID] = useState("");
@@ -136,13 +143,13 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            setItems(await api.followRequests(actorID));
+            setItems(await (tab === "received" ? api.followRequests(actorID) : api.sentFollowRequests(actorID)));
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "リクエストを読み込めませんでした");
         } finally {
             setLoading(false);
         }
-    }, [actorID]);
+    }, [actorID, tab]);
     useEffect(() => {
         void refreshKey;
         setPendingDecision(undefined);
@@ -167,15 +174,39 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
         }
     };
     const openDecision = (item: Connection, action: FollowRequestAction) => setPendingDecision({ action, item });
+    const cancelSent = async (item: Connection) => {
+        setBusyID(item.id);
+        try {
+            await api.unfollow(csrf, actorID, item.actor.uri);
+            setItems((current) => current.filter((value) => value.id !== item.id));
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "フォローリクエストを取り消せませんでした");
+        } finally {
+            setBusyID("");
+        }
+    };
     const dialog = pendingDecision ? confirmation(pendingDecision) : undefined;
     return (
         <>
             <PageHeader eyebrow="承認制" title="フォローリクエスト" trailing={<IconUserCheck style={styles.headerIcon} />} />
+            <div role="tablist" style={styles.tabs}>
+                <button aria-selected={tab === "received"} onClick={() => setTab("received")} role="tab" style={{ ...styles.tab, ...(tab === "received" ? styles.tabActive : {}) }} type="button">
+                    受け取ったリクエスト
+                </button>
+                <button aria-selected={tab === "sent"} onClick={() => setTab("sent")} role="tab" style={{ ...styles.tab, ...(tab === "sent" ? styles.tabActive : {}) }} type="button">
+                    送信したリクエスト
+                </button>
+            </div>
+            {tab === "sent" && (
+                <section aria-label="リモートユーザー検索" style={styles.sentSearch}>
+                    <RemoteUserSearch actorID={actorID} csrf={csrf} onOpenProfile={onOpenProfile} />
+                </section>
+            )}
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading ? (
                 <Loading />
             ) : items.length === 0 ? (
-                <Empty>保留中のリクエストはありません。</Empty>
+                <Empty>{tab === "received" ? "保留中のリクエストはありません。" : "送信した保留中のリクエストはありません。"}</Empty>
             ) : (
                 <DividedList>
                     {items.map((item) => (
@@ -187,7 +218,12 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
                                 </strong>
                                 <span style={styles.handle}>@{item.actor.username}</span>
                             </div>
-                            {isMobile ? (
+                            {tab === "sent" ? (
+                                <Button disabled={busyID === item.id} onClick={() => void cancelSent(item)} variant="danger">
+                                    <IconSend aria-hidden="true" />
+                                    申請を取り消す
+                                </Button>
+                            ) : isMobile ? (
                                 <Dropdown
                                     label={`${item.actor.name || item.actor.username}への対応`}
                                     onChange={(action) => {

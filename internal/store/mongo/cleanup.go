@@ -80,6 +80,11 @@ func (r *AccountCleanupRepository) CleanupActor(ctx context.Context, actorID str
 		return result, fmt.Errorf("cleanup mutes for actor %s: %w", actorID, err)
 	}
 	result.Mutes = deletedMutes.DeletedCount
+	deletedAntennas, err := r.db.Collection("antennas").DeleteMany(ctx, bson.M{"ownerActorId": actorID})
+	if err != nil {
+		return result, fmt.Errorf("cleanup antennas for actor %s: %w", actorID, err)
+	}
+	result.Antennas = deletedAntennas.DeletedCount
 	if err := r.cleanupActorNoteDependencies(ctx, actorID, now, &result); err != nil {
 		return result, err
 	}

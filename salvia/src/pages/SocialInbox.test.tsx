@@ -40,6 +40,24 @@ describe("social inbox mutations", () => {
         expect(screen.queryByText("@bob")).not.toBeInTheDocument();
     });
 
+    it("lists sent requests and cancels one from the sent tab", async () => {
+        const item = { id: "sent-1", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
+        vi.spyOn(api, "followRequests").mockResolvedValue([]);
+        const sent = vi.spyOn(api, "sentFollowRequests").mockResolvedValue([item]);
+        const unfollow = vi.spyOn(api, "unfollow").mockResolvedValue(undefined);
+        const user = userEvent.setup();
+        render(<FollowRequestsPage actorID="alice" csrf="csrf" onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        await user.click(screen.getByRole("tab", { name: "送信したリクエスト" }));
+        expect(await screen.findByText("@bob")).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "申請を取り消す" }));
+
+        expect(sent).toHaveBeenCalledWith("alice");
+        expect(unfollow).toHaveBeenCalledWith("csrf", "alice", remote.uri);
+        expect(screen.queryByText("@bob")).not.toBeInTheDocument();
+        expect(screen.getByRole("textbox", { name: "ハンドルまたはプロフィールURL" })).toBeInTheDocument();
+    });
+
     it("approves a request and follows the remote Actor back", async () => {
         const item = { id: "follow-back", status: "pending", created_at: "2026-01-01T00:00:00Z", accepted_at: null, actor: remote } as Connection;
         vi.spyOn(api, "followRequests").mockResolvedValue([item]);

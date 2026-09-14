@@ -7,9 +7,10 @@ import (
 )
 
 type recordingExecutor struct {
-	post  PostCreateCommand
-	mute  MuteCreateCommand
-	actor ActorCreateCommand
+	post    PostCreateCommand
+	mute    MuteCreateCommand
+	actor   ActorCreateCommand
+	antenna AntennaCreateCommand
 }
 
 func (e *recordingExecutor) CreateFollow(context.Context, string, string) (string, error) {
@@ -72,6 +73,16 @@ func (e *recordingExecutor) MarkNotificationRead(context.Context, string, string
 func (e *recordingExecutor) MarkAllNotificationsRead(context.Context, string, string) (NotificationsRead, error) {
 	return NotificationsRead{}, nil
 }
+func (e *recordingExecutor) CreateAntenna(_ context.Context, _ string, command AntennaCreateCommand) (AntennaChanged, error) {
+	e.antenna = command
+	return AntennaChanged{AntennaID: "antenna-1"}, nil
+}
+func (e *recordingExecutor) UpdateAntenna(context.Context, string, AntennaUpdateCommand) (AntennaChanged, error) {
+	return AntennaChanged{}, nil
+}
+func (e *recordingExecutor) DeleteAntenna(context.Context, string, AntennaDeleteCommand) (AntennaChanged, error) {
+	return AntennaChanged{}, nil
+}
 
 func TestExecuteCommandBuildsPostCommand(t *testing.T) {
 	executor := &recordingExecutor{}
@@ -104,6 +115,18 @@ func TestExecuteCommandBuildsMuteCommand(t *testing.T) {
 	}
 	if actorID != "actor-1" || executor.mute.ActorID != "actor-1" || executor.mute.Target != "https://remote.test/users/bob" || executor.mute.ExpiresAt == nil || !executor.mute.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("mute command = %+v actor=%q", executor.mute, actorID)
+	}
+}
+
+func TestExecuteCommandBuildsAntennaCommand(t *testing.T) {
+	executor := &recordingExecutor{}
+	result, actorID, err := ExecuteCommand(context.Background(), executor, CommandAntennaCreate, "account-1", "actor-1", AntennaInput{Name: "Go", Source: "all", Keywords: [][]string{{"Go"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, ok := result.(AntennaChanged)
+	if !ok || changed.AntennaID != "antenna-1" || actorID != "actor-1" || executor.antenna.ActorID != "actor-1" || executor.antenna.Input.Name != "Go" {
+		t.Fatalf("result=%+v actor=%q command=%+v", result, actorID, executor.antenna)
 	}
 }
 

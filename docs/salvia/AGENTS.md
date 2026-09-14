@@ -138,6 +138,9 @@ Account
 - Resolve remote handles and Actor URLs through the owned-Actor-scoped
   `/api/v1/actors/{actorId}/profiles/resolve` endpoint before opening a remote
   profile. Browser code must not contact WebFinger or ActivityPub servers.
+- Manage antenna definitions and their filtered Note pages only through the
+  owned-Actor-scoped `/api/v1/actors/{actorId}/antennas` routes. Do not persist
+  or evaluate private antenna criteria in browser storage.
 - Read routes that depend on visibility use an `actor_id` query parameter.
   Supply the selected owned Actor and expect Rosmarinus to reject a missing,
   suspended, deleted, or foreign Actor. Never use it as local authorization

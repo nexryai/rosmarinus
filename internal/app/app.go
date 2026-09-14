@@ -52,6 +52,7 @@ type App struct {
 	follows            *mongostore.FollowRepository
 	blocks             *mongostore.BlockRepository
 	mutes              *mongostore.MuteRepository
+	antennas           *mongostore.AntennaRepository
 	reactions          *mongostore.ReactionRepository
 	emojis             *mongostore.EmojiRepository
 	polls              *mongostore.PollRepository
@@ -124,6 +125,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	followRepo := mongostore.NewFollowRepository(mongoDB)
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
 	muteRepo := mongostore.NewMuteRepository(mongoDB)
+	antennaRepo := mongostore.NewAntennaRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
@@ -205,6 +207,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
 	apWorker.SetMuteRepository(muteRepo)
+	apWorker.SetAntennaRepository(antennaRepo)
 	// Redis Pub/Sub is the local fan-out transport for browser-safe SSE invalidations.
 	apWorker.SetConnectorPublisher(realtime.NewDomainPublisher(realtimeBroker, logger))
 	sessionManager := appauth.NewSessionManager(sessionRepo, accountRepo, cfg.SessionCookieName, cfg.SessionTTL, cfg.SessionSecure)
@@ -244,6 +247,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		follows:            followRepo,
 		blocks:             blockRepo,
 		mutes:              muteRepo,
+		antennas:           antennaRepo,
 		reactions:          reactionRepo,
 		emojis:             emojiRepo,
 		polls:              pollRepo,

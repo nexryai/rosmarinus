@@ -200,6 +200,8 @@ stored in MongoDB.
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/blocks` | Block or unblock the body `target` |
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/mutes` | Mute with optional `expires_at`, or unmute the body `target` |
 | `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted`, `rejected`, or `rejected_and_blocked` |
+| `POST` | `/api/v1/actors/{actorId}/antennas` | Create an Actor-owned antenna (maximum five) |
+| `PATCH`, `DELETE` | `/api/v1/actors/{actorId}/antennas/{antennaId}` | Update or delete an Actor-owned antenna |
 | `PATCH` | `/api/v1/actors/{actorId}/notifications` | Mark every unread notification for the owned Actor as read |
 | `PATCH` | `/api/v1/actors/{actorId}/notifications/{notificationId}` | Set `is_read` to `true` |
 
@@ -258,6 +260,10 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/actors/{actorId}/followers` | Followers of an owned Actor |
 | `GET` | `/api/v1/actors/{actorId}/following` | Actors followed by an owned Actor |
 | `GET` | `/api/v1/actors/{actorId}/follow-requests` | Pending requests for an owned Actor |
+| `GET` | `/api/v1/actors/{actorId}/follow-requests/sent` | Pending requests sent by an owned Actor |
+| `GET` | `/api/v1/actors/{actorId}/antennas` | List the owned Actor's antennas |
+| `GET` | `/api/v1/actors/{actorId}/antennas/{antennaId}` | Read one owned antenna |
+| `GET` | `/api/v1/actors/{actorId}/antennas/{antennaId}/notes` | Cursor-paginated Notes matching an antenna |
 | `GET` | `/api/v1/actors/{actorId}/notifications` | Actor-scoped notifications |
 | `GET` | `/api/v1/actors/{actorId}/notifications/unread-count` | Exact unread notification count for the owned Actor |
 | `GET` | `/api/v1/notifications` | Account-scoped notifications |
@@ -276,6 +282,14 @@ before projection. The public and home timelines, profile Note lists, Note
 threads, and notifications use opaque created-time/ID cursors. Connection and
 emoji cursors are likewise opaque to the SPA even where their current
 representation is a stable record ID or name.
+
+Antennas are private, Actor-owned saved filters. Each filter supports Misskey-
+style OR-of-AND include and exclude keyword groups, all/user allowlist/user
+denylist sources, case sensitivity, local-only and Bot exclusion, replies, and
+attachment requirements. Rosmarinus intentionally evaluates the filter against
+the current visibility-, block-, and mute-filtered Note collection when the
+antenna is read instead of maintaining a separate creation-time fan-out table.
+Deleting an Actor also deletes its antennas.
 
 The custom-emoji management routes are account-administration operations, but
 media-backed create/update/import requests still include `actor_id`.

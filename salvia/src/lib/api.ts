@@ -4,9 +4,11 @@ import {
     type AccountSettings,
     type Actor,
     type ActorSettings,
+    type Antenna,
     accountSettingsSchema,
     actorSchema,
     actorSettingsSchema,
+    antennaSchema,
     type Connection,
     connectionSchema,
     type Emoji,
@@ -59,6 +61,8 @@ export type CreatePostInput = {
     media_ids?: string[];
     poll?: { choices: string[]; multiple?: boolean; expires_at?: string };
 };
+
+export type AntennaInput = Omit<Antenna, "id" | "created_at" | "updated_at">;
 
 async function request<T>(path: string, schema: z.ZodType<T>, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers(options.headers);
@@ -165,6 +169,7 @@ export const api = {
     },
     markAllNotificationsRead: async (csrf: string, actorID: string): Promise<number> => (await request(`/actors/${encodeURIComponent(actorID)}/notifications`, envelope(z.object({ count: z.number().int().nonnegative() })), { method: "PATCH", body: { is_read: true }, csrf, idempotent: true })).data.count,
     followRequests: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/follow-requests?limit=50`, pageEnvelope(connectionSchema))).data,
+    sentFollowRequests: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/sent?limit=50`, pageEnvelope(connectionSchema))).data,
     following: async (actorID: string): Promise<Connection[]> => (await request(`/actors/${encodeURIComponent(actorID)}/following?limit=100`, pageEnvelope(connectionSchema))).data,
     decideFollowRequest: async (csrf: string, actorID: string, followerID: string, status: "accepted" | "rejected" | "rejected_and_blocked"): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follow-requests/${encodeURIComponent(followerID)}`, envelope(z.unknown()), { method: "PATCH", body: { status }, csrf, idempotent: true });
@@ -181,6 +186,20 @@ export const api = {
     },
     unfollow: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/follows`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
+    },
+    antennas: async (actorID: string): Promise<Antenna[]> => (await request(`/actors/${encodeURIComponent(actorID)}/antennas`, envelope(z.array(antennaSchema)))).data,
+    antennaNotes: async (actorID: string, antennaID: string, after = "", signal?: AbortSignal): Promise<{ data: Note[]; next: string }> => {
+        const result = await request(`/actors/${encodeURIComponent(actorID)}/antennas/${encodeURIComponent(antennaID)}/notes${query({ after, limit: "30" })}`, pageEnvelope(noteSchema), { signal });
+        return { data: result.data, next: result.next };
+    },
+    createAntenna: async (csrf: string, actorID: string, input: AntennaInput): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/antennas`, envelope(z.unknown()), { method: "POST", body: input, csrf, idempotent: true });
+    },
+    updateAntenna: async (csrf: string, actorID: string, antennaID: string, input: AntennaInput): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/antennas/${encodeURIComponent(antennaID)}`, envelope(z.unknown()), { method: "PATCH", body: input, csrf, idempotent: true });
+    },
+    deleteAntenna: async (csrf: string, actorID: string, antennaID: string): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/antennas/${encodeURIComponent(antennaID)}`, envelope(z.unknown()), { method: "DELETE", csrf, idempotent: true });
     },
     block: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "POST", body: { target }, csrf, idempotent: true });
@@ -214,4 +233,4 @@ export const api = {
     updateActorSettings: async (csrf: string, actorID: string, patch: Partial<ActorSettings>): Promise<ActorSettings> => (await request(`/actors/${encodeURIComponent(actorID)}/settings`, envelope(actorSettingsSchema), { method: "PATCH", body: patch, csrf })).data,
 };
 
-export type Page = "home" | "emojis" | "users" | "notifications" | "follow-requests" | "settings" | "profile" | "note";
+export type Page = "home" | "emojis" | "antennas" | "notifications" | "follow-requests" | "settings" | "profile" | "note";

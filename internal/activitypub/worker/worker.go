@@ -26,6 +26,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/activities"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
+	"github.com/nexryai/rosmarinus/internal/domain/antennas"
 	"github.com/nexryai/rosmarinus/internal/domain/blocks"
 	"github.com/nexryai/rosmarinus/internal/domain/cleanup"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
@@ -90,6 +91,7 @@ type Handler struct {
 	reactions        reactions.Repository
 	reports          reports.Repository
 	notifications    notifications.Repository
+	antennas         antennas.Repository
 	mutes            mutes.Repository
 	polls            polls.Repository
 	cleanup          cleanup.Repository
@@ -133,6 +135,10 @@ func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 
 func (h *Handler) SetNotificationRepository(repository notifications.Repository) {
 	h.notifications = repository
+}
+
+func (h *Handler) SetAntennaRepository(repository antennas.Repository) {
+	h.antennas = repository
 }
 
 func (h *Handler) SetMuteRepository(repository mutes.Repository) {
@@ -194,6 +200,64 @@ func (h *Handler) MarkAllNotificationsRead(ctx context.Context, accountID, actor
 		return connector.NotificationsRead{}, err
 	}
 	return connector.NotificationsRead{Count: count}, nil
+}
+
+func (h *Handler) CreateAntenna(ctx context.Context, accountID string, command connector.AntennaCreateCommand) (connector.AntennaChanged, error) {
+	if h.antennas == nil {
+		return connector.AntennaChanged{}, fmt.Errorf("antenna repository is not configured")
+	}
+	accountID, actorID := strings.TrimSpace(accountID), strings.TrimSpace(command.ActorID)
+	count, err := h.antennas.Count(ctx, accountID, actorID)
+	if err != nil {
+		return connector.AntennaChanged{}, err
+	}
+	if count >= antennas.MaxPerActor {
+		return connector.AntennaChanged{}, fmt.Errorf("an Actor can have at most %d antennas", antennas.MaxPerActor)
+	}
+	created, err := h.antennas.Create(ctx, antennaFromInput(accountID, actorID, "", command.Input))
+	if err != nil {
+		return connector.AntennaChanged{}, err
+	}
+	return connector.AntennaChanged{AntennaID: created.ID}, nil
+}
+
+func (h *Handler) UpdateAntenna(ctx context.Context, accountID string, command connector.AntennaUpdateCommand) (connector.AntennaChanged, error) {
+	if h.antennas == nil {
+		return connector.AntennaChanged{}, fmt.Errorf("antenna repository is not configured")
+	}
+	updated, err := h.antennas.Update(ctx, antennaFromInput(strings.TrimSpace(accountID), strings.TrimSpace(command.ActorID), strings.TrimSpace(command.AntennaID), command.Input))
+	if err != nil {
+		return connector.AntennaChanged{}, err
+	}
+	if updated == nil {
+		return connector.AntennaChanged{}, fmt.Errorf("antenna not found")
+	}
+	return connector.AntennaChanged{AntennaID: updated.ID}, nil
+}
+
+func (h *Handler) DeleteAntenna(ctx context.Context, accountID string, command connector.AntennaDeleteCommand) (connector.AntennaChanged, error) {
+	if h.antennas == nil {
+		return connector.AntennaChanged{}, fmt.Errorf("antenna repository is not configured")
+	}
+	id := strings.TrimSpace(command.AntennaID)
+	deleted, err := h.antennas.Delete(ctx, strings.TrimSpace(accountID), strings.TrimSpace(command.ActorID), id)
+	if err != nil {
+		return connector.AntennaChanged{}, err
+	}
+	if !deleted {
+		return connector.AntennaChanged{}, fmt.Errorf("antenna not found")
+	}
+	return connector.AntennaChanged{AntennaID: id}, nil
+}
+
+func antennaFromInput(accountID, actorID, antennaID string, input connector.AntennaInput) antennas.Antenna {
+	return antennas.Antenna{
+		ID: antennaID, OwnerAccountID: accountID, OwnerActorID: actorID,
+		Name: input.Name, Source: antennas.Source(input.Source), Users: input.Users,
+		Keywords: input.Keywords, ExcludeKeywords: input.ExcludeKeywords,
+		CaseSensitive: input.CaseSensitive, LocalOnly: input.LocalOnly,
+		ExcludeBots: input.ExcludeBots, WithReplies: input.WithReplies, WithFile: input.WithFile,
+	}
 }
 
 func (h *Handler) SetActivityLocker(locker ActivityLocker) {
@@ -398,7 +462,7 @@ func (h *Handler) HandleAccountDeleteTask(ctx context.Context, task *asynq.Task)
 		return err
 	}
 	if h.logger != nil {
-		h.logger.Printf("account-delete: cleaned actor=%s local=%t notes=%d reactions=%d follows=%d blocks=%d polls=%d notifications=%d", actor.ID, payload.Local, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Polls, result.Notifications)
+		h.logger.Printf("account-delete: cleaned actor=%s local=%t notes=%d reactions=%d follows=%d blocks=%d antennas=%d polls=%d notifications=%d", actor.ID, payload.Local, result.Notes, result.Reactions, result.Follows, result.Blocks, result.Antennas, result.Polls, result.Notifications)
 	}
 	return nil
 }

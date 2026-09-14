@@ -30,6 +30,9 @@ const (
 	CommandActorDelete          = "actor.delete"
 	CommandNotificationMarkRead = "notification.mark_read"
 	CommandNotificationsMarkAll = "notification.mark_all_read"
+	CommandAntennaCreate        = "antenna.create"
+	CommandAntennaUpdate        = "antenna.update"
+	CommandAntennaDelete        = "antenna.delete"
 )
 
 type ActorOwnershipLookup interface {
@@ -63,6 +66,54 @@ type MuteCommandExecutor interface {
 
 type NotificationBulkCommandExecutor interface {
 	MarkAllNotificationsRead(context.Context, string, string) (NotificationsRead, error)
+}
+
+type AntennaCommandExecutor interface {
+	CreateAntenna(context.Context, string, AntennaCreateCommand) (AntennaChanged, error)
+	UpdateAntenna(context.Context, string, AntennaUpdateCommand) (AntennaChanged, error)
+	DeleteAntenna(context.Context, string, AntennaDeleteCommand) (AntennaChanged, error)
+}
+
+type AntennaInput struct {
+	Name            string     `json:"name"`
+	Source          string     `json:"source"`
+	Users           []string   `json:"users"`
+	Keywords        [][]string `json:"keywords"`
+	ExcludeKeywords [][]string `json:"exclude_keywords"`
+	CaseSensitive   bool       `json:"case_sensitive"`
+	LocalOnly       bool       `json:"local_only"`
+	ExcludeBots     bool       `json:"exclude_bots"`
+	WithReplies     bool       `json:"with_replies"`
+	WithFile        bool       `json:"with_file"`
+}
+
+type AntennaCreateCommand struct {
+	ActorID string
+	Input   AntennaInput
+}
+
+type AntennaUpdateData struct {
+	AntennaID string `json:"antenna_id"`
+	AntennaInput
+}
+
+type AntennaUpdateCommand struct {
+	ActorID   string
+	AntennaID string
+	Input     AntennaInput
+}
+
+type AntennaDeleteData struct {
+	AntennaID string `json:"antenna_id"`
+}
+
+type AntennaDeleteCommand struct {
+	ActorID   string
+	AntennaID string
+}
+
+type AntennaChanged struct {
+	AntennaID string `json:"antenna_id" bson:"antenna_id"`
 }
 
 type FollowApproveData struct {
@@ -728,6 +779,45 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 			return nil, actorID, fmt.Errorf("bulk notification command executor is not configured")
 		}
 		result, err := bulkExecutor.MarkAllNotificationsRead(ctx, accountID, actorID)
+		return result, actorID, err
+	case CommandAntennaCreate:
+		antennaExecutor, ok := executor.(AntennaCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("antenna command executor is not configured")
+		}
+		var input AntennaInput
+		if err := decodeCommandData(data, &input); err != nil {
+			return nil, actorID, err
+		}
+		result, err := antennaExecutor.CreateAntenna(ctx, accountID, AntennaCreateCommand{ActorID: actorID, Input: input})
+		return result, actorID, err
+	case CommandAntennaUpdate:
+		antennaExecutor, ok := executor.(AntennaCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("antenna command executor is not configured")
+		}
+		var command AntennaUpdateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.AntennaID) == "" {
+			return nil, actorID, fmt.Errorf("antenna_id is required")
+		}
+		result, err := antennaExecutor.UpdateAntenna(ctx, accountID, AntennaUpdateCommand{ActorID: actorID, AntennaID: command.AntennaID, Input: command.AntennaInput})
+		return result, actorID, err
+	case CommandAntennaDelete:
+		antennaExecutor, ok := executor.(AntennaCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("antenna command executor is not configured")
+		}
+		var command AntennaDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.AntennaID) == "" {
+			return nil, actorID, fmt.Errorf("antenna_id is required")
+		}
+		result, err := antennaExecutor.DeleteAntenna(ctx, accountID, AntennaDeleteCommand{ActorID: actorID, AntennaID: command.AntennaID})
 		return result, actorID, err
 	case CommandActorCreate:
 		var command ActorCreateData

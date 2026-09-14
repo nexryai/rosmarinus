@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { IconBell, IconHome, IconLogout, IconMoodSmile, IconPlus, IconSettings, IconUserSearch, IconUsersPlus } from "@tabler/icons-react";
+import { IconAntenna, IconBell, IconHome, IconLogout, IconMoodSmile, IconPlus, IconSettings, IconUsersPlus } from "@tabler/icons-react";
 
 import type { Page } from "../lib/api";
 import { css } from "../lib/css";
@@ -13,7 +13,7 @@ import { Dropdown } from "./ui/Dropdown";
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [
     { icon: IconHome, label: "ホーム", page: "home", path: "/" },
     { icon: IconMoodSmile, label: "絵文字", page: "emojis", path: "/emojis" },
-    { icon: IconUserSearch, label: "ユーザー検索", page: "users", path: "/users" },
+    { icon: IconAntenna, label: "アンテナ", page: "antennas", path: "/antennas" },
     { icon: IconBell, label: "通知", page: "notifications", path: "/notifications" },
     { icon: IconUsersPlus, label: "リクエスト", page: "follow-requests", path: "/follow-requests" },
     { icon: IconSettings, label: "設定", page: "settings", path: "/settings" },
