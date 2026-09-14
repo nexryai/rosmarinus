@@ -464,7 +464,7 @@ export function NoteCard({
                                 </Button>
                             </div>
                         )}
-                        {revealed && displayedNote.text && <Mfm emojis={displayedNote.emojis} style={styles.text} text={displayedNote.text} />}
+                        {revealed && displayedNote.text && <Mfm emojis={displayedNote.emojis} nyaize={displayedNote.author?.is_cat} style={styles.text} text={displayedNote.text} />}
                         {revealed && displayedNote.attachments.length > 0 && <NoteMedia attachments={displayedNote.attachments} onOpenImage={setViewerIndex} />}
                         {displayedNote.quote && <QuotedNoteCard onOpen={onOpenNote} onOpenProfile={onOpenProfile} quote={displayedNote.quote} />}
                         {displayedNote.poll && (

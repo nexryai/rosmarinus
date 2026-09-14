@@ -58,4 +58,14 @@ describe("federated text rendering", () => {
         const code = screen.getByText("123😀");
         expect(code.style.fontFamily).toBe('SFMono-Regular, Consolas, "Liberation Mono", "DejaVu Sans Mono", "Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", ui-monospace, monospace');
     });
+
+    it("nyaizes text nodes without changing URLs, mentions, hashtags, or code", () => {
+        render(<Mfm nyaize text="な morning everyone https://example.test/nana @nana #な `な`" />);
+
+        expect(screen.getByText(/にゃ mornyan everynyan/)).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "https://example.test/nana" })).toHaveAttribute("href", "https://example.test/nana");
+        expect(screen.getByText("@nana")).toBeInTheDocument();
+        expect(screen.getByText("#な")).toBeInTheDocument();
+        expect(screen.getByText("な", { selector: "code" })).toBeInTheDocument();
+    });
 });

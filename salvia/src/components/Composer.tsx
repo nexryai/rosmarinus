@@ -375,7 +375,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                 </header>
                 {intent.kind !== "post" && (
                     <p style={styles.target}>
-                        <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} text={intent.target.text || "（本文なし）"} />
+                        <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} nyaize={intent.target.author?.is_cat} text={intent.target.text || "（本文なし）"} />
                     </p>
                 )}
                 {error && <ErrorBanner message={error} />}

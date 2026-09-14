@@ -4,6 +4,7 @@ import { type MfmNode, parse } from "mfm-js";
 
 import { emojiFontFamily } from "../globalStyles";
 import { css, keyframes } from "../lib/css";
+import { nyaize as transformNyaize } from "../lib/nyaize";
 import type { Emoji } from "../lib/schema";
 import { CustomEmoji } from "./EmojiText";
 
@@ -204,13 +205,13 @@ const functionStyle = (node: Extract<MfmNode, { type: "fn" }>): CSSProperties | 
     }
 };
 
-const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm"): ReactNode[] =>
+const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, shouldNyaize: boolean, path = "mfm"): ReactNode[] =>
     nodes.map((node, index) => {
         const key = `${path}-${index}`;
-        const children = "children" in node && node.children ? renderNodes(node.children, emojis, key) : undefined;
+        const children = "children" in node && node.children ? renderNodes(node.children, emojis, shouldNyaize, key) : undefined;
         switch (node.type) {
             case "text":
-                return node.props.text;
+                return shouldNyaize ? transformNyaize(node.props.text) : node.props.text;
             case "unicodeEmoji":
                 return node.props.emoji;
             case "emojiCode": {
@@ -309,7 +310,8 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm")
             }
             case "fn": {
                 if (node.props.name === "ruby") {
-                    const text = node.children.length === 1 && node.children[0]?.type === "text" ? node.children[0].props.text : "";
+                    const rawText = node.children.length === 1 && node.children[0]?.type === "text" ? node.children[0].props.text : "";
+                    const text = shouldNyaize ? transformNyaize(rawText) : rawText;
                     const separator = text.indexOf(" ");
                     if (separator > 0)
                         return (
@@ -353,7 +355,7 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, path = "mfm")
         }
     });
 
-export function Mfm({ className = "", emojis = [], style, text }: { className?: string; emojis?: Emoji[]; style?: CSSProperties; text: string }) {
+export function Mfm({ className = "", emojis = [], nyaize = false, style, text }: { className?: string; emojis?: Emoji[]; nyaize?: boolean; style?: CSSProperties; text: string }) {
     const byName = new Map(emojis.map((emoji) => [emoji.name, emoji]));
     let nodes: MfmNode[];
     try {
@@ -361,13 +363,13 @@ export function Mfm({ className = "", emojis = [], style, text }: { className?: 
     } catch {
         return (
             <span className={className} style={{ ...styles.root, ...style }}>
-                {text}
+                {nyaize ? transformNyaize(text) : text}
             </span>
         );
     }
     return (
         <span className={className} style={{ ...styles.root, ...style }}>
-            {renderNodes(nodes, byName)}
+            {renderNodes(nodes, byName, nyaize)}
         </span>
     );
 }

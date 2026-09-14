@@ -103,6 +103,17 @@ describe("NoteCard social actions", () => {
         expect(screen.getByText("3")).toBeInTheDocument();
     });
 
+    it("nyaizes only the body of a cat Actor's note", async () => {
+        const catNote = { ...note, text: "なつ morning", content_warning: "なまえ", author: { ...author, name: "なまえ", is_cat: true } } as Note;
+        const user = userEvent.setup();
+        render(<NoteCard note={catNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(screen.getAllByText("なまえ")).toHaveLength(2);
+        expect(screen.queryByText("にゃまえ")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "表示" }));
+        expect(screen.getByText("にゃつ mornyan")).toBeInTheDocument();
+    });
+
     it("opens image attachments in the custom viewer", () => {
         document.documentElement.dataset.reduceMotion = "true";
         const imageNote = {

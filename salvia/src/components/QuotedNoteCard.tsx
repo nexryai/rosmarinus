@@ -133,7 +133,7 @@ export function QuotedNoteCard({ onOpen, onOpenProfile, quote }: { onOpen?: (not
                     {quoteDate(quote.created_at)}
                 </time>
             </span>
-            {quote.content_warning ? <span style={styles.warning}>閲覧注意: {quote.content_warning}（詳細を開いて表示）</span> : <Mfm emojis={quote.emojis} style={styles.text} text={quote.text || "本文のないノート"} />}
+            {quote.content_warning ? <span style={styles.warning}>閲覧注意: {quote.content_warning}（詳細を開いて表示）</span> : <Mfm emojis={quote.emojis} nyaize={author?.is_cat} style={styles.text} text={quote.text || "本文のないノート"} />}
         </>
     );
 

@@ -285,7 +285,7 @@ export function NotificationsPage({
                                     </div>
                                     {item.note?.text && (
                                         <blockquote style={styles.quote}>
-                                            “<Mfm emojis={item.note.emojis} text={item.note.text} />”
+                                            “<Mfm emojis={item.note.emojis} nyaize={item.note.author?.is_cat} text={item.note.text} />”
                                         </blockquote>
                                     )}
                                     {scope === "account" && item.actor_id !== actorID && (
