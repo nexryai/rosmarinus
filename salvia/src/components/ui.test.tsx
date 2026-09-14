@@ -185,6 +185,20 @@ describe("Dropdown", () => {
         expect(screen.queryByRole("listbox", { hidden: true })).not.toBeInTheDocument();
     });
 
+    it("supports action menus without selection state", () => {
+        document.documentElement.dataset.reduceMotion = "true";
+        const onChange = vi.fn();
+        render(<Dropdown label="プロフィール操作" onChange={onChange} options={[{ value: "mute", label: "ミュート" }]} trigger={<span>操作</span>} />);
+
+        const trigger = screen.getByRole("button", { name: "プロフィール操作" });
+        expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+        fireEvent.click(trigger);
+        fireEvent.click(screen.getByRole("menuitem", { name: "ミュート" }));
+
+        expect(onChange).toHaveBeenCalledWith("mute");
+        expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+
     it("supports arrow keys, skips disabled options, and restores focus", () => {
         const onChange = vi.fn();
         render(<Dropdown label="公開範囲" onChange={onChange} options={options} value="public" />);

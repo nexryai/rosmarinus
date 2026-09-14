@@ -257,6 +257,23 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 	if err != nil {
 		return err
 	}
+	_, err = db.Collection("mutes").Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "muterId", Value: 1}, {Key: "muteeId", Value: 1}},
+			Options: options.Index().SetName("uniq_mutes_muter_mutee").SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "muterId", Value: 1}, {Key: "expiresAt", Value: 1}},
+			Options: options.Index().SetName("idx_mutes_muter_expires_at"),
+		},
+		{
+			Keys:    bson.D{{Key: "expiresAt", Value: 1}},
+			Options: options.Index().SetName("ttl_mutes_expires_at").SetExpireAfterSeconds(0),
+		},
+	})
+	if err != nil {
+		return err
+	}
 	_, err = db.Collection("abuse_reports").Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{{Key: "remoteActivityId", Value: 1}},

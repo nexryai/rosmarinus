@@ -186,6 +186,7 @@ stored in MongoDB.
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/follows` | Follow or unfollow the body `target` |
 | `POST` | `/api/v1/actors/{actorId}/profiles/resolve` | Resolve a remote Actor handle or URL and return its safe profile |
 | `POST`, `DELETE` | `/api/v1/actors/{actorId}/blocks` | Block or unblock the body `target` |
+| `POST`, `DELETE` | `/api/v1/actors/{actorId}/mutes` | Mute with optional `expires_at`, or unmute the body `target` |
 | `PATCH` | `/api/v1/actors/{actorId}/follow-requests/{followerId}` | Set `status` to `accepted`, `rejected`, or `rejected_and_blocked` |
 | `PATCH` | `/api/v1/actors/{actorId}/notifications/{notificationId}` | Set `is_read` to `true` |
 
@@ -304,11 +305,18 @@ a remote host suffix. Legacy reaction rows are resolved against the validated
 emoji catalog when possible and otherwise retain their literal reaction code.
 
 Profile projections include viewer-specific `follow_status` and
-`blocked_by_viewer`, plus `pinned_notes` in the Actor's featured order. Pinned
+`blocked_by_viewer`, `muted_by_viewer`, and optional `mute_expires_at`, plus
+`pinned_notes` in the Actor's featured order. Pinned
 Notes pass the same visibility, deletion, active-author, and bilateral-block
 filters as other Note reads and use the normal safe Note projection. A profile
 blocked by the viewer remains readable so the viewer can reverse their own
 block; a profile that has blocked the viewer is still hidden.
+
+Actor mutes are local-only and may be indefinite or expire at a future RFC 3339
+timestamp. Active mutes remove the mutee's Notes and renotes of the mutee's
+Notes from public and home timelines. Profile Notes, threads, and notifications
+remain available. Expired mute records stop filtering immediately and are also
+removed by a MongoDB TTL index.
 
 Actor `profile_fields` (including timeline authors and referenced Notes) is
 an array of `{ "name": string, "value": string }`, empty when unset. Salvia
@@ -386,7 +394,8 @@ Events use a small versioned envelope:
 
 Initial event types should cover Actor lifecycle, Note changes, reaction
 changes, notification creation/read state, follow approval state, account
-authorization changes, and generic projection invalidation. Event additions
+authorization changes, `block.changed` and Actor-scoped `mute.changed`
+relationship invalidations, and generic projection invalidation. Event additions
 may be backward-compatible; envelope or meaning changes require a new version.
 
 ## Federation Projection Safety

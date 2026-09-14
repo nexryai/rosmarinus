@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -14,17 +15,23 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
+	"github.com/nexryai/rosmarinus/internal/domain/mutes"
 	"github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 )
 
 type SalviaReader struct {
-	db *mongo.Database
+	db    *mongo.Database
+	mutes mutes.Repository
 }
 
 func NewSalviaReader(db *mongo.Database) *SalviaReader {
-	return &SalviaReader{db: db}
+	return NewSalviaReaderWithMuteRepository(db, NewMuteRepository(db))
+}
+
+func NewSalviaReaderWithMuteRepository(db *mongo.Database, muteRepository mutes.Repository) *SalviaReader {
+	return &SalviaReader{db: db, mutes: muteRepository}
 }
 
 func (r *SalviaReader) ListPublicTimeline(ctx context.Context, viewerActorID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
@@ -32,10 +39,14 @@ func (r *SalviaReader) ListPublicTimeline(ctx context.Context, viewerActorID str
 	if err != nil {
 		return nil, err
 	}
+	muted, err := r.mutedActorIDs(ctx, viewerActorID)
+	if err != nil {
+		return nil, err
+	}
 	filter := bson.M{"deletedAt": nil, "visibility": string(notes.VisibilityPublic)}
-	filter = withExcludedAuthors(filter, blocked)
+	filter = withExcludedAuthors(filter, append(blocked, muted...))
 	filter = withCreatedCursor(filter, after)
-	return r.listNotes(ctx, viewerActorID, filter, limit, -1)
+	return r.listNotesWithTimelineMutes(ctx, viewerActorID, filter, limit, -1, muted)
 }
 
 func (r *SalviaReader) ListHomeTimeline(ctx context.Context, viewerActorID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
@@ -51,6 +62,10 @@ func (r *SalviaReader) ListHomeTimeline(ctx context.Context, viewerActorID strin
 	if err != nil {
 		return nil, err
 	}
+	muted, err := r.mutedActorIDs(ctx, viewerActorID)
+	if err != nil {
+		return nil, err
+	}
 	feed := bson.A{
 		bson.M{"authorId": viewerActorID},
 		bson.M{"authorId": bson.M{"$in": following}, "visibility": bson.M{"$in": bson.A{
@@ -59,9 +74,9 @@ func (r *SalviaReader) ListHomeTimeline(ctx context.Context, viewerActorID strin
 		bson.M{"visibility": string(notes.VisibilitySpecified), "visibleUserUris": viewer.URI},
 	}
 	filter := bson.M{"deletedAt": nil, "$or": feed}
-	filter = withExcludedAuthors(filter, blocked)
+	filter = withExcludedAuthors(filter, append(blocked, muted...))
 	filter = withCreatedCursor(filter, after)
-	return r.listNotes(ctx, viewerActorID, filter, limit, -1)
+	return r.listNotesWithTimelineMutes(ctx, viewerActorID, filter, limit, -1, muted)
 }
 
 func (r *SalviaReader) FindVisibleNote(ctx context.Context, viewerActorID, noteID string) (*readmodel.Note, error) {
@@ -94,7 +109,7 @@ func (r *SalviaReader) ListVisibleThread(ctx context.Context, viewerActorID, not
 	}
 	filter := bson.M{"$and": bson.A{bson.M{"replyId": noteID, "deletedAt": nil}, visibility}}
 	filter = withCreatedCursorDirection(filter, after, 1)
-	docs, err := r.listNoteDocuments(ctx, filter, limit, 1)
+	docs, err := r.listNoteDocuments(ctx, filter, limit, 1, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +254,11 @@ func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID s
 	if err != nil {
 		return nil, err
 	}
+	activeMute, err := r.mutes.FindActive(ctx, viewerActorID, actorID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	mutedByViewer := activeMute != nil
 	actor, err := r.findActor(ctx, actorID)
 	if err != nil || actor == nil {
 		return nil, err
@@ -270,7 +290,11 @@ func (r *SalviaReader) FindProfile(ctx context.Context, viewerActorID, actorID s
 	if err != nil {
 		return nil, err
 	}
-	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following), FollowStatus: followStatus, BlockedByViewer: blockedByViewer, PinnedNotes: pinnedNotes}, nil
+	var muteExpiresAt *time.Time
+	if activeMute != nil {
+		muteExpiresAt = activeMute.ExpiresAt
+	}
+	return &readmodel.Profile{Actor: actor, FollowersCount: int(followers), FollowingCount: int(following), FollowStatus: followStatus, BlockedByViewer: blockedByViewer, MutedByViewer: mutedByViewer, MuteExpiresAt: muteExpiresAt, PinnedNotes: pinnedNotes}, nil
 }
 
 func (r *SalviaReader) listPinnedNotes(ctx context.Context, viewerActorID string, actor *actors.Actor) ([]readmodel.Note, error) {
@@ -341,14 +365,33 @@ func (r *SalviaReader) ListEmojis(ctx context.Context, query readmodel.EmojiList
 }
 
 func (r *SalviaReader) listNotes(ctx context.Context, viewerActorID string, filter bson.M, limit, direction int) ([]readmodel.Note, error) {
-	docs, err := r.listNoteDocuments(ctx, filter, limit, direction)
+	return r.listNotesWithTimelineMutes(ctx, viewerActorID, filter, limit, direction, nil)
+}
+
+func (r *SalviaReader) listNotesWithTimelineMutes(ctx context.Context, viewerActorID string, filter bson.M, limit, direction int, mutedActorIDs []string) ([]readmodel.Note, error) {
+	docs, err := r.listNoteDocuments(ctx, filter, limit, direction, mutedActorIDs)
 	if err != nil {
 		return nil, err
 	}
 	return r.enrichNotes(ctx, viewerActorID, docs)
 }
 
-func (r *SalviaReader) listNoteDocuments(ctx context.Context, filter bson.M, limit, direction int) ([]noteDocument, error) {
+func (r *SalviaReader) listNoteDocuments(ctx context.Context, filter bson.M, limit, direction int, mutedActorIDs []string) ([]noteDocument, error) {
+	pipeline := noteListPipeline(filter, limit, direction, mutedActorIDs)
+	cursor, err := r.db.Collection("notes").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []noteDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	return docs, nil
+}
+
+func noteListPipeline(filter bson.M, limit, direction int, mutedActorIDs []string) mongo.Pipeline {
+	unsetFields := bson.A{"activeAuthor"}
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: filter}},
 		{{Key: "$sort", Value: bson.D{{Key: "createdAt", Value: direction}, {Key: "_id", Value: direction}}}},
@@ -362,19 +405,26 @@ func (r *SalviaReader) listNoteDocuments(ctx context.Context, filter bson.M, lim
 			"as": "activeAuthor",
 		}}},
 		{{Key: "$match", Value: bson.M{"activeAuthor.0": bson.M{"$exists": true}}}},
-		{{Key: "$limit", Value: int64(limit)}},
-		{{Key: "$unset", Value: "activeAuthor"}},
 	}
-	cursor, err := r.db.Collection("notes").Aggregate(ctx, pipeline)
-	if err != nil {
-		return nil, err
+	if len(mutedActorIDs) > 0 {
+		unsetFields = append(unsetFields, "renoteTarget")
+		pipeline = append(pipeline,
+			bson.D{{Key: "$lookup", Value: bson.M{
+				"from": "notes", "localField": "renoteId", "foreignField": "_id",
+				"pipeline": bson.A{bson.M{"$project": bson.M{"authorId": 1}}}, "as": "renoteTarget",
+			}}},
+			bson.D{{Key: "$match", Value: bson.M{"renoteTarget.authorId": bson.M{"$nin": mutedActorIDs}}}},
+		)
 	}
-	defer cursor.Close(ctx)
-	var docs []noteDocument
-	if err := cursor.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	return docs, nil
+	pipeline = append(pipeline,
+		bson.D{{Key: "$limit", Value: int64(limit)}},
+		bson.D{{Key: "$unset", Value: unsetFields}},
+	)
+	return pipeline
+}
+
+func (r *SalviaReader) mutedActorIDs(ctx context.Context, viewerActorID string) ([]string, error) {
+	return r.mutes.ListActiveMuteeIDs(ctx, viewerActorID, time.Now().UTC())
 }
 
 func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, docs []noteDocument) ([]readmodel.Note, error) {

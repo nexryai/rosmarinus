@@ -189,6 +189,8 @@ export const profileSchema = z.object({
     following_count: z.number(),
     follow_status: z.string().default(""),
     blocked_by_viewer: z.boolean().default(false),
+    muted_by_viewer: z.boolean().default(false),
+    mute_expires_at: z.string().nullish(),
     pinned_notes: z
         .array(noteSchema)
         .nullish()

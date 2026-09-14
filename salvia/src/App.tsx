@@ -224,7 +224,7 @@ function App() {
         };
         const refreshWorkspace = () => void loadWorkspace().catch((reason) => setError(reason instanceof Error ? reason.message : "Actor一覧を更新できませんでした"));
         const actorEventTypes = ["actor.created", "actor.updated", "actor.deleted"];
-        const projectionEventTypes = ["note.created", "note.deleted", "reaction.changed", "notification.created", "notification.read", "follow.approval.requested", "follow.approval.completed", "follow.approval.rejected", "follow.changed", "block.changed", "poll.changed", "projection.invalidated"];
+        const projectionEventTypes = ["note.created", "note.deleted", "reaction.changed", "notification.created", "notification.read", "follow.approval.requested", "follow.approval.completed", "follow.approval.rejected", "follow.changed", "block.changed", "mute.changed", "poll.changed", "projection.invalidated"];
         for (const type of actorEventTypes) source.addEventListener(type, refreshWorkspace);
         for (const type of projectionEventTypes) source.addEventListener(type, refreshForEvent);
         if (channel)

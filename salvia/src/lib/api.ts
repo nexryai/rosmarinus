@@ -186,6 +186,12 @@ export const api = {
     unblock: async (csrf: string, actorID: string, target: string): Promise<void> => {
         await request(`/actors/${encodeURIComponent(actorID)}/blocks`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
     },
+    mute: async (csrf: string, actorID: string, target: string, expiresAt: string | null): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/mutes`, envelope(z.unknown()), { method: "POST", body: { target, expires_at: expiresAt }, csrf, idempotent: true });
+    },
+    unmute: async (csrf: string, actorID: string, target: string): Promise<void> => {
+        await request(`/actors/${encodeURIComponent(actorID)}/mutes`, envelope(z.unknown()), { method: "DELETE", body: { target }, csrf, idempotent: true });
+    },
     note: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema), { signal })).data,
     thread: async (actorID: string, noteID: string, signal?: AbortSignal, limit = 100): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: String(limit) })}`, pageEnvelope(noteSchema), { signal })).data,
     emojiCatalog: async (scope: "local" | "remote", filters: { after?: string; query?: string; host?: string } = {}): Promise<{ data: ManagedEmoji[]; next: string }> => {

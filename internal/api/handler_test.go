@@ -182,6 +182,16 @@ func (e *fakeExecutor) DeleteBlock(_ context.Context, command connector.BlockDel
 	return connector.BlockDeleted{BlockID: "block-1"}, err
 }
 
+func (e *fakeExecutor) CreateMute(_ context.Context, command connector.MuteCreateCommand) (connector.MuteCreated, error) {
+	err := e.record(connector.CommandMuteCreate, command.ActorID, command)
+	return connector.MuteCreated{MuteID: "mute-1", MuteeID: "remote-1", ExpiresAt: command.ExpiresAt}, err
+}
+
+func (e *fakeExecutor) DeleteMute(_ context.Context, command connector.MuteDeleteCommand) (connector.MuteDeleted, error) {
+	err := e.record(connector.CommandMuteDelete, command.ActorID, command)
+	return connector.MuteDeleted{MuteeID: "remote-1"}, err
+}
+
 func (e *fakeExecutor) CreateActor(_ context.Context, accountID string, command connector.ActorCreateCommand) (connector.ActorCreated, error) {
 	err := e.record(connector.CommandActorCreate, accountID, command)
 	return connector.ActorCreated{ActorID: "actor-created", Username: command.Username}, err
@@ -437,6 +447,40 @@ func TestHandlerPublishesAccountWideBlockInvalidation(t *testing.T) {
 	}
 	if broker.accountID != "account-1" || broker.eventType != "block.changed" || broker.actorID != "" {
 		t.Fatalf("block event account=%q type=%q actor=%q", broker.accountID, broker.eventType, broker.actorID)
+	}
+}
+
+func TestHandlerCreatesTimelineMute(t *testing.T) {
+	handler, executor, _ := testHandler()
+	recorder := httptest.NewRecorder()
+	request := jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/mutes", `{"target":"https://remote.test/users/bob","expires_at":"2026-09-15T00:00:00Z"}`)
+	request.Header.Set("Idempotency-Key", "create-mute-123456")
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated || executor.command != connector.CommandMuteCreate {
+		t.Fatalf("status=%d command=%q body=%s", recorder.Code, executor.command, recorder.Body.String())
+	}
+	command, ok := executor.data.(connector.MuteCreateCommand)
+	if !ok || command.ActorID != "actor-1" || command.ExpiresAt == nil {
+		t.Fatalf("mute command = %#v", executor.data)
+	}
+}
+
+func TestHandlerPublishesActorScopedMuteInvalidation(t *testing.T) {
+	executor := &fakeExecutor{}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	broker := &fakeEventBroker{}
+	handler := NewHandlerComplete(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}},
+		store, executor, &fakeReceiptStore{}, nil, nil, InstanceInfo{}, broker, nil, nil, nil, time.Hour,
+	)
+	recorder := httptest.NewRecorder()
+	request := jsonRequest(http.MethodDelete, "/api/v1/actors/actor-1/mutes", `{"target":"https://remote.test/users/bob"}`)
+	request.Header.Set("Idempotency-Key", "delete-mute-123456")
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK || broker.accountID != "account-1" || broker.eventType != "mute.changed" || broker.actorID != "actor-1" {
+		t.Fatalf("status=%d mute event account=%q type=%q actor=%q body=%s", recorder.Code, broker.accountID, broker.eventType, broker.actorID, recorder.Body.String())
 	}
 }
 

@@ -336,6 +336,8 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 		h.resolveRemoteProfile(w, r, accountID, actorID, segments[2:])
 	case "blocks":
 		h.targetMutation(w, r, accountID, actorID, segments[2:], connector.CommandBlockCreate, connector.CommandBlockDelete)
+	case "mutes":
+		h.mutes(w, r, accountID, actorID, segments[2:])
 	case "follow-requests":
 		if len(segments) == 2 && r.Method == http.MethodGet {
 			h.connections(w, r, accountID, actorID, "requests", nil)
@@ -514,6 +516,27 @@ func (h *Handler) targetMutation(w http.ResponseWriter, r *http.Request, account
 	h.execute(w, r, accountID, command, actorID, data, status)
 }
 
+func (h *Handler) mutes(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
+	if len(segments) != 0 {
+		h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var data connector.MuteCreateData
+		if h.decodeJSON(w, r, &data, false) {
+			h.execute(w, r, accountID, connector.CommandMuteCreate, actorID, data, http.StatusCreated)
+		}
+	case http.MethodDelete:
+		var data connector.MuteDeleteData
+		if h.decodeJSON(w, r, &data, false) {
+			h.execute(w, r, accountID, connector.CommandMuteDelete, actorID, data, http.StatusOK)
+		}
+	default:
+		h.methodNotAllowed(w, http.MethodPost, http.MethodDelete)
+	}
+}
+
 func (h *Handler) followRequest(w http.ResponseWriter, r *http.Request, accountID, actorID string, segments []string) {
 	if len(segments) != 1 || r.Method != http.MethodPatch {
 		h.methodOrNotFound(w, r, http.MethodPatch, len(segments) == 1)
@@ -668,6 +691,8 @@ func (h *Handler) publishMutationEvent(ctx context.Context, accountID, actorID, 
 		eventType = "follow.changed"
 	case connector.CommandBlockCreate, connector.CommandBlockDelete:
 		eventType = "block.changed"
+	case connector.CommandMuteCreate, connector.CommandMuteDelete:
+		eventType = "mute.changed"
 	case connector.CommandPollVote:
 		eventType = "poll.changed"
 	}

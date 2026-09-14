@@ -3,10 +3,12 @@ package connector
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 type recordingExecutor struct {
 	post  PostCreateCommand
+	mute  MuteCreateCommand
 	actor ActorCreateCommand
 }
 
@@ -47,6 +49,13 @@ func (e *recordingExecutor) CreateBlock(context.Context, BlockCreateCommand) (Bl
 func (e *recordingExecutor) DeleteBlock(context.Context, BlockDeleteCommand) (BlockDeleted, error) {
 	return BlockDeleted{}, nil
 }
+func (e *recordingExecutor) CreateMute(_ context.Context, command MuteCreateCommand) (MuteCreated, error) {
+	e.mute = command
+	return MuteCreated{MuteID: "mute-1", MuteeID: "remote-1", ExpiresAt: command.ExpiresAt}, nil
+}
+func (e *recordingExecutor) DeleteMute(context.Context, MuteDeleteCommand) (MuteDeleted, error) {
+	return MuteDeleted{}, nil
+}
 func (e *recordingExecutor) CreateActor(_ context.Context, _ string, command ActorCreateCommand) (ActorCreated, error) {
 	e.actor = command
 	return ActorCreated{ActorID: "actor-1"}, nil
@@ -80,6 +89,18 @@ func TestExecuteCommandRejectsRenoteWithContent(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected mixed renote and content to be rejected")
+	}
+}
+
+func TestExecuteCommandBuildsMuteCommand(t *testing.T) {
+	executor := &recordingExecutor{}
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	_, actorID, err := ExecuteCommand(context.Background(), executor, CommandMuteCreate, "account-1", "actor-1", MuteCreateData{Target: "https://remote.test/users/bob", ExpiresAt: &expiresAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actorID != "actor-1" || executor.mute.ActorID != "actor-1" || executor.mute.Target != "https://remote.test/users/bob" || executor.mute.ExpiresAt == nil || !executor.mute.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("mute command = %+v actor=%q", executor.mute, actorID)
 	}
 }
 

@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
-import { IconBan, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
+import { IconBan, IconDots, IconEye, IconEyeOff, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
 import { EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
@@ -8,6 +8,7 @@ import { NoteCard } from "../components/NoteCard";
 import { NoteList, NoteListItem } from "../components/NoteList";
 import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { Dropdown } from "../components/ui/Dropdown";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Connection, Emoji, Note, Profile } from "../lib/schema";
@@ -40,6 +41,33 @@ const styles = {
         top: "1rem",
         display: "flex",
         gap: "0.5rem",
+    },
+    actionMenu: {
+        width: "2.5rem",
+    },
+    actionMenuTrigger: {
+        width: "2.5rem",
+        height: "2.5rem",
+        minHeight: "2.5rem",
+        padding: 0,
+        justifyContent: "center",
+        borderRadius: "9999px",
+    },
+    actionLabel: {
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+    },
+    actionIcon: {
+        width: "1.125rem",
+        height: "1.125rem",
+    },
+    mutePeriods: {
+        display: "grid",
+        gap: "0.625rem",
+    },
+    mutePeriod: {
+        width: "100%",
     },
     title: {
         marginTop: "0.25rem",
@@ -223,23 +251,27 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     const [next, setNext] = useState("");
     const [following, setFollowing] = useState(false);
     const [blocked, setBlocked] = useState(false);
+    const [muted, setMuted] = useState(false);
     const [connections, setConnections] = useState<{ kind: "followers" | "following"; items: Connection[] }>();
     const [loading, setLoading] = useState(true);
     const [notesLoading, setNotesLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+    const [muteDialogOpen, setMuteDialogOpen] = useState(false);
     const [error, setError] = useState("");
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
         setProfile(undefined);
         setBlockDialogOpen(false);
+        setMuteDialogOpen(false);
         setError("");
         api.profile(actorID, profileID, controller.signal)
             .then((value) => {
                 setProfile(value);
                 setFollowing(value.follow_status === "accepted" || value.follow_status === "pending");
                 setBlocked(value.blocked_by_viewer);
+                setMuted(value.muted_by_viewer);
             })
             .catch((reason) => {
                 if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "プロフィールを読み込めませんでした");
@@ -307,6 +339,25 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
             setBusy(false);
         }
     };
+    const toggleMute = async (duration?: number) => {
+        if (!profile) return;
+        setBusy(true);
+        setError("");
+        try {
+            if (muted) {
+                await api.unmute(csrf, actorID, profile.actor.uri);
+                setMuted(false);
+            } else {
+                const expiresAt = duration === undefined ? null : new Date(Date.now() + duration).toISOString();
+                await api.mute(csrf, actorID, profile.actor.uri, expiresAt);
+                setMuted(true);
+            }
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : "ミュート状態を変更できませんでした");
+        } finally {
+            setBusy(false);
+        }
+    };
     const showConnections = async (kind: "followers" | "following") => {
         setBusy(true);
         setError("");
@@ -365,10 +416,39 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                         </>
                                     )}
                                 </Button>
-                                <Button disabled={busy} onClick={() => (blocked ? void toggleBlock() : setBlockDialogOpen(true))} variant="ghost">
-                                    <IconBan />
-                                    {blocked ? "ブロック解除" : "ブロック"}
-                                </Button>
+                                <Dropdown
+                                    label="プロフィール操作"
+                                    onChange={(action) => {
+                                        if (action === "block") {
+                                            if (blocked) void toggleBlock();
+                                            else setBlockDialogOpen(true);
+                                        } else if (muted) void toggleMute();
+                                        else setMuteDialogOpen(true);
+                                    }}
+                                    options={[
+                                        {
+                                            value: "mute",
+                                            label: (
+                                                <span style={styles.actionLabel}>
+                                                    {muted ? <IconEye aria-hidden="true" style={styles.actionIcon} /> : <IconEyeOff aria-hidden="true" style={styles.actionIcon} />}
+                                                    {muted ? "ミュート解除" : "ミュート"}
+                                                </span>
+                                            ),
+                                        },
+                                        {
+                                            value: "block",
+                                            label: (
+                                                <span style={styles.actionLabel}>
+                                                    <IconBan aria-hidden="true" style={styles.actionIcon} />
+                                                    {blocked ? "ブロック解除" : "ブロック"}
+                                                </span>
+                                            ),
+                                        },
+                                    ]}
+                                    style={styles.actionMenu}
+                                    trigger={<IconDots aria-hidden="true" />}
+                                    triggerStyle={styles.actionMenuTrigger}
+                                />
                             </>
                         )}
                     </div>
@@ -502,6 +582,31 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 >
                     {actor.name || actor.username}からのフォローややり取りを制限します。
                 </ConfirmDialog>
+            )}
+            {muteDialogOpen && (
+                <Modal label="ミュート期間を選択" onClose={() => setMuteDialogOpen(false)}>
+                    <div style={styles.mutePeriods}>
+                        {[
+                            { label: "無期限", duration: undefined },
+                            { label: "1時間", duration: 60 * 60 * 1000 },
+                            { label: "1日", duration: 24 * 60 * 60 * 1000 },
+                            { label: "1週間", duration: 7 * 24 * 60 * 60 * 1000 },
+                        ].map((period) => (
+                            <Button
+                                disabled={busy}
+                                key={period.label}
+                                onClick={() => {
+                                    setMuteDialogOpen(false);
+                                    void toggleMute(period.duration);
+                                }}
+                                style={styles.mutePeriod}
+                                variant="secondary"
+                            >
+                                {period.label}
+                            </Button>
+                        ))}
+                    </div>
+                </Modal>
             )}
         </>
     );

@@ -32,6 +32,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	"github.com/nexryai/rosmarinus/internal/domain/instances"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
+	"github.com/nexryai/rosmarinus/internal/domain/mutes"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
@@ -89,6 +90,7 @@ type Handler struct {
 	reactions        reactions.Repository
 	reports          reports.Repository
 	notifications    notifications.Repository
+	mutes            mutes.Repository
 	polls            polls.Repository
 	cleanup          cleanup.Repository
 	media            domainmedia.Repository
@@ -131,6 +133,10 @@ func (h *Handler) SetConnectorPublisher(publisher ConnectorPublisher) {
 
 func (h *Handler) SetNotificationRepository(repository notifications.Repository) {
 	h.notifications = repository
+}
+
+func (h *Handler) SetMuteRepository(repository mutes.Repository) {
+	h.mutes = repository
 }
 
 func (h *Handler) SetEmojiRepository(repository emojis.Repository) {

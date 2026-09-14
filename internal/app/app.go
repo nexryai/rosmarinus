@@ -51,6 +51,7 @@ type App struct {
 	notes              *mongostore.NoteRepository
 	follows            *mongostore.FollowRepository
 	blocks             *mongostore.BlockRepository
+	mutes              *mongostore.MuteRepository
 	reactions          *mongostore.ReactionRepository
 	emojis             *mongostore.EmojiRepository
 	polls              *mongostore.PollRepository
@@ -122,6 +123,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	noteRepo := mongostore.NewNoteRepository(mongoDB)
 	followRepo := mongostore.NewFollowRepository(mongoDB)
 	blockRepo := mongostore.NewBlockRepository(mongoDB)
+	muteRepo := mongostore.NewMuteRepository(mongoDB)
 	reactionRepo := mongostore.NewReactionRepository(mongoDB)
 	emojiRepo := mongostore.NewEmojiRepository(mongoDB)
 	pollRepo := mongostore.NewPollRepository(mongoDB)
@@ -202,6 +204,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	apWorker.SetWebFingerResolver(cache.NewCachedWebFinger(apwebfinger.New(nil, cfg.UserAgent), valueCache))
 	apWorker.SetAccountCleanupRepository(accountCleanupRepo)
 	apWorker.SetNotificationRepository(notificationRepo)
+	apWorker.SetMuteRepository(muteRepo)
 	// Redis Pub/Sub is the local fan-out transport for browser-safe SSE invalidations.
 	apWorker.SetConnectorPublisher(realtime.NewDomainPublisher(realtimeBroker, logger))
 	sessionManager := appauth.NewSessionManager(sessionRepo, accountRepo, cfg.SessionCookieName, cfg.SessionTTL, cfg.SessionSecure)
@@ -240,6 +243,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		notes:              noteRepo,
 		follows:            followRepo,
 		blocks:             blockRepo,
+		mutes:              muteRepo,
 		reactions:          reactionRepo,
 		emojis:             emojiRepo,
 		polls:              pollRepo,

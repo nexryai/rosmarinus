@@ -7,7 +7,7 @@ import type { Actor, Note, Profile } from "../lib/schema";
 import { ProfilePage } from "./ProfilePage";
 
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob", profile_fields: [], tags: [] } as unknown as Actor;
-const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false, pinned_notes: [] } as Profile;
+const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false, muted_by_viewer: false, pinned_notes: [] } as Profile;
 
 describe("ProfilePage social actions", () => {
     beforeEach(() => {
@@ -32,16 +32,42 @@ describe("ProfilePage social actions", () => {
 
         await user.click(screen.getByRole("button", { name: "フォロー" }));
         await user.click(screen.getByRole("button", { name: "フォロー解除" }));
-        await user.click(screen.getByRole("button", { name: "ブロック" }));
+        expect(screen.queryByRole("button", { name: "ブロック" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "プロフィール操作" }));
+        await user.click(screen.getByRole("menuitem", { name: "ブロック" }));
         expect(block).not.toHaveBeenCalled();
         expect(screen.getByRole("dialog", { name: "このActorをブロックしますか？" })).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "ブロックする" }));
-        await user.click(screen.getByRole("button", { name: "ブロック解除" }));
+        await user.click(screen.getByRole("button", { name: "プロフィール操作" }));
+        await user.click(screen.getByRole("menuitem", { name: "ブロック解除" }));
 
         expect(follow).toHaveBeenCalledWith("csrf", "alice", remote.uri);
         expect(unfollow).toHaveBeenCalledWith("csrf", "alice", remote.uri);
         expect(block).toHaveBeenCalledWith("csrf", "alice", remote.uri);
         expect(unblock).toHaveBeenCalledWith("csrf", "alice", remote.uri);
+    });
+
+    it("mutes a profile for a selected period and keeps the action in the menu", async () => {
+        vi.spyOn(api, "profile").mockResolvedValue(profile);
+        const mute = vi.spyOn(api, "mute").mockResolvedValue(undefined);
+        const unmute = vi.spyOn(api, "unmute").mockResolvedValue(undefined);
+        const user = userEvent.setup();
+        const startedAt = Date.now();
+        render(<ProfilePage actorID="alice" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} profileID="bob" />);
+        await screen.findByRole("heading", { name: "Bob" });
+
+        await user.click(screen.getByRole("button", { name: "プロフィール操作" }));
+        await user.click(screen.getByRole("menuitem", { name: "ミュート" }));
+        const dialog = screen.getByRole("dialog", { name: "ミュート期間を選択" });
+        await user.click(within(dialog).getByRole("button", { name: "1時間" }));
+
+        expect(mute).toHaveBeenCalledWith("csrf", "alice", remote.uri, expect.any(String));
+        const expiresAt = new Date(vi.mocked(mute).mock.calls[0][3] as string).getTime();
+        expect(expiresAt).toBeGreaterThanOrEqual(startedAt + 60 * 60 * 1000);
+
+        await user.click(screen.getByRole("button", { name: "プロフィール操作" }));
+        await user.click(screen.getByRole("menuitem", { name: "ミュート解除" }));
+        expect(unmute).toHaveBeenCalledWith("csrf", "alice", remote.uri);
     });
 
     it("opens a server-filtered follower list", async () => {

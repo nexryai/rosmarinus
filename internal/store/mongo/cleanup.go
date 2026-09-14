@@ -75,6 +75,11 @@ func (r *AccountCleanupRepository) CleanupActor(ctx context.Context, actorID str
 		}
 		*update.count = updated.ModifiedCount
 	}
+	deletedMutes, err := r.db.Collection("mutes").DeleteMany(ctx, bson.M{"$or": bson.A{bson.M{"muterId": actorID}, bson.M{"muteeId": actorID}}})
+	if err != nil {
+		return result, fmt.Errorf("cleanup mutes for actor %s: %w", actorID, err)
+	}
+	result.Mutes = deletedMutes.DeletedCount
 	if err := r.cleanupActorNoteDependencies(ctx, actorID, now, &result); err != nil {
 		return result, err
 	}

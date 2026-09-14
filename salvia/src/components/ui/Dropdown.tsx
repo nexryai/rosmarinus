@@ -185,10 +185,11 @@ type DropdownProps<Value extends string> = {
     label: string;
     onChange: (value: Value) => void;
     options: DropdownOption<Value>[];
-    value: Value;
+    value?: Value;
     className?: string;
     placement?: "top" | "bottom";
     renderValue?: (option: DropdownOption<Value>) => ReactNode;
+    trigger?: ReactNode;
     style?: CSSProperties;
     triggerStyle?: CSSProperties;
 };
@@ -196,7 +197,7 @@ type DropdownProps<Value extends string> = {
 const closeDuration = 130;
 const motionIsReduced = () => document.documentElement.dataset.reduceMotion === "true" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
-export function Dropdown<Value extends string>({ className = "", label, onChange, options, placement = "bottom", renderValue, style, triggerStyle, value }: DropdownProps<Value>) {
+export function Dropdown<Value extends string>({ className = "", label, onChange, options, placement = "bottom", renderValue, style, trigger, triggerStyle, value }: DropdownProps<Value>) {
     const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
     const [activeIndex, setActiveIndex] = useState(0);
     const rootRef = useRef<HTMLDivElement>(null);
@@ -206,11 +207,12 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
     const listboxID = useId();
     const isMobile = useIsMobile();
     const isOpen = phase === "open";
+    const selectionMode = value !== undefined;
     const selectedIndex = Math.max(
         0,
         options.findIndex((option) => option.value === value),
     );
-    const selected = options[selectedIndex];
+    const selected = selectionMode ? options[selectedIndex] : undefined;
     const hasEnabledOption = options.some((option) => !option.disabled);
 
     const clearCloseTimer = useCallback(() => {
@@ -269,7 +271,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
     const choose = (index: number) => {
         const option = options[index];
         if (!option || option.disabled) return;
-        if (option.value !== value) onChange(option.value);
+        if (!selectionMode || option.value !== value) onChange(option.value);
         close(true);
     };
 
@@ -315,7 +317,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
             id={listboxID}
             onKeyDown={onMenuKeyDown}
             ref={menuRef}
-            role="listbox"
+            role={selectionMode ? "listbox" : "menu"}
             style={
                 isMobile
                     ? styles.drawerListbox
@@ -330,7 +332,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
         >
             {options.map((option, index) => (
                 <button
-                    aria-selected={option.value === value}
+                    aria-selected={selectionMode ? option.value === value : undefined}
                     className={rules.option}
                     data-active={isOpen && index === activeIndex}
                     disabled={option.disabled}
@@ -340,7 +342,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
                     onPointerMove={() => {
                         if (!option.disabled) setActiveIndex(index);
                     }}
-                    role="option"
+                    role={selectionMode ? "option" : "menuitem"}
                     style={styles.option}
                     tabIndex={-1}
                     type="button"
@@ -349,7 +351,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
                         <span style={styles.optionLabel}>{option.label}</span>
                         {option.description && <span style={styles.description}>{option.description}</span>}
                     </span>
-                    {option.value === value && <IconCheck aria-hidden="true" style={styles.check} />}
+                    {selectionMode && option.value === value && <IconCheck aria-hidden="true" style={styles.check} />}
                 </button>
             ))}
         </div>
@@ -360,7 +362,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
             <button
                 aria-controls={phase === "closed" ? undefined : listboxID}
                 aria-expanded={isOpen}
-                aria-haspopup="listbox"
+                aria-haspopup={selectionMode ? "listbox" : "menu"}
                 aria-label={label}
                 className={rules.trigger}
                 disabled={!hasEnabledOption}
@@ -370,8 +372,8 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
                 style={{ ...styles.trigger, ...triggerStyle }}
                 type="button"
             >
-                <span style={styles.value}>{selected && (renderValue ? renderValue(selected) : selected.label)}</span>
-                <IconChevronDown aria-hidden="true" style={{ ...styles.chevron, transform: isOpen ? "rotate(180deg)" : "rotate(0)" }} />
+                <span style={styles.value}>{trigger ?? (selected && (renderValue ? renderValue(selected) : selected.label))}</span>
+                {!trigger && <IconChevronDown aria-hidden="true" style={{ ...styles.chevron, transform: isOpen ? "rotate(180deg)" : "rotate(0)" }} />}
             </button>
             {phase !== "closed" &&
                 (isMobile ? (

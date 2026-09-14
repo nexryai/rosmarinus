@@ -340,7 +340,8 @@ func (h *Handler) writeProfile(w http.ResponseWriter, profile *readmodel.Profile
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": profileView{
 		Actor: projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
-		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer, PinnedNotes: pinnedNotes,
+		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer,
+		MutedByViewer: profile.MutedByViewer, MuteExpiresAt: profile.MuteExpiresAt, PinnedNotes: pinnedNotes,
 	}})
 }
 
@@ -582,6 +583,8 @@ type profileView struct {
 	FollowingCount  int        `json:"following_count"`
 	FollowStatus    string     `json:"follow_status,omitempty"`
 	BlockedByViewer bool       `json:"blocked_by_viewer"`
+	MutedByViewer   bool       `json:"muted_by_viewer"`
+	MuteExpiresAt   *time.Time `json:"mute_expires_at,omitempty"`
 	PinnedNotes     []noteView `json:"pinned_notes"`
 }
 

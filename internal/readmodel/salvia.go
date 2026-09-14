@@ -77,6 +77,8 @@ type Profile struct {
 	FollowingCount  int
 	FollowStatus    string
 	BlockedByViewer bool
+	MutedByViewer   bool
+	MuteExpiresAt   *time.Time
 	PinnedNotes     []Note
 }
 

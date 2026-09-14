@@ -193,6 +193,8 @@ Pub/Sub message arriving.
       API projections.
 - [x] Implement compose, delete, reaction, poll vote, follow/unfollow,
       block/unblock, and mandatory follow approve/reject flows.
+- [x] Keep follow as the primary profile action and place block plus
+      indefinite/temporary timeline-only mute controls in the profile menu.
 - [x] Build account- and Actor-scoped notification views and mark-read actions.
 - [x] Build local and remote Actor profiles with visibility-filtered Note
       lists, clearly labeled pinned Notes, follower/following views, moved and

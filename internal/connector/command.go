@@ -23,6 +23,8 @@ const (
 	CommandReactionDelete       = "reaction.delete"
 	CommandBlockCreate          = "block.create"
 	CommandBlockDelete          = "block.delete"
+	CommandMuteCreate           = "mute.create"
+	CommandMuteDelete           = "mute.delete"
 	CommandActorCreate          = "actor.create"
 	CommandActorUpdate          = "actor.update"
 	CommandActorDelete          = "actor.delete"
@@ -51,6 +53,11 @@ type CommandExecutor interface {
 	UpdateActor(context.Context, string, ActorUpdateCommand) (ActorUpdated, error)
 	DeleteActor(context.Context, string, ActorDeleteCommand) (ActorDeleted, error)
 	MarkNotificationRead(context.Context, string, string, string) (NotificationRead, error)
+}
+
+type MuteCommandExecutor interface {
+	CreateMute(context.Context, MuteCreateCommand) (MuteCreated, error)
+	DeleteMute(context.Context, MuteDeleteCommand) (MuteDeleted, error)
 }
 
 type FollowApproveData struct {
@@ -218,6 +225,36 @@ type BlockDeleted struct {
 	BlockID   string `json:"block_id" bson:"block_id"`
 	BlockeeID string `json:"blockee_id" bson:"blockee_id"`
 	URI       string `json:"uri" bson:"uri"`
+}
+
+type MuteCreateData struct {
+	Target    string     `json:"target"`
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
+type MuteCreateCommand struct {
+	ActorID   string
+	Target    string
+	ExpiresAt *time.Time
+}
+
+type MuteCreated struct {
+	MuteID    string     `json:"mute_id" bson:"mute_id"`
+	MuteeID   string     `json:"mutee_id" bson:"mutee_id"`
+	ExpiresAt *time.Time `json:"expires_at" bson:"expires_at"`
+}
+
+type MuteDeleteData struct {
+	Target string `json:"target"`
+}
+
+type MuteDeleteCommand struct {
+	ActorID string
+	Target  string
+}
+
+type MuteDeleted struct {
+	MuteeID string `json:"mutee_id" bson:"mutee_id"`
 }
 
 type ActorCreateData struct {
@@ -637,6 +674,34 @@ func ExecuteCommand(ctx context.Context, executor CommandExecutor, name, account
 			return nil, actorID, fmt.Errorf("target is required")
 		}
 		result, err := executor.DeleteBlock(ctx, BlockDeleteCommand{ActorID: actorID, Target: command.Target})
+		return result, actorID, err
+	case CommandMuteCreate:
+		muteExecutor, ok := executor.(MuteCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("mute command executor is not configured")
+		}
+		var command MuteCreateData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := muteExecutor.CreateMute(ctx, MuteCreateCommand{ActorID: actorID, Target: command.Target, ExpiresAt: command.ExpiresAt})
+		return result, actorID, err
+	case CommandMuteDelete:
+		muteExecutor, ok := executor.(MuteCommandExecutor)
+		if !ok {
+			return nil, actorID, fmt.Errorf("mute command executor is not configured")
+		}
+		var command MuteDeleteData
+		if err := decodeCommandData(data, &command); err != nil {
+			return nil, actorID, err
+		}
+		if strings.TrimSpace(command.Target) == "" {
+			return nil, actorID, fmt.Errorf("target is required")
+		}
+		result, err := muteExecutor.DeleteMute(ctx, MuteDeleteCommand{ActorID: actorID, Target: command.Target})
 		return result, actorID, err
 	case CommandNotificationMarkRead:
 		var command NotificationMarkReadData

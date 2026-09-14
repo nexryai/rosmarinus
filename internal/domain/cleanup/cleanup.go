@@ -7,6 +7,7 @@ type Result struct {
 	Reactions     int64
 	Follows       int64
 	Blocks        int64
+	Mutes         int64
 	Polls         int64
 	Notifications int64
 }
