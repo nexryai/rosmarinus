@@ -24,6 +24,7 @@ const rosmarinusCollections = [
   "follows",
   "follow_requests",
   "blocks",
+  "mutes",
   "emojis",
   "media_objects",
   "instances",
