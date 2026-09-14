@@ -188,11 +188,13 @@ describe("Dropdown", () => {
     it("supports action menus without selection state", () => {
         document.documentElement.dataset.reduceMotion = "true";
         const onChange = vi.fn();
-        render(<Dropdown label="プロフィール操作" onChange={onChange} options={[{ value: "mute", label: "ミュート" }]} trigger={<span>操作</span>} />);
+        render(<Dropdown align="end" label="プロフィール操作" onChange={onChange} options={[{ value: "mute", label: "ミュート" }]} trigger={<span>操作</span>} />);
 
         const trigger = screen.getByRole("button", { name: "プロフィール操作" });
         expect(trigger).toHaveAttribute("aria-haspopup", "menu");
         fireEvent.click(trigger);
+        const menu = screen.getByRole("menu");
+        expect(menu).toHaveStyle({ right: "0px", left: "auto" });
         fireEvent.click(screen.getByRole("menuitem", { name: "ミュート" }));
 
         expect(onChange).toHaveBeenCalledWith("mute");

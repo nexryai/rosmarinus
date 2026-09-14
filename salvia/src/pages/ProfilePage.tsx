@@ -418,6 +418,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                     )}
                                 </Button>
                                 <Dropdown
+                                    align="end"
                                     label="プロフィール操作"
                                     onChange={(action) => {
                                         if (action === "block") {

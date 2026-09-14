@@ -64,8 +64,6 @@ const styles = {
     menu: {
         position: "absolute",
         zIndex: 80,
-        right: 0,
-        left: 0,
         minWidth: "12rem",
         maxHeight: "18rem",
         padding: "0.375rem",
@@ -83,6 +81,18 @@ const styles = {
     menuTop: {
         bottom: "calc(100% + 0.5rem)",
         transformOrigin: "bottom center",
+    },
+    menuStretch: {
+        right: 0,
+        left: 0,
+    },
+    menuStart: {
+        right: "auto",
+        left: 0,
+    },
+    menuEnd: {
+        right: 0,
+        left: "auto",
     },
     option: {
         width: "100%",
@@ -182,6 +192,7 @@ export type DropdownOption<Value extends string> = {
 };
 
 type DropdownProps<Value extends string> = {
+    align?: "stretch" | "start" | "end";
     label: string;
     onChange: (value: Value) => void;
     options: DropdownOption<Value>[];
@@ -197,7 +208,7 @@ type DropdownProps<Value extends string> = {
 const closeDuration = 130;
 const motionIsReduced = () => document.documentElement.dataset.reduceMotion === "true" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 
-export function Dropdown<Value extends string>({ className = "", label, onChange, options, placement = "bottom", renderValue, style, trigger, triggerStyle, value }: DropdownProps<Value>) {
+export function Dropdown<Value extends string>({ align = "stretch", className = "", label, onChange, options, placement = "bottom", renderValue, style, trigger, triggerStyle, value }: DropdownProps<Value>) {
     const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
     const [activeIndex, setActiveIndex] = useState(0);
     const rootRef = useRef<HTMLDivElement>(null);
@@ -324,6 +335,7 @@ export function Dropdown<Value extends string>({ className = "", label, onChange
                     : {
                           ...styles.menu,
                           ...(placement === "top" ? styles.menuTop : styles.menuBottom),
+                          ...(align === "start" ? styles.menuStart : align === "end" ? styles.menuEnd : styles.menuStretch),
                           animation: `${phase === "open" ? openAnimation : closeAnimation} ${phase === "open" ? 180 : closeDuration}ms cubic-bezier(.2,.8,.2,1) both`,
                           pointerEvents: phase === "closing" ? "none" : "auto",
                       }
