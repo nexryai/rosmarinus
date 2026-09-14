@@ -34,6 +34,32 @@ describe("NoteCard social actions", () => {
         expect(onReact).toHaveBeenCalledWith(note.id, "👍", false);
     });
 
+    it("updates a reaction immediately without requiring a page reload", async () => {
+        const user = userEvent.setup();
+        const onReact = vi.fn().mockResolvedValue(undefined);
+        render(<NoteCard note={note} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={onReact} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        await user.click(screen.getByRole("button", { name: "リアクションを追加" }));
+        await user.click(screen.getByRole("button", { name: "👍" }));
+
+        const reaction = screen.getByRole("button", { name: /👍.*1/ });
+        expect(reaction).toHaveAttribute("aria-pressed", "true");
+        await user.click(reaction);
+        expect(onReact).toHaveBeenLastCalledWith(note.id, "👍", true);
+        expect(screen.queryByRole("button", { name: /👍.*1/ })).not.toBeInTheDocument();
+    });
+
+    it("rolls back an optimistic reaction when the API rejects it", async () => {
+        const user = userEvent.setup();
+        const onReact = vi.fn().mockRejectedValue(new Error("failed"));
+        render(<NoteCard note={note} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={onReact} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        await user.click(screen.getByRole("button", { name: "リアクションを追加" }));
+        await user.click(screen.getByRole("button", { name: "👍" }));
+
+        expect(screen.queryByRole("button", { name: /👍.*1/ })).not.toBeInTheDocument();
+    });
+
     it("shows a positive reply count beside the reply icon", () => {
         render(<NoteCard note={{ ...note, replies_count: 12 }} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 

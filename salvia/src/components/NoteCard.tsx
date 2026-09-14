@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 
 import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash, IconWorld } from "@tabler/icons-react";
 
@@ -342,6 +342,8 @@ const actorHandle = (actor: Note["author"]) => {
     }
 };
 
+const emptyReactions: Note["reactions"] = [];
+
 const displayedNoteFor = (note: Note): Note => {
     if (!note.renote) return note;
     return {
@@ -350,7 +352,7 @@ const displayedNoteFor = (note: Note): Note => {
         mention_uris: [],
         hashtags: [],
         published_at: null,
-        reactions: [],
+        reactions: emptyReactions,
         poll: undefined,
         reply_id: note.renote.reply?.id,
         quote_id: note.renote.quote?.id,
@@ -359,6 +361,24 @@ const displayedNoteFor = (note: Note): Note => {
         quote: note.renote.quote,
         renote: undefined,
     };
+};
+
+const canonicalReaction = (reaction: string, emojis: Emoji[]) => {
+    const match = /^:([A-Za-z0-9_]+):$/.exec(reaction);
+    return match && emojis.some((emoji) => emoji.name === match[1]) ? `:${match[1]}@.:` : reaction;
+};
+
+const changedReactions = (reactions: Note["reactions"], requestedReaction: string, reacted: boolean, emojis: Emoji[]) => {
+    const reaction = canonicalReaction(requestedReaction, emojis);
+    if (reacted) return reactions.map((item) => (item.reaction === reaction ? { ...item, count: Math.max(0, item.count - 1), reacted: false } : item)).filter((item) => item.count > 0);
+
+    const alreadyReacted = reactions.some((item) => item.reaction === reaction && item.reacted);
+    const next = reactions.map((item) => (item.reacted && item.reaction !== reaction ? { ...item, count: Math.max(0, item.count - 1), reacted: false } : item)).filter((item) => item.count > 0);
+    if (alreadyReacted) return next;
+    const existing = next.find((item) => item.reaction === reaction);
+    if (existing) return next.map((item) => (item.reaction === reaction ? { ...item, count: item.count + 1, reacted: true } : item));
+    const localEmoji = emojis.find((emoji) => reaction === `:${emoji.name}@.:`);
+    return [...next, { reaction, count: 1, reacted: true, emoji: localEmoji }];
 };
 
 export function NoteCard({
@@ -399,6 +419,8 @@ export function NoteCard({
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
+    const [reactions, setReactions] = useState(displayedNote.reactions);
+    useEffect(() => setReactions(displayedNote.reactions), [displayedNote.reactions]);
     const author = displayedNote.author;
     const visibility = visibilityDetails(displayedNote.visibility);
     const VisibilityIcon = visibility.icon;
@@ -408,8 +430,20 @@ export function NoteCard({
         setBusy(true);
         try {
             await operation();
+        } catch {
+            // The owning page presents the operation error.
         } finally {
             setBusy(false);
+        }
+    };
+    const changeReaction = async (reaction: string, reacted: boolean) => {
+        const previous = reactions;
+        setReactions(changedReactions(previous, reaction, reacted, emojis));
+        try {
+            await onReact(displayedNote.id, reaction, reacted);
+        } catch (error) {
+            setReactions(previous);
+            throw error;
         }
     };
     return (
@@ -507,13 +541,13 @@ export function NoteCard({
                             <button aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
                                 <IconQuote />
                             </button>
-                            {displayedNote.reactions.map((reaction) => (
+                            {reactions.map((reaction) => (
                                 <button
                                     aria-pressed={reaction.reacted}
                                     className={rules.action}
                                     disabled={busy}
                                     key={reaction.reaction}
-                                    onClick={() => act(() => onReact(displayedNote.id, reaction.reaction, reaction.reacted))}
+                                    onClick={() => act(() => changeReaction(reaction.reaction, reaction.reacted))}
                                     style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
                                     type="button"
                                 >
@@ -532,17 +566,17 @@ export function NoteCard({
                         </footer>
                         {pickerOpen && (
                             <div style={styles.picker}>
-                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
                                     👍
                                 </button>
-                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
                                     ❤️
                                 </button>
-                                <button className={rules.pickerButton} onClick={() => void act(() => onReact(displayedNote.id, "😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
+                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
                                     😂
                                 </button>
                                 {emojis.map((emoji) => (
-                                    <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => onReact(displayedNote.id, `:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">
+                                    <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => changeReaction(`:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">
                                         <img alt="" src={emoji.url} style={styles.pickerImage} />
                                     </button>
                                 ))}

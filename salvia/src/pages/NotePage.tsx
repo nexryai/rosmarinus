@@ -145,6 +145,7 @@ export function NotePage({
             await load();
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "操作に失敗しました");
+            throw reason;
         }
     };
     return (

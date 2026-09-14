@@ -308,6 +308,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
             setProfile(refreshedProfile);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "操作に失敗しました");
+            throw reason;
         }
     };
     const toggleFollow = async () => {
