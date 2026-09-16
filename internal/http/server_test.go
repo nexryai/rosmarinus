@@ -183,6 +183,8 @@ func testConfig() config.Config {
 			return "example.test", true
 		case "PUBLIC_URL":
 			return "https://example.test", true
+		case "MEDIA_PROXY_URL":
+			return "https://media-proxy.example/function", true
 		default:
 			return "", false
 		}

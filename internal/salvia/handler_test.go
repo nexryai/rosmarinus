@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 )
 
 func TestHandlerServesIndexAndHistoryFallback(t *testing.T) {
-	handler := NewHandler()
+	handler := testHandler(t)
 	for _, requestPath := range []string{"/", "/settings", "/profiles/actor-1"} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
@@ -25,7 +27,7 @@ func TestHandlerServesIndexAndHistoryFallback(t *testing.T) {
 }
 
 func TestHandlerServesPWAConfigurationWithoutStaleCaching(t *testing.T) {
-	handler := NewHandler()
+	handler := testHandler(t)
 	tests := []struct {
 		path        string
 		contentType string
@@ -49,7 +51,7 @@ func TestHandlerServesPWAConfigurationWithoutStaleCaching(t *testing.T) {
 }
 
 func TestHandlerServesHashedAssetsWithImmutableCaching(t *testing.T) {
-	handler := NewHandler()
+	handler := testHandler(t)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, assetPath(t), nil)
 	handler.ServeHTTP(recorder, request)
@@ -65,7 +67,7 @@ func TestHandlerServesHashedAssetsWithImmutableCaching(t *testing.T) {
 }
 
 func TestHandlerDoesNotFallbackForMissingAssetsOrFederationRequests(t *testing.T) {
-	handler := NewHandler()
+	handler := testHandler(t)
 	tests := []struct {
 		path   string
 		accept string
@@ -88,7 +90,7 @@ func TestHandlerDoesNotFallbackForMissingAssetsOrFederationRequests(t *testing.T
 }
 
 func TestHandlerSecurityHeadersAndMethods(t *testing.T) {
-	handler := NewHandler()
+	handler := testHandler(t)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
 	if recorder.Code != http.StatusMethodNotAllowed {
@@ -99,6 +101,19 @@ func TestHandlerSecurityHeadersAndMethods(t *testing.T) {
 			t.Fatalf("missing %s", header)
 		}
 	}
+	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "img-src 'self' data: blob: https://media-proxy.example;") || strings.Contains(csp, "img-src 'self' data: blob: https:;") {
+		t.Fatalf("unexpected CSP: %q", csp)
+	}
+}
+
+func testHandler(t *testing.T) http.Handler {
+	t.Helper()
+	proxy, err := mediaproxy.New("https://media-proxy.example/function")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewHandler(proxy)
 }
 
 func assetPath(t *testing.T) string {

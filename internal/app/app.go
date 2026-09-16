@@ -31,6 +31,7 @@ import (
 	httpserver "github.com/nexryai/rosmarinus/internal/http"
 	instancemetadata "github.com/nexryai/rosmarinus/internal/instance"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
 	"github.com/nexryai/rosmarinus/internal/ratelimit"
@@ -104,6 +105,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		logger = log.New(os.Stdout, "", log.LstdFlags)
 	}
 	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	mediaProxy, err := mediaproxy.New(cfg.MediaProxyURL)
+	if err != nil {
 		return nil, err
 	}
 
@@ -229,10 +234,10 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	authLimiter := ratelimit.NewRedisLimiter(redisClient)
 	authAPI := api.NewAuthHandlerWithRateLimit(passkeys, sessionManager, accountRepo, authLimiter, cfg.AuthRateLimit, cfg.AuthRateWindow, logger)
 	emojiAdmin := emojiadmin.New(emojiRepo, mediaUploads, mediaFetcher, cfg.PublicURL, logger)
-	applicationAPI := api.NewHandlerCompleteWithEmojiAdmin(
+	applicationAPI := api.NewHandlerCompleteWithMediaProxy(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
 		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
-		mediaUploads, apWorker, emojiAdmin, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
+		mediaUploads, apWorker, emojiAdmin, mediaProxy, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
 	)
 
 	return &App{
@@ -272,7 +277,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:        queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithAllStoresAndAPI(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo, applicationAPI, salvia.NewHandler()),
+			Handler:           httpserver.NewHandlerWithAllStoresAndAPI(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo, applicationAPI, salvia.NewHandler(mediaProxy)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

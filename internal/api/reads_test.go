@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/follows"
 	"github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/notifications"
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 )
 
@@ -236,7 +238,7 @@ func TestProjectNoteReferenceIncludesRenderableMedia(t *testing.T) {
 		Author: &actors.Actor{ID: "quoted-author", Username: "quoted"},
 	}}
 
-	view := projectNoteReference(reference)
+	view := projectNoteReference(reference, nil)
 	if view == nil || len(view.Emojis) != 1 || view.Emojis[0].IconURL != "https://remote.test/emoji.webp" {
 		t.Fatalf("emoji projection = %#v", view)
 	}
@@ -279,6 +281,57 @@ func TestSalviaProjectionsIncludeRemoteActorAndReactionEmojis(t *testing.T) {
 	}
 	if len(view.Reactions) != 1 || view.Reactions[0].Emoji == nil || view.Reactions[0].Emoji.URL != remoteEmoji.URL {
 		t.Fatalf("reaction emojis = %#v", view.Reactions)
+	}
+}
+
+func TestSalviaImageProjectionsUseMediaProxy(t *testing.T) {
+	proxy, err := mediaproxy.New("https://media-proxy.example/function")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteEmoji := emojis.Reference{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"}
+	view := projectNoteWithMediaProxy(readmodel.Note{
+		Note: notes.Note{
+			ID: "note-1", Visibility: notes.VisibilityPublic, CreatedAt: time.Now(),
+			Emojis: []notes.Emoji{{Name: "party", IconURL: remoteEmoji.URL, MediaType: remoteEmoji.MediaType}},
+			Attachments: []notes.Attachment{
+				{URL: "https://remote.test/photo.jpg", MediaType: "image/jpeg"},
+				{URL: "https://remote.test/document.pdf", MediaType: "application/pdf"},
+			},
+		},
+		Author: &actors.Actor{
+			ID: "remote-1", Username: "remote", AvatarURL: "https://remote.test/avatar.png",
+			BannerURL: "https://remote.test/banner.png", ResolvedEmojis: []emojis.Reference{remoteEmoji},
+		},
+		Reactions: []readmodel.ReactionSummary{{Reaction: ":party@remote.test:", Emoji: &remoteEmoji}},
+		Quote: &readmodel.NoteReference{
+			Note: notes.Note{ID: "quote-1", Visibility: notes.VisibilityPublic, Attachments: []notes.Attachment{{URL: "https://remote.test/quote.png", MediaType: "image/png"}}},
+		},
+	}, proxy)
+
+	assertMediaProxyURL(t, view.Author.AvatarURL, "https://remote.test/avatar.png", "avatar")
+	assertMediaProxyURL(t, view.Author.BannerURL, "https://remote.test/banner.png", "")
+	assertMediaProxyURL(t, view.Author.Emojis[0].URL, remoteEmoji.URL, "emoji")
+	assertMediaProxyURL(t, view.Emojis[0].IconURL, remoteEmoji.URL, "emoji")
+	assertMediaProxyURL(t, view.Attachments[0].URL, "https://remote.test/photo.jpg", "")
+	if view.Attachments[1].URL != "https://remote.test/document.pdf" {
+		t.Fatalf("non-image attachment URL = %q", view.Attachments[1].URL)
+	}
+	assertMediaProxyURL(t, view.Reactions[0].Emoji.URL, remoteEmoji.URL, "emoji")
+	assertMediaProxyURL(t, view.Quote.Attachments[0].URL, "https://remote.test/quote.png", "")
+}
+
+func assertMediaProxyURL(t *testing.T, raw, source, selector string) {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Scheme+"://"+parsed.Host+parsed.Path != "https://media-proxy.example/function" || parsed.Query().Get("url") != source {
+		t.Fatalf("proxy URL = %q, source = %q", raw, parsed.Query().Get("url"))
+	}
+	if selector != "" && parsed.Query().Get(selector) != "1" {
+		t.Fatalf("proxy URL %q lacks selector %q", raw, selector)
 	}
 }
 

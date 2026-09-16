@@ -23,6 +23,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
@@ -80,6 +81,7 @@ type Handler struct {
 	mediaUploads   MediaUploadStore
 	remoteProfiles RemoteProfileResolver
 	emojiAdmin     EmojiAdmin
+	mediaProxy     *mediaproxy.Proxy
 	mediaMaxBytes  int64
 	authRoutes     http.Handler
 	logger         *log.Logger
@@ -120,6 +122,10 @@ func NewHandlerCompleteWithMediaAndRemoteProfiles(authenticator Authenticator, a
 }
 
 func NewHandlerCompleteWithEmojiAdmin(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+	return NewHandlerCompleteWithMediaProxy(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, mediaUploads, remoteProfiles, emojiAdmin, nil, mediaMaxBytes, authRoutes, logger, receiptTTL)
+}
+
+func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaProxy *mediaproxy.Proxy, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
@@ -136,6 +142,7 @@ func NewHandlerCompleteWithEmojiAdmin(authenticator Authenticator, actorStore Ac
 		mediaUploads:   mediaUploads,
 		remoteProfiles: remoteProfiles,
 		emojiAdmin:     emojiAdmin,
+		mediaProxy:     mediaProxy,
 		mediaMaxBytes:  mediaMaxBytes,
 		authRoutes:     authRoutes,
 		logger:         logger,
@@ -274,7 +281,7 @@ func (h *Handler) actorsCollection(w http.ResponseWriter, r *http.Request, accou
 		}
 		views := make([]actorView, 0, len(items))
 		for i := range items {
-			views = append(views, projectActor(&items[i]))
+			views = append(views, h.projectActor(&items[i]))
 		}
 		var next string
 		if len(items) == limit {
@@ -299,7 +306,7 @@ func (h *Handler) actorResource(w http.ResponseWriter, r *http.Request, accountI
 		case http.MethodGet:
 			actor, ok := h.authorizeActor(w, r, accountID, actorID, false)
 			if ok {
-				h.writeJSON(w, http.StatusOK, map[string]any{"data": projectActor(actor)})
+				h.writeJSON(w, http.StatusOK, map[string]any{"data": h.projectActor(actor)})
 			}
 		case http.MethodPatch:
 			var data connector.ActorUpdateData
@@ -423,7 +430,7 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request, accountID,
 		}
 	}
 	h.writeJSON(w, http.StatusCreated, map[string]any{"data": map[string]any{
-		"id": record.ID, "url": record.PublicURL, "state": record.State,
+		"id": record.ID, "url": h.mediaProxy.URL(record.PublicURL, mediaproxy.VariantDefault), "state": record.State,
 		"upload_url": upload.URL, "upload_headers": headers, "expires_at": upload.ExpiresAt,
 	}})
 }
@@ -441,7 +448,7 @@ func (h *Handler) completeMediaUpload(w http.ResponseWriter, r *http.Request, ac
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"id": record.ID, "url": record.PublicURL, "name": record.Name, "media_type": record.ContentType,
+		"id": record.ID, "url": h.mediaProxy.URL(record.PublicURL, mediaproxy.VariantDefault), "name": record.Name, "media_type": record.ContentType,
 		"size": record.Size, "width": record.Width, "height": record.Height,
 	}})
 }
@@ -940,18 +947,26 @@ type profileFieldView struct {
 }
 
 func projectActor(actor *actors.Actor) actorView {
+	return projectActorWithMediaProxy(actor, nil)
+}
+
+func (h *Handler) projectActor(actor *actors.Actor) actorView {
+	return projectActorWithMediaProxy(actor, h.mediaProxy)
+}
+
+func projectActorWithMediaProxy(actor *actors.Actor, proxy *mediaproxy.Proxy) actorView {
 	fields := make([]profileFieldView, 0, len(actor.ProfileFields))
 	for _, field := range actor.ProfileFields {
 		fields = append(fields, profileFieldView{Name: field.Name, Value: field.Value})
 	}
 	resolvedEmojis := make([]emojiView, 0, len(actor.ResolvedEmojis))
 	for _, emoji := range actor.ResolvedEmojis {
-		resolvedEmojis = append(resolvedEmojis, emojiView{Name: emoji.Name, URL: emoji.URL, MediaType: emoji.MediaType})
+		resolvedEmojis = append(resolvedEmojis, emojiView{Name: emoji.Name, URL: proxy.URL(emoji.URL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
 	}
 	return actorView{
 		ID: actor.ID, Username: actor.Username, Name: actor.Name, Summary: actor.Summary,
 		URL: actor.URL, ProfileFields: fields, Birthday: actor.Birthday,
-		Location: actor.Location, AvatarURL: actor.AvatarURL, BannerURL: actor.BannerURL,
+		Location: actor.Location, AvatarURL: proxy.URL(actor.AvatarURL, mediaproxy.VariantAvatar), BannerURL: proxy.URL(actor.BannerURL, mediaproxy.VariantDefault),
 		Tags: actor.Tags, EmojiNames: actor.EmojiNames, Emojis: resolvedEmojis, IsBot: actor.IsBot,
 		IsCat: actor.IsCat, IsLocked: actor.IsLocked, IsDiscoverable: actor.IsDiscoverable,
 		Type: actor.Type, URI: actor.URI, MovedToURI: actor.MovedToURI, IsSuspended: actor.IsSuspended,

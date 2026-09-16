@@ -10,6 +10,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 )
 
@@ -71,7 +72,7 @@ func (h *Handler) noteResource(w http.ResponseWriter, r *http.Request, accountID
 			h.writeError(w, http.StatusNotFound, "note_not_found", "Note not found")
 			return
 		}
-		h.writeJSON(w, http.StatusOK, map[string]any{"data": projectNote(*item)})
+		h.writeJSON(w, http.StatusOK, map[string]any{"data": h.projectNote(*item)})
 		return
 	}
 	if len(segments) == 2 && segments[1] == "thread" {
@@ -124,7 +125,7 @@ func (h *Handler) writeConnections(w http.ResponseWriter, r *http.Request, viewe
 	for _, item := range items {
 		views = append(views, connectionView{
 			ID: item.Follow.ID, Status: string(item.Follow.Status), CreatedAt: item.Follow.CreatedAt,
-			AcceptedAt: item.Follow.AcceptedAt, Actor: projectActor(item.Actor),
+			AcceptedAt: item.Follow.AcceptedAt, Actor: h.projectActor(item.Actor),
 		})
 	}
 	next := ""
@@ -256,15 +257,15 @@ func (h *Handler) writeNotifications(w http.ResponseWriter, r *http.Request, acc
 			Reaction: item.Reaction,
 		}
 		if actorID != "" && item.Source != nil {
-			source := projectActor(item.Source)
+			source := h.projectActor(item.Source)
 			view.Source = &source
 		}
 		if actorID != "" && item.Note != nil {
-			note := projectNote(*item.Note)
+			note := h.projectNote(*item.Note)
 			view.Note = &note
 		}
 		if item.ReactionEmoji != nil {
-			emoji := emojiView{Name: item.ReactionEmoji.Name, URL: item.ReactionEmoji.URL, MediaType: item.ReactionEmoji.MediaType}
+			emoji := emojiView{Name: item.ReactionEmoji.Name, URL: h.mediaProxy.URL(item.ReactionEmoji.URL, mediaproxy.VariantEmoji), MediaType: item.ReactionEmoji.MediaType}
 			view.ReactionEmoji = &emoji
 		}
 		views = append(views, view)
@@ -352,10 +353,10 @@ func (h *Handler) resolveRemoteProfile(w http.ResponseWriter, r *http.Request, a
 func (h *Handler) writeProfile(w http.ResponseWriter, profile *readmodel.Profile) {
 	pinnedNotes := make([]noteView, 0, len(profile.PinnedNotes))
 	for _, note := range profile.PinnedNotes {
-		pinnedNotes = append(pinnedNotes, projectNote(note))
+		pinnedNotes = append(pinnedNotes, h.projectNote(note))
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": profileView{
-		Actor: projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
+		Actor: h.projectActor(profile.Actor), FollowersCount: profile.FollowersCount, FollowingCount: profile.FollowingCount,
 		FollowStatus: profile.FollowStatus, BlockedByViewer: profile.BlockedByViewer,
 		MutedByViewer: profile.MutedByViewer, MuteExpiresAt: profile.MuteExpiresAt, PinnedNotes: pinnedNotes,
 	}})
@@ -401,7 +402,7 @@ func (h *Handler) emojis(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]emojiView, 0, len(items))
 	for _, item := range items {
-		views = append(views, projectEmoji(item))
+		views = append(views, h.projectEmoji(item))
 	}
 	next := ""
 	if len(items) == limit {
@@ -460,7 +461,7 @@ func (h *Handler) readPage(w http.ResponseWriter, r *http.Request) (int, readmod
 func (h *Handler) writeNotePage(w http.ResponseWriter, items []readmodel.Note, limit int) {
 	views := make([]noteView, 0, len(items))
 	for _, item := range items {
-		views = append(views, projectNote(item))
+		views = append(views, h.projectNote(item))
 	}
 	next := ""
 	if len(items) == limit {
@@ -618,6 +619,14 @@ type emojiView struct {
 }
 
 func projectNote(item readmodel.Note) noteView {
+	return projectNoteWithMediaProxy(item, nil)
+}
+
+func (h *Handler) projectNote(item readmodel.Note) noteView {
+	return projectNoteWithMediaProxy(item, h.mediaProxy)
+}
+
+func projectNoteWithMediaProxy(item readmodel.Note, proxy *mediaproxy.Proxy) noteView {
 	view := noteView{
 		ID: item.Note.ID, URI: item.Note.URI, Text: item.Note.Text,
 		ContentWarning: item.Note.ContentWarning, Sensitive: item.Note.Sensitive,
@@ -629,22 +638,22 @@ func projectNote(item readmodel.Note) noteView {
 		Reactions:   make([]reactionSummaryView, 0, len(item.Reactions)),
 	}
 	if item.Author != nil {
-		author := projectActor(item.Author)
+		author := projectActorWithMediaProxy(item.Author, proxy)
 		view.Author = &author
 	}
 	for _, emoji := range item.Note.Emojis {
-		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: emoji.IconURL, MediaType: emoji.MediaType})
+		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: proxy.URL(emoji.IconURL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
 	}
 	for _, attachment := range item.Note.Attachments {
 		view.Attachments = append(view.Attachments, attachmentView{
-			Type: attachment.Type, MediaType: attachment.MediaType, URL: attachment.URL,
+			Type: attachment.Type, MediaType: attachment.MediaType, URL: projectAttachmentURL(proxy, attachment.URL, attachment.MediaType),
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
 	for _, reaction := range item.Reactions {
 		projected := reactionSummaryView{Reaction: reaction.Reaction, Count: reaction.Count, Reacted: reaction.Reacted}
 		if reaction.Emoji != nil {
-			emoji := emojiView{Name: reaction.Emoji.Name, URL: reaction.Emoji.URL, MediaType: reaction.Emoji.MediaType}
+			emoji := emojiView{Name: reaction.Emoji.Name, URL: proxy.URL(reaction.Emoji.URL, mediaproxy.VariantEmoji), MediaType: reaction.Emoji.MediaType}
 			projected.Emoji = &emoji
 		}
 		view.Reactions = append(view.Reactions, projected)
@@ -652,13 +661,13 @@ func projectNote(item readmodel.Note) noteView {
 	if item.Poll != nil {
 		view.Poll = projectPoll(item.Poll, item.MyVotes)
 	}
-	view.Reply = projectNoteReference(item.Reply)
-	view.Quote = projectNoteReference(item.Quote)
-	view.Renote = projectNoteReference(item.Renote)
+	view.Reply = projectNoteReference(item.Reply, proxy)
+	view.Quote = projectNoteReference(item.Quote, proxy)
+	view.Renote = projectNoteReference(item.Renote, proxy)
 	return view
 }
 
-func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView {
+func projectNoteReference(reference *readmodel.NoteReference, proxy *mediaproxy.Proxy) *noteReferenceView {
 	if reference == nil {
 		return nil
 	}
@@ -671,36 +680,36 @@ func projectNoteReference(reference *readmodel.NoteReference) *noteReferenceView
 		Reactions:   make([]reactionSummaryView, 0, len(reference.Reactions)),
 	}
 	if reference.Author != nil {
-		author := projectActor(reference.Author)
+		author := projectActorWithMediaProxy(reference.Author, proxy)
 		view.Author = &author
 	}
 	for _, emoji := range reference.Note.Emojis {
-		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: emoji.IconURL, MediaType: emoji.MediaType})
+		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: proxy.URL(emoji.IconURL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
 	}
 	for _, attachment := range reference.Note.Attachments {
 		view.Attachments = append(view.Attachments, attachmentView{
-			Type: attachment.Type, MediaType: attachment.MediaType, URL: attachment.URL,
+			Type: attachment.Type, MediaType: attachment.MediaType, URL: projectAttachmentURL(proxy, attachment.URL, attachment.MediaType),
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
 	for _, reaction := range reference.Reactions {
 		projected := reactionSummaryView{Reaction: reaction.Reaction, Count: reaction.Count, Reacted: reaction.Reacted}
 		if reaction.Emoji != nil {
-			emoji := emojiView{Name: reaction.Emoji.Name, URL: reaction.Emoji.URL, MediaType: reaction.Emoji.MediaType}
+			emoji := emojiView{Name: reaction.Emoji.Name, URL: proxy.URL(reaction.Emoji.URL, mediaproxy.VariantEmoji), MediaType: reaction.Emoji.MediaType}
 			projected.Emoji = &emoji
 		}
 		view.Reactions = append(view.Reactions, projected)
 	}
-	view.Reply = projectShallowNoteReference(reference.Reply)
-	view.Quote = projectShallowNoteReference(reference.Quote)
+	view.Reply = projectShallowNoteReference(reference.Reply, proxy)
+	view.Quote = projectShallowNoteReference(reference.Quote, proxy)
 	return view
 }
 
-func projectShallowNoteReference(reference *readmodel.NoteReference) *noteReferenceView {
+func projectShallowNoteReference(reference *readmodel.NoteReference, proxy *mediaproxy.Proxy) *noteReferenceView {
 	if reference == nil {
 		return nil
 	}
-	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author})
+	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author}, proxy)
 	return view
 }
 
@@ -725,11 +734,19 @@ func projectPoll(poll *polls.Poll, myVotes []int) *pollView {
 }
 
 func projectEmoji(emoji emojis.Emoji) emojiView {
+	return projectEmojiWithMediaProxy(emoji, nil)
+}
+
+func (h *Handler) projectEmoji(emoji emojis.Emoji) emojiView {
+	return projectEmojiWithMediaProxy(emoji, h.mediaProxy)
+}
+
+func projectEmojiWithMediaProxy(emoji emojis.Emoji, proxy *mediaproxy.Proxy) emojiView {
 	url := emoji.PublicURL
 	if url == "" {
 		url = emoji.OriginalURL
 	}
-	view := emojiView{ID: emoji.ID, Host: emoji.Host, Name: emoji.Name, URI: emoji.URI, URL: url, OriginalURL: emoji.OriginalURL, MediaType: emoji.MediaType}
+	view := emojiView{ID: emoji.ID, Host: emoji.Host, Name: emoji.Name, URI: emoji.URI, URL: proxy.URL(url, mediaproxy.VariantEmoji), OriginalURL: emoji.OriginalURL, MediaType: emoji.MediaType}
 	if !emoji.CreatedAt.IsZero() {
 		createdAt := emoji.CreatedAt
 		view.CreatedAt = &createdAt
@@ -739,6 +756,13 @@ func projectEmoji(emoji emojis.Emoji) emojiView {
 		view.UpdatedAt = &updatedAt
 	}
 	return view
+}
+
+func projectAttachmentURL(proxy *mediaproxy.Proxy, source, mediaType string) string {
+	if !strings.HasPrefix(strings.ToLower(mediaType), "image/") {
+		return source
+	}
+	return proxy.URL(source, mediaproxy.VariantDefault)
 }
 
 func nonNilStrings(values []string) []string {

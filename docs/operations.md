@@ -33,6 +33,14 @@ deliberately not migrated; back up the object bucket together with MongoDB.
 Explicit media deletion, managed-emoji deletion or replacement, Note deletion,
 and local Actor cleanup remove the corresponding managed objects.
 
+`MEDIA_PROXY_URL` is required and must be an absolute HTTPS URL for a
+Misskey-compatible external MediaProxy. Rosmarinus returns MediaProxy URLs for
+every browser-rendered avatar, banner, custom emoji, and Note image while
+retaining canonical source URLs for storage and federation. Rosemary's CSP
+allows images only from its own origin, `data:`/`blob:` sources, and the exact
+MediaProxy origin; arbitrary external image origins are blocked. The configured
+proxy must be able to fetch every public object-storage and federated image URL.
+
 ## Database ID migration
 
 `go run ./cmd/migrateids` inventories every Rosmarinus-owned MongoDB document

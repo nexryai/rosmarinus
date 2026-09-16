@@ -10,6 +10,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 )
 
 //go:embed all:dist
@@ -18,10 +20,14 @@ var embeddedDist embed.FS
 type handler struct {
 	assets fs.FS
 	index  []byte
+	csp    string
 }
 
 // NewHandler returns an HTTP handler backed only by files embedded at build time.
-func NewHandler() http.Handler {
+func NewHandler(mediaProxy *mediaproxy.Proxy) http.Handler {
+	if mediaProxy == nil {
+		panic("Salvia requires a media proxy")
+	}
 	assets, err := fs.Sub(embeddedDist, "dist")
 	if err != nil {
 		panic("open embedded Salvia assets: " + err.Error())
@@ -30,11 +36,12 @@ func NewHandler() http.Handler {
 	if err != nil {
 		panic("read embedded Salvia index: " + err.Error())
 	}
-	return &handler{assets: assets, index: index}
+	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: blob: " + mediaProxy.Origin() + "; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	return &handler{assets: assets, index: index, csp: csp}
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	setSecurityHeaders(w)
+	h.setSecurityHeaders(w)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -88,8 +95,8 @@ func acceptsHTML(r *http.Request) bool {
 	return accept == "" || strings.Contains(accept, "text/html") || strings.Contains(accept, "*/*")
 }
 
-func setSecurityHeaders(w http.ResponseWriter) {
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+func (h *handler) setSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", h.csp)
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")

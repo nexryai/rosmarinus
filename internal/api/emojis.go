@@ -61,7 +61,7 @@ func (h *Handler) createEmoji(w http.ResponseWriter, r *http.Request, accountID 
 		h.writeEmojiAdminError(w, r, err)
 		return
 	}
-	h.writeJSON(w, http.StatusCreated, map[string]any{"data": projectEmoji(*created)})
+	h.writeJSON(w, http.StatusCreated, map[string]any{"data": h.projectEmoji(*created)})
 }
 
 func (h *Handler) updateEmoji(w http.ResponseWriter, r *http.Request, accountID, id string) {
@@ -86,7 +86,7 @@ func (h *Handler) updateEmoji(w http.ResponseWriter, r *http.Request, accountID,
 		h.writeEmojiAdminError(w, r, err)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"data": projectEmoji(*updated)})
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": h.projectEmoji(*updated)})
 }
 
 func (h *Handler) deleteEmoji(w http.ResponseWriter, r *http.Request, id string) {
@@ -127,7 +127,7 @@ func (h *Handler) importEmoji(w http.ResponseWriter, r *http.Request, accountID 
 		h.writeEmojiAdminError(w, r, err)
 		return
 	}
-	h.writeJSON(w, http.StatusCreated, map[string]any{"data": projectEmoji(*created)})
+	h.writeJSON(w, http.StatusCreated, map[string]any{"data": h.projectEmoji(*created)})
 }
 
 func (h *Handler) writeEmojiAdminError(w http.ResponseWriter, r *http.Request, err error) {

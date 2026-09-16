@@ -74,6 +74,13 @@ Rosmarinus does not process images or generate thumbnails. Do not introduce a
 backend image-transformation assumption into API clients; Canvas output is a
 browser-owned presentation or upload artifact.
 
+All API image projections are external Misskey-compatible MediaProxy URLs.
+Render only those projected URLs; never reconstruct or directly load an
+`original_url`, ActivityPub URL, or object-storage URL. The server CSP permits
+images only from Rosemary itself, `data:`/`blob:` sources, and the configured
+MediaProxy origin. Non-image attachment links may still target their validated
+external source.
+
 Send user-selected images directly to the configured S3-compatible object
 store with the signed URL returned by Rosmarinus. Use the shared uploader for
 reservation, SHA-256 calculation, `PUT`, completion, and cleanup; never expose
@@ -180,9 +187,9 @@ Account
   primitive for reaction images instead of duplicating image policy.
 - Preserve Actor/account and Note visibility boundaries in caches and query
   keys. Clear private projections when the session or active Actor changes.
-- Remote media URLs remain untrusted even after backend validation. Apply the
-  documented browser presentation policy and never forward session secrets to
-  remote origins.
+- MediaProxy URLs remain untrusted presentation data even after backend
+  validation. Never forward session secrets to the proxy or bypass it with an
+  original remote image URL.
 
 ## Verification
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"golang.org/x/net/idna"
 )
 
@@ -57,6 +58,7 @@ type Config struct {
 	MediaMaxBytes               int64
 	MediaFetchTimeout           time.Duration
 	MediaAllowedPrivateNetworks []string
+	MediaProxyURL               string
 	ObjectStorageEndpoint       string
 	ObjectStorageRegion         string
 	ObjectStorageBucket         string
@@ -125,6 +127,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		MediaMaxBytes:               getInt64(lookup, "MEDIA_MAX_BYTES", 20*1024*1024),
 		MediaFetchTimeout:           getDuration(lookup, "MEDIA_FETCH_TIMEOUT", time.Minute),
 		MediaAllowedPrivateNetworks: splitCSV(get(lookup, "MEDIA_ALLOWED_PRIVATE_NETWORKS", "")),
+		MediaProxyURL:               get(lookup, "MEDIA_PROXY_URL", ""),
 		ObjectStorageEndpoint:       get(lookup, "OBJECT_STORAGE_ENDPOINT", "http://localhost:9000"),
 		ObjectStorageRegion:         get(lookup, "OBJECT_STORAGE_REGION", "us-east-1"),
 		ObjectStorageBucket:         get(lookup, "OBJECT_STORAGE_BUCKET", "rosmarinus"),
@@ -263,6 +266,9 @@ func (c Config) Validate() error {
 	}
 	if c.MediaMaxBytes <= 0 || c.MediaFetchTimeout <= 0 {
 		return fmt.Errorf("media max bytes and fetch timeout must be positive")
+	}
+	if _, err := mediaproxy.New(c.MediaProxyURL); err != nil {
+		return err
 	}
 	if strings.TrimSpace(c.ObjectStorageRegion) == "" || strings.TrimSpace(c.ObjectStorageBucket) == "" || strings.TrimSpace(c.ObjectStoragePublicURL) == "" {
 		return fmt.Errorf("OBJECT_STORAGE_REGION, OBJECT_STORAGE_BUCKET, and OBJECT_STORAGE_PUBLIC_URL must not be empty")

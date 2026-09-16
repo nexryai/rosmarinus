@@ -5,8 +5,31 @@ import (
 	"time"
 )
 
+func loadTest(lookup LookupFunc) (Config, error) {
+	return Load(func(key string) (string, bool) {
+		if key == "MEDIA_PROXY_URL" {
+			return "https://media-proxy.example/function", true
+		}
+		return lookup(key)
+	})
+}
+
+func TestLoadRequiresMediaProxyURL(t *testing.T) {
+	if _, err := Load(func(string) (string, bool) { return "", false }); err == nil {
+		t.Fatal("missing MEDIA_PROXY_URL was accepted")
+	}
+	if _, err := Load(func(key string) (string, bool) {
+		if key == "MEDIA_PROXY_URL" {
+			return "http://media-proxy.example", true
+		}
+		return "", false
+	}); err == nil {
+		t.Fatal("non-HTTPS MEDIA_PROXY_URL was accepted")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
-	cfg, err := Load(func(string) (string, bool) { return "", false })
+	cfg, err := loadTest(func(string) (string, bool) { return "", false })
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -55,7 +78,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadSessionConfig(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		switch key {
 		case "PUBLIC_URL":
 			return "https://social.example", true
@@ -85,7 +108,7 @@ func TestLoadSessionConfig(t *testing.T) {
 }
 
 func TestLoadMediaConfig(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		switch key {
 		case "MEDIA_MAX_BYTES":
 			return "1048576", true
@@ -118,7 +141,7 @@ func TestLoadObjectStorageConfig(t *testing.T) {
 		"OBJECT_STORAGE_PATH_STYLE":        "true",
 		"OBJECT_STORAGE_PRESIGN_TTL":       "10m",
 	}
-	cfg, err := Load(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
+	cfg, err := loadTest(func(key string) (string, bool) { value, ok := values[key]; return value, ok })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +151,7 @@ func TestLoadObjectStorageConfig(t *testing.T) {
 }
 
 func TestLoadQueueControls(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		switch key {
 		case "INBOX_CONCURRENCY":
 			return "8", true
@@ -151,7 +174,7 @@ func TestLoadQueueControls(t *testing.T) {
 }
 
 func TestLoadRejectsActivityReceiptTTLShorterThanLease(t *testing.T) {
-	_, err := Load(func(key string) (string, bool) {
+	_, err := loadTest(func(key string) (string, bool) {
 		if key == "INBOX_ACTIVITY_RECEIPT_TTL" {
 			return "5m", true
 		}
@@ -163,7 +186,7 @@ func TestLoadRejectsActivityReceiptTTLShorterThanLease(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidMediaAllowedNetwork(t *testing.T) {
-	_, err := Load(func(key string) (string, bool) {
+	_, err := loadTest(func(key string) (string, bool) {
 		if key == "MEDIA_ALLOWED_PRIVATE_NETWORKS" {
 			return "not-a-cidr", true
 		}
@@ -175,7 +198,7 @@ func TestLoadRejectsInvalidMediaAllowedNetwork(t *testing.T) {
 }
 
 func TestLoadNormalizesFederationBlockedHosts(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		if key == "FEDERATION_BLOCKED_HOSTS" {
 			return "Bad.Example., sub.example, bad.example.", true
 		}
@@ -202,7 +225,7 @@ func TestLoadNormalizesFederationBlockedHosts(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidPublicURL(t *testing.T) {
-	_, err := Load(func(key string) (string, bool) {
+	_, err := loadTest(func(key string) (string, bool) {
 		if key == "PUBLIC_URL" {
 			return "not a url", true
 		}
@@ -214,7 +237,7 @@ func TestLoadRejectsInvalidPublicURL(t *testing.T) {
 }
 
 func TestLoadRejectsEmptyRequiredValues(t *testing.T) {
-	_, err := Load(func(key string) (string, bool) {
+	_, err := loadTest(func(key string) (string, bool) {
 		if key == "HOST" {
 			return "", true
 		}
@@ -226,7 +249,7 @@ func TestLoadRejectsEmptyRequiredValues(t *testing.T) {
 }
 
 func TestLoadLocalActorConfig(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		switch key {
 		case "LOCAL_ACTOR_USERNAME":
 			return "relay_bot", true
@@ -245,7 +268,7 @@ func TestLoadLocalActorConfig(t *testing.T) {
 }
 
 func TestLoadAPIIdempotencyTTL(t *testing.T) {
-	cfg, err := Load(func(key string) (string, bool) {
+	cfg, err := loadTest(func(key string) (string, bool) {
 		if key == "API_IDEMPOTENCY_TTL" {
 			return "24h", true
 		}
@@ -260,7 +283,7 @@ func TestLoadAPIIdempotencyTTL(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidLocalActorUsername(t *testing.T) {
-	_, err := Load(func(key string) (string, bool) {
+	_, err := loadTest(func(key string) (string, bool) {
 		if key == "LOCAL_ACTOR_USERNAME" {
 			return ".bad", true
 		}

@@ -14,6 +14,7 @@ services:
     environment:
       HOST: ${ROSMARINUS_HOST:-127.0.0.1:8080}
       PUBLIC_URL: ${ROSMARINUS_PUBLIC_URL:-http://127.0.0.1:8080}
+      MEDIA_PROXY_URL: ${MEDIA_PROXY_URL:?MEDIA_PROXY_URL is required}
       HTTP_ADDR: :3000
       MONGO_URI: mongodb://rosmarinus:rosmarinus-fixture-only@rosmarinus-mongo:27017/rosmarinus_federation?authSource=rosmarinus_federation
       MONGO_DATABASE: rosmarinus_federation

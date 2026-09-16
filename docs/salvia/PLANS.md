@@ -65,6 +65,10 @@ part of the target architecture.
   carry local or remote custom-emoji metadata in Actor, Note reaction, and
   reaction-notification REST projections.
 
+- Completed: route every browser-rendered avatar, banner, custom emoji, and
+  Note image through a required external Misskey-compatible MediaProxy, while
+  enforcing an image CSP that blocks direct external origins.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

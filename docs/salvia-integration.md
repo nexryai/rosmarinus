@@ -236,7 +236,8 @@ no storage credentials are exposed. After the browser uploads the bytes, the
 completion endpoint verifies the object's size, media type, and hash metadata
 before making the Actor-owned media ID usable. Failed or abandoned product
 mutations call the delete endpoint. Object keys are UUIDv4 values and public
-URLs point at object storage rather than a Rosmarinus media proxy. Existing
+source URLs point at object storage, while every image URL returned for browser
+display points at the required external Misskey-compatible MediaProxy. Existing
 GridFS images are intentionally not migrated or served. Note creation accepts
 at most four `media_ids` and rejects IDs not owned by the posting Actor.
 
@@ -448,8 +449,14 @@ URLs as untrusted.
   not let the client write cached federation counters.
 - Keep poll choice ordering aligned with vote-count indexes and authorize local
   vote projections by the selected owned Actor.
-- Return validated HTTPS media/emoji/avatar/banner URLs as untrusted remote
-  resources. Do not forward cookies or authorization headers to them.
+- Preserve validated source media URLs internally, but return external
+  Misskey-compatible MediaProxy URLs for every browser-rendered image.
+  Avatars use `avatar=1`, custom emoji use `emoji=1`, and banners and Note
+  images use the default variant. Non-image attachment links retain their
+  validated source URL. Do not forward cookies or authorization headers.
+- Serve Salvia with an `img-src` CSP restricted to the Rosemary origin,
+  `data:`, `blob:`, and the configured MediaProxy origin. Do not permit a
+  wildcard `https:` image source or direct remote image loading.
 - Return MFM as source text plus explicit custom-emoji references. Salvia must
   parse that source into React elements, validate link protocols and style
   arguments, respect reduced-motion preferences, and keep unknown syntax as
@@ -470,7 +477,9 @@ Authentication and API behavior use these environment-backed values:
 - `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME`,
   `WEBAUTHN_ALLOWED_ORIGINS`, and `WEBAUTHN_CEREMONY_TTL`;
 - `AUTH_RATE_LIMIT` and `AUTH_RATE_WINDOW`; and
-- `API_IDEMPOTENCY_TTL`.
+- `API_IDEMPOTENCY_TTL`; and
+- required `MEDIA_PROXY_URL`, an absolute HTTPS URL without credentials,
+  query parameters, or a fragment.
 
 `REDIS_ADDR`, `REDIS_PASSWORD`, and `REDIS_DB` configure queues, locks, rate
 limits, caches, and internal Pub/Sub. Pub/Sub channel derivation and subscriber
