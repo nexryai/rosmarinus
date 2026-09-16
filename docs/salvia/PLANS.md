@@ -69,6 +69,9 @@ part of the target architecture.
   Note image through a required external Misskey-compatible MediaProxy, while
   enforcing an image CSP that blocks direct external origins.
 
+- Completed: use MediaProxy `thumbnail=1` projections for Note-card images and
+  retain the default MediaProxy projection for the opened full-image viewer.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct

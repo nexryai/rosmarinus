@@ -10,6 +10,7 @@ const image = (index: number) =>
         name: `画像${index}`,
         sensitive: false,
         url: `https://media.example.test/${index}.jpg`,
+        thumbnail_url: `https://media.example.test/${index}-thumbnail.jpg`,
     }) as Note["attachments"][number];
 
 describe("NoteMedia", () => {
@@ -23,6 +24,7 @@ describe("NoteMedia", () => {
         expect(gallery?.style.maxHeight).toBe("min(22.5rem, 50vh)");
         expect(renderedImage.style.objectFit).toBe("contain");
         expect(renderedImage.style.height).toBe("auto");
+        expect(renderedImage).toHaveAttribute("src", image(1).thumbnail_url);
     });
 
     it("uses Misskey's 16:9 arrangements for two, three, and four images", () => {

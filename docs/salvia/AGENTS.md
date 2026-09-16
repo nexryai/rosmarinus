@@ -81,6 +81,11 @@ images only from Rosemary itself, `data:`/`blob:` sources, and the configured
 MediaProxy origin. Non-image attachment links may still target their validated
 external source.
 
+For Note image attachments, render `thumbnail_url` in timeline, profile, and
+Note-card layouts. Use `url` only for the opened image viewer and its original
+image link; the viewer's small navigation previews continue to use
+`thumbnail_url`.
+
 Send user-selected images directly to the configured S3-compatible object
 store with the signed URL returned by Rosmarinus. Use the shared uploader for
 reservation, SHA-256 calculation, `PUT`, completion, and cleanup; never expose

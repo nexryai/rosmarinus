@@ -454,7 +454,7 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ImageAt
                                 }}
                                 type="button"
                             >
-                                <img alt="" loading="lazy" referrerPolicy="no-referrer" src={thumbnail.url} style={styles.thumbnail} />
+                                <img alt="" loading="lazy" referrerPolicy="no-referrer" src={thumbnail.thumbnail_url ?? thumbnail.url} style={styles.thumbnail} />
                             </button>
                         ))}
                     </div>

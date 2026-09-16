@@ -18,6 +18,7 @@ func TestProxyURLUsesMisskeyCompatibleParameters(t *testing.T) {
 		{variant: VariantDefault},
 		{variant: VariantAvatar, selector: "avatar"},
 		{variant: VariantEmoji, selector: "emoji"},
+		{variant: VariantThumbnail, selector: "thumbnail"},
 	} {
 		projected, err := url.Parse(proxy.URL("https://remote.example/image.png?x=1", test.variant))
 		if err != nil {

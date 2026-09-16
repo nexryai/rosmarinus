@@ -9,9 +9,10 @@ import (
 type Variant string
 
 const (
-	VariantDefault Variant = ""
-	VariantAvatar  Variant = "avatar"
-	VariantEmoji   Variant = "emoji"
+	VariantDefault   Variant = ""
+	VariantAvatar    Variant = "avatar"
+	VariantEmoji     Variant = "emoji"
+	VariantThumbnail Variant = "thumbnail"
 )
 
 type Proxy struct {

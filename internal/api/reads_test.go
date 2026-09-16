@@ -314,11 +314,13 @@ func TestSalviaImageProjectionsUseMediaProxy(t *testing.T) {
 	assertMediaProxyURL(t, view.Author.Emojis[0].URL, remoteEmoji.URL, "emoji")
 	assertMediaProxyURL(t, view.Emojis[0].IconURL, remoteEmoji.URL, "emoji")
 	assertMediaProxyURL(t, view.Attachments[0].URL, "https://remote.test/photo.jpg", "")
-	if view.Attachments[1].URL != "https://remote.test/document.pdf" {
-		t.Fatalf("non-image attachment URL = %q", view.Attachments[1].URL)
+	assertMediaProxyURL(t, view.Attachments[0].ThumbnailURL, "https://remote.test/photo.jpg", "thumbnail")
+	if view.Attachments[1].URL != "https://remote.test/document.pdf" || view.Attachments[1].ThumbnailURL != "" {
+		t.Fatalf("non-image attachment = %#v", view.Attachments[1])
 	}
 	assertMediaProxyURL(t, view.Reactions[0].Emoji.URL, remoteEmoji.URL, "emoji")
 	assertMediaProxyURL(t, view.Quote.Attachments[0].URL, "https://remote.test/quote.png", "")
+	assertMediaProxyURL(t, view.Quote.Attachments[0].ThumbnailURL, "https://remote.test/quote.png", "thumbnail")
 }
 
 func assertMediaProxyURL(t *testing.T, raw, source, selector string) {

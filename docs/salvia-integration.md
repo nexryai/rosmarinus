@@ -452,8 +452,10 @@ URLs as untrusted.
 - Preserve validated source media URLs internally, but return external
   Misskey-compatible MediaProxy URLs for every browser-rendered image.
   Avatars use `avatar=1`, custom emoji use `emoji=1`, and banners and Note
-  images use the default variant. Non-image attachment links retain their
-  validated source URL. Do not forward cookies or authorization headers.
+  images expose both a default-variant `url` for the full image and a
+  `thumbnail=1` `thumbnail_url` for Note cards. Non-image attachment links
+  retain their validated source URL and omit `thumbnail_url`. Do not forward
+  cookies or authorization headers.
 - Serve Salvia with an `img-src` CSP restricted to the Rosemary origin,
   `data:`, `blob:`, and the configured MediaProxy origin. Do not permit a
   wildcard `https:` image source or direct remote image loading.

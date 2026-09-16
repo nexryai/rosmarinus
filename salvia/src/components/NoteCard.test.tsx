@@ -124,13 +124,17 @@ describe("NoteCard social actions", () => {
                     name: "庭のサルビア",
                     sensitive: false,
                     url: "https://media.example.test/salvia.jpg",
+                    thumbnail_url: "https://media.example.test/salvia-thumbnail.jpg",
                 },
             ],
         } as Note;
         render(<NoteCard note={imageNote} ownActorID="alice" onDelete={vi.fn()} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
 
+        expect(screen.getByAltText("庭のサルビア")).toHaveAttribute("src", imageNote.attachments[0].thumbnail_url);
         fireEvent.click(screen.getByRole("button", { name: "画像を表示: 庭のサルビア" }));
-        expect(screen.getByRole("dialog", { name: "画像ビューアー" })).toBeInTheDocument();
+        const viewer = screen.getByRole("dialog", { name: "画像ビューアー" });
+        expect(viewer).toBeInTheDocument();
+        expect(viewer.querySelector('img[alt="庭のサルビア"]')).toHaveAttribute("src", imageNote.attachments[0].url);
         expect(screen.getByRole("link", { name: "元の画像を開く" })).toHaveAttribute("href", imageNote.attachments[0].url);
 
         fireEvent.keyDown(document, { key: "Escape" });

@@ -10,12 +10,14 @@ const images = [
         name: "一枚目",
         sensitive: false,
         url: "https://media.example.test/one.jpg",
+        thumbnail_url: "https://media.example.test/one-thumbnail.jpg",
     },
     {
         media_type: "image/png",
         name: "二枚目",
         sensitive: false,
         url: "https://media.example.test/two.png",
+        thumbnail_url: "https://media.example.test/two-thumbnail.png",
     },
 ] as Note["attachments"];
 
@@ -31,6 +33,8 @@ describe("ImageViewer", () => {
 
         expect(screen.getByRole("dialog", { name: "画像ビューアー" })).toBeInTheDocument();
         expect(screen.getByAltText("一枚目")).toHaveAttribute("referrerpolicy", "no-referrer");
+        expect(screen.getByAltText("一枚目")).toHaveAttribute("src", images[0].url);
+        expect(document.querySelector<HTMLImageElement>(`img[src="${images[0].thumbnail_url}"]`)).toBeInTheDocument();
         expect(screen.getByText("1 / 2")).toBeInTheDocument();
         expect(screen.getByRole("link", { name: "元の画像を開く" })).toHaveAttribute("href", images[0].url);
 

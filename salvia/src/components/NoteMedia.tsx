@@ -92,7 +92,7 @@ export function NoteMedia({ attachments, onOpenImage }: { attachments: Attachmen
                 <div data-image-count={images.length} style={{ ...styles.gallery, ...galleryLayout(images.length) }}>
                     {images.map((attachment, index) => (
                         <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.imageButton} key={attachment.url} onClick={() => onOpenImage(index)} style={{ ...styles.imageButton, ...imageLayout(images.length, index) }} type="button">
-                            <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.url} style={images.length === 1 ? styles.singleImage : styles.tiledImage} />
+                            <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.thumbnail_url ?? attachment.url} style={images.length === 1 ? styles.singleImage : styles.tiledImage} />
                         </button>
                     ))}
                 </div>

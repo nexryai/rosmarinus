@@ -526,13 +526,14 @@ type noteEmojiView struct {
 }
 
 type attachmentView struct {
-	Type      string `json:"type,omitempty"`
-	MediaType string `json:"media_type,omitempty"`
-	URL       string `json:"url"`
-	Name      string `json:"name,omitempty"`
-	Width     int    `json:"width,omitempty"`
-	Height    int    `json:"height,omitempty"`
-	Sensitive bool   `json:"sensitive"`
+	Type         string `json:"type,omitempty"`
+	MediaType    string `json:"media_type,omitempty"`
+	URL          string `json:"url"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Width        int    `json:"width,omitempty"`
+	Height       int    `json:"height,omitempty"`
+	Sensitive    bool   `json:"sensitive"`
 }
 
 type pollView struct {
@@ -645,8 +646,9 @@ func projectNoteWithMediaProxy(item readmodel.Note, proxy *mediaproxy.Proxy) not
 		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: proxy.URL(emoji.IconURL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
 	}
 	for _, attachment := range item.Note.Attachments {
+		url, thumbnailURL := projectAttachmentURLs(proxy, attachment.URL, attachment.MediaType)
 		view.Attachments = append(view.Attachments, attachmentView{
-			Type: attachment.Type, MediaType: attachment.MediaType, URL: projectAttachmentURL(proxy, attachment.URL, attachment.MediaType),
+			Type: attachment.Type, MediaType: attachment.MediaType, URL: url, ThumbnailURL: thumbnailURL,
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
@@ -687,8 +689,9 @@ func projectNoteReference(reference *readmodel.NoteReference, proxy *mediaproxy.
 		view.Emojis = append(view.Emojis, noteEmojiView{Name: emoji.Name, IconURL: proxy.URL(emoji.IconURL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
 	}
 	for _, attachment := range reference.Note.Attachments {
+		url, thumbnailURL := projectAttachmentURLs(proxy, attachment.URL, attachment.MediaType)
 		view.Attachments = append(view.Attachments, attachmentView{
-			Type: attachment.Type, MediaType: attachment.MediaType, URL: projectAttachmentURL(proxy, attachment.URL, attachment.MediaType),
+			Type: attachment.Type, MediaType: attachment.MediaType, URL: url, ThumbnailURL: thumbnailURL,
 			Name: attachment.Name, Width: attachment.Width, Height: attachment.Height, Sensitive: attachment.Sensitive,
 		})
 	}
@@ -758,11 +761,11 @@ func projectEmojiWithMediaProxy(emoji emojis.Emoji, proxy *mediaproxy.Proxy) emo
 	return view
 }
 
-func projectAttachmentURL(proxy *mediaproxy.Proxy, source, mediaType string) string {
+func projectAttachmentURLs(proxy *mediaproxy.Proxy, source, mediaType string) (string, string) {
 	if !strings.HasPrefix(strings.ToLower(mediaType), "image/") {
-		return source
+		return source, ""
 	}
-	return proxy.URL(source, mediaproxy.VariantDefault)
+	return proxy.URL(source, mediaproxy.VariantDefault), proxy.URL(source, mediaproxy.VariantThumbnail)
 }
 
 func nonNilStrings(values []string) []string {
