@@ -742,7 +742,7 @@ func profileFieldsFromDocuments(fields []actorProfileFieldDocument) []actors.Pro
 }
 
 func generateRSAKeyPair() (string, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 3072)
 	if err != nil {
 		return "", "", fmt.Errorf("generate actor keypair: %w", err)
 	}
