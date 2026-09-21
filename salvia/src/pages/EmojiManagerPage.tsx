@@ -319,7 +319,6 @@ export function EmojiManagerPage({ actorID, csrf, onCatalogChanged }: { actorID:
     return (
         <>
             <PageHeader
-                eyebrow="サーバー管理"
                 title="カスタム絵文字"
                 trailing={
                     scope === "local" ? (

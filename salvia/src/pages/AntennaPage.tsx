@@ -15,7 +15,7 @@ import type { Antenna, Emoji, Note } from "../lib/schema";
 const emptyInput: AntennaInput = { name: "", source: "all", users: [], keywords: [], exclude_keywords: [], case_sensitive: false, local_only: false, exclude_bots: false, with_replies: true, with_file: false };
 
 const styles = {
-    headerIcon: { width: "1.5rem", height: "1.5rem", color: "var(--accent-hover)" },
+    headerIcon: { width: "1.5rem", height: "1.5rem", marginLeft: "auto", color: "var(--accent-hover)" },
     toolbar: { padding: "1rem 1.25rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", borderBottom: "1px solid var(--border)" },
     selector: { minWidth: "12rem", maxWidth: "24rem", flex: 1 },
     editor: { padding: "1.5rem", display: "grid", gap: "1rem" },
@@ -226,7 +226,7 @@ export function AntennaPage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
     };
     return (
         <>
-            <PageHeader eyebrow="キーワードで見つける" title="アンテナ" trailing={<IconAntenna style={styles.headerIcon} />} />
+            <PageHeader title="アンテナ" trailing={<IconAntenna style={styles.headerIcon} />} />
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             <div style={styles.toolbar}>
                 {antennas.length > 0 ? <Dropdown label="表示するアンテナ" onChange={setSelectedID} options={antennas.map((antenna) => ({ value: antenna.id, label: antenna.name }))} style={styles.selector} value={selectedID} /> : <span>アンテナはまだありません</span>}
@@ -243,7 +243,6 @@ export function AntennaPage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                     )}
                     <Button disabled={antennas.length >= 5} onClick={() => setEditor(null)}>
                         <IconPlus />
-                        作成
                     </Button>
                 </div>
             </div>

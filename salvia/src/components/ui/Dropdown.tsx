@@ -40,7 +40,6 @@ const styles = {
         display: "flex",
         alignItems: "center",
         gap: "0.625rem",
-        border: "1px solid var(--border)",
         borderRadius: "1rem",
         color: "var(--text)",
         background: "var(--panel-muted)",

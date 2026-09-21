@@ -177,7 +177,6 @@ export function TimelinePage({
     return (
         <>
             <PageHeader
-                eyebrow={kind === "home" ? "あなたのつながり" : "ローカルと連合"}
                 title={kind === "home" ? "ホーム" : "みつける"}
                 trailing={
                     <RoundButton aria-label="更新" disabled={loading} onClick={() => void refresh()}>

@@ -151,7 +151,6 @@ export function NotePage({
     return (
         <>
             <PageHeader
-                eyebrow="会話"
                 leading={
                     <RoundButton aria-label="戻る" onClick={onBack} style={styles.back}>
                         <IconArrowLeft />

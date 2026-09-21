@@ -247,7 +247,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     };
     return (
         <>
-            <PageHeader eyebrow="アカウントとActor" title="設定" trailing={<IconPalette style={styles.headerIcon} />} />
+            <PageHeader title="設定" trailing={<IconPalette style={styles.headerIcon} />} />
             <div className={rules.stack} style={styles.stack}>
                 {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
                 {message && (

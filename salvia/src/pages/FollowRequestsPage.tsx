@@ -188,7 +188,7 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     const dialog = pendingDecision ? confirmation(pendingDecision) : undefined;
     return (
         <>
-            <PageHeader eyebrow="承認制" title="フォローリクエスト" trailing={<IconUserCheck style={styles.headerIcon} />} />
+            <PageHeader title="フォローリクエスト" trailing={<IconUserCheck style={styles.headerIcon} />} />
             <div role="tablist" style={styles.tabs}>
                 <button aria-selected={tab === "received"} onClick={() => setTab("received")} role="tab" style={{ ...styles.tab, ...(tab === "received" ? styles.tabActive : {}) }} type="button">
                     受け取ったリクエスト

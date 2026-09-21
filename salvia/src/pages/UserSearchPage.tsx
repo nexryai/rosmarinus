@@ -15,7 +15,7 @@ const styles = {
 export function UserSearchPage({ actorID, csrf, onOpenProfile }: { actorID: string; csrf: string; onOpenProfile: (actorID: string) => void }) {
     return (
         <>
-            <PageHeader eyebrow="連合ネットワーク" title="ユーザー検索" trailing={<IconUserSearch style={styles.headerIcon} />} />
+            <PageHeader title="ユーザー検索" trailing={<IconUserSearch style={styles.headerIcon} />} />
             <RemoteUserSearch actorID={actorID} csrf={csrf} onOpenProfile={onOpenProfile} />
         </>
     );

@@ -238,7 +238,7 @@ export function NotificationsPage({
     };
     return (
         <>
-            <PageHeader eyebrow="最新の動き" title="通知" trailing={<IconBellCheck style={styles.headerIcon} />} />
+            <PageHeader title="通知" trailing={<IconBellCheck style={styles.headerIcon} />} />
             <div className={rules.tabs} style={styles.tabs}>
                 <button aria-pressed={scope === "actor"} onClick={() => setScope("actor")} style={{ ...styles.tab, ...(scope === "actor" ? styles.tabActive : {}) }} type="button">
                     このActor

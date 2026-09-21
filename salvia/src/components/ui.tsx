@@ -172,7 +172,7 @@ const styles = {
         position: "sticky",
         zIndex: 20,
         top: "var(--shell-header-height, 0px)",
-        height: "5rem",
+        height: "3.5rem",
         alignItems: "center",
         borderBottom: "1px solid var(--border)",
         backdropFilter: "blur(24px)",
@@ -187,9 +187,9 @@ const styles = {
     },
     pageTitle: {
         margin: 0,
-        fontSize: "1.25rem",
+        fontSize: "1rem",
         lineHeight: 1.4,
-        fontWeight: 900,
+        fontWeight: 700,
         letterSpacing: "-0.025em",
     },
     roundButton: {
@@ -323,12 +323,11 @@ const rules = {
     }),
 };
 
-export function PageHeader({ eyebrow, leading, title, trailing }: { eyebrow: string; leading?: ReactNode; title: string; trailing?: ReactNode }) {
+export function PageHeader({ leading, title, trailing }: { leading?: ReactNode; title: string; trailing?: ReactNode }) {
     return (
         <header className={rules.pageHeader} style={styles.pageHeader}>
             {leading}
             <div>
-                <p style={styles.eyebrow}>{eyebrow}</p>
                 <h1 style={styles.pageTitle}>{title}</h1>
             </div>
             {trailing}
