@@ -12,10 +12,10 @@ import { Dropdown } from "./ui/Dropdown";
 
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [
     { icon: IconHome, label: "ホーム", page: "home", path: "/" },
-    { icon: IconMoodSmile, label: "絵文字", page: "emojis", path: "/emojis" },
-    { icon: IconAntenna, label: "アンテナ", page: "antennas", path: "/antennas" },
     { icon: IconBell, label: "通知", page: "notifications", path: "/notifications" },
     { icon: IconUsersPlus, label: "リクエスト", page: "follow-requests", path: "/follow-requests" },
+    { icon: IconAntenna, label: "アンテナ", page: "antennas", path: "/antennas" },
+    { icon: IconMoodSmile, label: "絵文字", page: "emojis", path: "/emojis" },
     { icon: IconSettings, label: "設定", page: "settings", path: "/settings" },
 ];
 
