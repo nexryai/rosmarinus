@@ -12,6 +12,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 func (h *Handler) timeline(w http.ResponseWriter, r *http.Request, accountID, kind string) {
@@ -324,6 +325,10 @@ func (h *Handler) resolveRemoteProfile(w http.ResponseWriter, r *http.Request, a
 	target := strings.TrimSpace(body.Target)
 	if target == "" || len(target) > 2048 {
 		h.writeError(w, http.StatusUnprocessableEntity, "invalid_target", "target must be a remote Actor handle or URL")
+		return
+	}
+	if (strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")) && !security.IsAllowedURL(target, false) {
+		h.writeError(w, http.StatusUnprocessableEntity, "invalid_target", "target must be a public HTTPS URL")
 		return
 	}
 	if h.remoteProfiles == nil || h.reader == nil {

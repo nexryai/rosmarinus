@@ -20,6 +20,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/idgen"
 	"github.com/nexryai/rosmarinus/internal/mfm"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 type Fetcher interface {
@@ -549,8 +550,11 @@ func activityPublishedAt(object map[string]any) *time.Time {
 }
 
 func resolvableHostOf(raw string) (string, error) {
+	if !security.IsAllowedURL(raw, false) {
+		return "", fmt.Errorf("invalid resolvable url: %s", raw)
+	}
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" {
+	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" {
 		return "", fmt.Errorf("invalid resolvable url: %s", raw)
 	}
 	return strings.ToLower(u.Hostname()), nil
@@ -596,7 +600,7 @@ func ParseRemoteActor(object map[string]any, uri string) (actors.Actor, error) {
 	}
 	featuredURI := optionalAPID(object["featured"])
 	movedToURI := optionalAPID(object["movedTo"])
-	alsoKnownAs := aptypes.GetAPIDs(object["alsoKnownAs"])
+	alsoKnownAs := allowedRemoteIDs(aptypes.GetAPIDs(object["alsoKnownAs"]))
 	username, ok := object["preferredUsername"].(string)
 	if !ok || !validRemoteUsername(username) {
 		return actors.Actor{}, fmt.Errorf("invalid actor: wrong username")
@@ -780,8 +784,7 @@ func optionalHTTPSHref(value any, maxLength int) (string, error) {
 		if href == "" {
 			continue
 		}
-		parsed, err := url.Parse(href)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		if !security.IsAllowedURL(href, false) {
 			return "", fmt.Errorf("unexpected schema: %s", href)
 		}
 		if utf8.RuneCountInString(href) > maxLength {
@@ -811,7 +814,7 @@ func requiredSameAuthorityID(value any, expectAuthority, field string) (string, 
 		return "", fmt.Errorf("invalid actor: wrong %s", field)
 	}
 	authority, err := aptypes.Authority(id)
-	if err != nil || authority != expectAuthority {
+	if err != nil || authority != expectAuthority || !security.IsAllowedURL(id, false) {
 		return "", fmt.Errorf("invalid actor: wrong %s", field)
 	}
 	return id, nil
@@ -848,10 +851,20 @@ func optionalAPID(value any) string {
 		return ""
 	}
 	id, err := aptypes.GetAPID(value)
-	if err != nil {
+	if err != nil || !security.IsAllowedURL(id, false) {
 		return ""
 	}
 	return id
+}
+
+func allowedRemoteIDs(ids []string) []string {
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if security.IsAllowedURL(id, false) {
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 func publicKey(object map[string]any, expectAuthority string) (string, string, error) {
@@ -864,7 +877,7 @@ func publicKey(object map[string]any, expectAuthority string) (string, string, e
 		return "", "", fmt.Errorf("invalid actor: publicKey.id is not a string")
 	}
 	authority, err := aptypes.Authority(id)
-	if err != nil || authority != expectAuthority {
+	if err != nil || authority != expectAuthority || !security.IsAllowedURL(id, false) {
 		return "", "", fmt.Errorf("invalid actor: publicKey.id has different host")
 	}
 	pem, ok := value["publicKeyPem"].(string)

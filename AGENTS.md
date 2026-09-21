@@ -83,6 +83,30 @@
   practical, while preserving explicitly tested compatibility with real-world
   `@peertube/http-signature` peers.
 
+## External URL and Media Security
+
+- Route every URL received from an external source through
+  `internal/security` (`IsAllowedURL` / `ValidateURL`) before it is fetched,
+  persisted, or rendered. Treat federated actor IDs, note IDs, `inReplyTo`,
+  quote and mention targets, attachment, emoji and media URLs, WebFinger links,
+  HTTP Signature `keyId` values, instance metadata links, and client-supplied
+  remote-profile targets as untrusted.
+- By default only absolute `https` URLs on ports 80 or 443 are accepted.
+  Reject credentials, IPv6 literal hosts, loopback, private, link-local,
+  multicast, unspecified and documented/bogon addresses, single-label and
+  `localhost`/`.local`/`.internal` hosts, and ambiguous numeric host forms.
+- The only exception is remote-authored note bodies, where plain `http` links
+  are preserved because draft-era federation still emits them. Pass
+  `allowUnsafeConnections=true` only for that note-body path; never for
+  metadata, media, actor, or delivery URLs.
+- Use `security` as the parsing and ingestion gate. Outbound requests must
+  still go through the safe HTTP clients in `internal/media` that validate the
+  resolved address, so DNS rebinding and allow-listed private federation
+  networks remain controlled at the network boundary.
+- When rendering stored or federated links, re-check the scheme and target with
+  `security` and escape with `mfm.EscapeHTML`; do not emit an anchor for a URL
+  that fails the policy.
+
 ## Federation Tests
 
 - Keep `test/federation/misskey_test.go` organized into clearly labeled phase

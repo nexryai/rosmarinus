@@ -1,53 +1,56 @@
 package security
 
 import (
-	"net"
+	"net/netip"
 	"strings"
 )
 
+// IsPrivateAddress reports whether address is an IP literal that must not be
+// reached by server-side fetches or embedded as an external link target.
+// Addresses that cannot be parsed fail closed.
 func IsPrivateAddress(address string) bool {
-	ip := net.ParseIP(address)
-	// パースできないなら安全ではない
-	if ip == nil {
+	addr, err := netip.ParseAddr(strings.TrimSpace(address))
+	if err != nil {
 		return true
 	}
-
-	// 抜け穴になりそうなので6to4アドレスは拒否
-	if strings.HasPrefix(address, "::ffff:0:") {
-		return true
-	} else if strings.HasPrefix(address, "::ffff:") {
-		return true
-	}
-
-	if ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLoopback() ||
-		ip.IsUnspecified() ||
-		!ip.IsGlobalUnicast() {
+	// Unmap IPv4-mapped IPv6 addresses so they are judged by their IPv4
+	// semantics instead of slipping through as a public-looking IPv6 address.
+	addr = addr.Unmap()
+	if !addr.IsGlobalUnicast() ||
+		addr.IsPrivate() ||
+		addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsInterfaceLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() {
 		return true
 	}
-
-	// netパッケージでなんか判定できないやつ (https://ipinfo.io/bogon)
-	privateCIDRs := []string{
-		"0.0.0.0/8",
-		"100.64.0.0/10", // Tailscaleとかで使うやつ（IsPrivateで判定できないのバグな気がする）
-		"64:ff9b::/96",
-		"64:ff9b:1::/48",
-		"2001:10::/28",
-		"2001:db8::/32",
-		"::/96",
-	}
-
-	for _, privateCIDR := range privateCIDRs {
-		_, privateNet, err := net.ParseCIDR(privateCIDR)
-
-		if err == nil && privateNet.Contains(ip) {
+	for _, prefix := range nonPublicPrefixes {
+		if prefix.Contains(addr) {
 			return true
 		}
 	}
-
-	// その他の条件が満たされない場合はパブリックアドレスとみなす
 	return false
+}
+
+// nonPublicPrefixes lists global-unicast ranges that are still not reachable
+// public endpoints, including Bogon ranges that the net package does not
+// classify on its own (https://ipinfo.io/bogon).
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("::ffff:0:0/96"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2001:10::/28"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
 }

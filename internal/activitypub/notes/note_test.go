@@ -2,6 +2,7 @@ package notes
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -332,6 +333,32 @@ func TestCurrentMisskeyAudienceAddsDirectRecipientsToMentions(t *testing.T) {
 	}
 	if len(note.VisibleUserURIs) != 1 || note.VisibleUserURIs[0] != recipient {
 		t.Fatalf("visible user URIs = %#v", note.VisibleUserURIs)
+	}
+}
+
+func TestParseRemoteNoteDropsUnsafeMentionAndReplyTargets(t *testing.T) {
+	note, err := ParseRemoteNote(map[string]any{
+		"id":           "https://host1.test/notes/1",
+		"type":         "Note",
+		"attributedTo": "https://host1.test/users/alice",
+		"to":           []any{"https://host1.test/users/alice", "javascript:alert(1)"},
+		"inReplyTo":    "javascript:alert(1)",
+		"content":      "hello",
+		"tag": []any{
+			map[string]any{"type": "Mention", "href": "javascript:alert(1)"},
+			map[string]any{"type": "Mention", "href": "https://host2.test/users/bob"},
+		},
+	}, "https://host1.test/notes/1")
+	if err != nil {
+		t.Fatalf("ParseRemoteNote returned error: %v", err)
+	}
+	if note.InReplyToURI != "" {
+		t.Fatalf("unsafe inReplyTo was retained: %q", note.InReplyToURI)
+	}
+	for _, uri := range append(note.MentionURIs, note.VisibleUserURIs...) {
+		if !strings.HasPrefix(uri, "https://") {
+			t.Fatalf("unsafe audience uri was retained: %q", uri)
+		}
 	}
 }
 

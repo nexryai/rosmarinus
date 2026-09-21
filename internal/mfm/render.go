@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 const maxNesting = 20
@@ -26,9 +28,20 @@ type Rendered struct {
 }
 
 // ToHTML renders the federation-facing subset of current MFM.js syntax. Any
-// unrecognized or malformed construct remains escaped text.
+// unrecognized or malformed construct remains escaped text. Only HTTPS link
+// targets are rendered; use ToHTMLNoteBody for remote note bodies.
 func ToHTML(input, publicURL string) Rendered {
-	r := renderer{publicURL: strings.TrimRight(publicURL, "/")}
+	return renderToHTML(input, publicURL, false)
+}
+
+// ToHTMLNoteBody renders a remote note body, the only context where plain
+// http links authored by the remote user are preserved.
+func ToHTMLNoteBody(input, publicURL string) Rendered {
+	return renderToHTML(input, publicURL, true)
+}
+
+func renderToHTML(input, publicURL string, allowUnsafeConnections bool) Rendered {
+	r := renderer{publicURL: strings.TrimRight(publicURL, "/"), allowUnsafeConnections: allowUnsafeConnections}
 	html, advanced := r.render(input, 0)
 	return Rendered{HTML: html, Advanced: advanced}
 }
@@ -38,7 +51,8 @@ func EscapeHTML(value string) string {
 }
 
 type renderer struct {
-	publicURL string
+	publicURL              string
+	allowUnsafeConnections bool
 }
 
 func (r renderer) render(input string, depth int) (string, bool) {
@@ -182,7 +196,7 @@ func (r renderer) inline(input string, depth int) (string, int, bool, bool) {
 				rawURL := input[labelEnd+2 : labelEnd+2+urlEnd]
 				label, _ := r.render(input[prefix:labelEnd], depth+1)
 				consumed := labelEnd + 3 + urlEnd
-				if href, ok := safeURL(rawURL); ok {
+				if href, ok := r.safeRemoteURL(rawURL); ok {
 					return `<a href="` + EscapeHTML(href) + `">` + label + `</a>`, consumed, true, true
 				}
 				return "[" + label + "](" + EscapeHTML(rawURL) + ")", consumed, true, true
@@ -204,7 +218,7 @@ func (r renderer) inline(input string, depth int) (string, int, bool, bool) {
 	}
 	if strings.HasPrefix(input, "<http://") || strings.HasPrefix(input, "<https://") {
 		if end := strings.IndexByte(input, '>'); end > 1 && !strings.ContainsAny(input[1:end], " \t\r\n") {
-			if href, ok := safeURL(input[1:end]); ok {
+			if href, ok := r.safeRemoteURL(input[1:end]); ok {
 				return `<a href="` + EscapeHTML(href) + `">` + EscapeHTML(input[1:end]) + `</a>`, end + 1, false, true
 			}
 		}
@@ -212,7 +226,7 @@ func (r renderer) inline(input string, depth int) (string, int, bool, bool) {
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
 		end := bareURLEnd(input)
 		if end > 0 {
-			if href, ok := safeURL(input[:end]); ok {
+			if href, ok := r.safeRemoteURL(input[:end]); ok {
 				return `<a href="` + EscapeHTML(href) + `">` + EscapeHTML(input[:end]) + `</a>`, end, false, true
 			}
 		}
@@ -387,6 +401,16 @@ func safeURL(raw string) (string, bool) {
 		parsed.Path = "/"
 	}
 	return parsed.String(), true
+}
+
+// safeRemoteURL additionally rejects remote links that point at private
+// networks, credentials, or non-standard ports. Plain http is preserved only
+// when the renderer is rendering a note body.
+func (r renderer) safeRemoteURL(raw string) (string, bool) {
+	if !security.IsAllowedURL(raw, r.allowUnsafeConnections) {
+		return "", false
+	}
+	return safeURL(raw)
 }
 
 func renderText(value string) string {

@@ -8,6 +8,7 @@ import (
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/mfm"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 func Render(note *domainnotes.Note) map[string]any {
@@ -36,10 +37,14 @@ func RenderWithPoll(note *domainnotes.Note, poll *polls.Poll) map[string]any {
 		quote = note.QuoteURI
 	}
 	publicURL := publicOrigin(note.AttributedTo)
-	rendered := mfm.ToHTML(note.Text, publicURL)
+	rendered := mfm.ToHTMLNoteBody(note.Text, publicURL)
 	if note.QuoteURI != "" {
 		quotedURI := mfm.EscapeHTML(note.QuoteURI)
-		rendered.HTML += `<br><br><span class="quote-inline">RE: <a href="` + quotedURI + `">` + quotedURI + `</a></span>`
+		if security.IsAllowedURL(note.QuoteURI, true) {
+			rendered.HTML += `<br><br><span class="quote-inline">RE: <a href="` + quotedURI + `">` + quotedURI + `</a></span>`
+		} else {
+			rendered.HTML += `<br><br><span class="quote-inline">RE: ` + quotedURI + `</span>`
+		}
 		rendered.Advanced = true
 	}
 	body := map[string]any{

@@ -471,6 +471,29 @@ func TestCurrentMisskeyAcceptsScalarAndArrayAlsoKnownAs(t *testing.T) {
 	}
 }
 
+func TestParseRemoteActorDropsUnsafeAliasesAndProfileURL(t *testing.T) {
+	actorURI := "https://remote.example/users/alice"
+	actor, err := ParseRemoteActor(map[string]any{
+		"id": actorURI, "type": "Person", "preferredUsername": "alice",
+		"inbox":       actorURI + "/inbox",
+		"alsoKnownAs": []any{"https://old.example/users/alice", "javascript:alert(1)", "https://127.0.0.1/users/alice"},
+	}, actorURI)
+	if err != nil {
+		t.Fatalf("ParseRemoteActor returned error: %v", err)
+	}
+	if len(actor.AlsoKnownAs) != 1 || actor.AlsoKnownAs[0] != "https://old.example/users/alice" {
+		t.Fatalf("AlsoKnownAs = %#v", actor.AlsoKnownAs)
+	}
+
+	_, err = ParseRemoteActor(map[string]any{
+		"type": "Person", "id": actorURI, "inbox": actorURI + "/inbox", "preferredUsername": "alice",
+		"url": "https://127.0.0.1/@alice",
+	}, actorURI)
+	if err == nil {
+		t.Fatal("ParseRemoteActor accepted a private profile URL")
+	}
+}
+
 func TestParseRemoteActor(t *testing.T) {
 	actor, err := ParseRemoteActor(map[string]any{
 		"type":              "Person",

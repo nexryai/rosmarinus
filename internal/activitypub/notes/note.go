@@ -11,6 +11,7 @@ import (
 	aptypes "github.com/nexryai/rosmarinus/internal/activitypub/types"
 	domainnotes "github.com/nexryai/rosmarinus/internal/domain/notes"
 	"github.com/nexryai/rosmarinus/internal/mfm"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 const PublicAudience = "https://www.w3.org/ns/activitystreams#Public"
@@ -150,8 +151,7 @@ func firstAPHref(value any) string {
 }
 
 func isHTTPSURL(raw string) bool {
-	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == "https" && u.Host != ""
+	return security.IsAllowedURL(raw, false)
 }
 
 func ParseVisibility(actorURI string, to, cc any) Visibility {
@@ -182,7 +182,7 @@ func directAudienceURIs(actorURI string, groups ...[]string) []string {
 	out := make([]string, 0)
 	for _, ids := range groups {
 		for _, id := range ids {
-			if id == "" || containsPublic([]string{id}) || id == followersURI {
+			if id == "" || !isHTTPSURL(id) || containsPublic([]string{id}) || id == followersURI {
 				continue
 			}
 			if _, exists := seen[id]; exists {
@@ -268,7 +268,7 @@ func optionalAPID(value any) string {
 		return ""
 	}
 	id, err := aptypes.GetOneAPID(value)
-	if err != nil {
+	if err != nil || !isHTTPSURL(id) {
 		return ""
 	}
 	return id
@@ -299,7 +299,7 @@ func ExtractMentionURIs(tags any) []string {
 			continue
 		}
 		href, ok := tag["href"].(string)
-		if !ok || href == "" {
+		if !ok || !isHTTPSURL(href) {
 			continue
 		}
 		if _, ok := seen[href]; ok {
@@ -397,6 +397,9 @@ func ExtractAttachments(value any, noteSensitive bool) []domainnotes.Attachment 
 		mediaType, _ := attachment["mediaType"].(string)
 		name, _ := attachment["name"].(string)
 		id, _ := attachment["id"].(string)
+		if !isHTTPSURL(id) {
+			id = ""
+		}
 		out = append(out, domainnotes.Attachment{
 			URI:       id,
 			Type:      typ,

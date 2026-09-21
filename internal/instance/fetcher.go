@@ -15,6 +15,7 @@ import (
 
 	"github.com/nexryai/rosmarinus/internal/domain/instances"
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 const maxMetadataResponseSize = 1024 * 1024
@@ -345,7 +346,7 @@ func resolveMetadataURL(base *url.URL, raw string) string {
 		return ""
 	}
 	resolved := base.ResolveReference(reference)
-	if resolved.Scheme != "https" || resolved.Hostname() == "" || resolved.User != nil {
+	if !security.IsAllowedURL(resolved.String(), false) || resolved.User != nil {
 		return ""
 	}
 	return resolved.String()

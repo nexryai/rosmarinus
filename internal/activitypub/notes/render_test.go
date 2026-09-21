@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,25 @@ func TestRenderSimpleMFMAsSafeHTMLWithoutMisskeySource(t *testing.T) {
 	hashtag := tags[0].(map[string]any)
 	if hashtag["href"] != "https://rosmarinus.example/tags/fediverse" {
 		t.Fatalf("hashtag href = %#v", hashtag["href"])
+	}
+}
+
+func TestRenderQuoteURIWithUnsafeSchemeIsNotLinked(t *testing.T) {
+	note := &domainnotes.Note{
+		URI:          "https://rosmarinus.example/notes/quote",
+		AttributedTo: "https://rosmarinus.example/users/alice",
+		Text:         "body",
+		QuoteURI:     "javascript:alert(1)",
+		Visibility:   domainnotes.VisibilityPublic,
+		CreatedAt:    time.Date(2026, 8, 24, 1, 2, 3, 0, time.UTC),
+	}
+	rendered := Render(note)
+	content, _ := rendered["content"].(string)
+	if strings.Contains(content, `href="javascript:`) {
+		t.Fatalf("unsafe quote URI was linked: %q", content)
+	}
+	if !strings.Contains(content, "RE: javascript:alert(1)") {
+		t.Fatalf("quote URI text was lost: %q", content)
 	}
 }
 

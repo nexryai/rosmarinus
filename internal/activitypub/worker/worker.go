@@ -42,6 +42,7 @@ import (
 	mediafetch "github.com/nexryai/rosmarinus/internal/media"
 	"github.com/nexryai/rosmarinus/internal/objectstorage"
 	"github.com/nexryai/rosmarinus/internal/queue"
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 type APClient interface {
@@ -580,6 +581,9 @@ func (h *Handler) HandleDeliverTask(ctx context.Context, task *asynq.Task) error
 	if err != nil || target.Hostname() == "" {
 		return fmt.Errorf("invalid delivery target")
 	}
+	if !security.IsAllowedURL(payload.To, false) {
+		return fmt.Errorf("invalid delivery target")
+	}
 	host := strings.ToLower(strings.TrimSuffix(target.Hostname(), "."))
 	if h.instances != nil {
 		instance, _, registerErr := h.instances.Register(ctx, host, time.Now().UTC())
@@ -667,6 +671,9 @@ func (h *Handler) ProcessInbox(ctx context.Context, payload queue.InboxPayload) 
 	keyURL, err := url.ParseRequestURI(sig.KeyID)
 	if err != nil || keyURL.Hostname() == "" {
 		return "skip: keyId is not a URL", nil
+	}
+	if !security.IsAllowedURL(sig.KeyID, false) {
+		return "skip: keyId is not an allowed URL", nil
 	}
 	if h.cfg.IsFederationHostBlocked(keyURL.Hostname()) {
 		return fmt.Sprintf("skip: blocked request host=%s", keyURL.Hostname()), nil

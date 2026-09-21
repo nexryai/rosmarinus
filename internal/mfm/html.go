@@ -9,6 +9,8 @@ import (
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/nexryai/rosmarinus/internal/security"
 )
 
 var (
@@ -113,6 +115,11 @@ func analyzeChildren(output *strings.Builder, node *html.Node, hashtags map[stri
 func writeLink(output *strings.Builder, node *html.Node, hashtags map[string]struct{}) {
 	text := textContent(node)
 	href := attribute(node, "href")
+	// Federated HTML is untrusted: drop link targets that are not plain
+	// http(s) URLs to public hosts before they become note-body MFM.
+	if href != "" && !security.IsAllowedURL(href, true) {
+		href = ""
+	}
 	rel := attribute(node, "rel")
 	if _, ok := hashtags[normalize(text)]; ok && href != "" {
 		output.WriteString(text)

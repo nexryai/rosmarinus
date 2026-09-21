@@ -89,6 +89,23 @@ func TestToHTMLLeavesMalformedAndUnsafeLinksAsText(t *testing.T) {
 	}
 }
 
+func TestToHTMLNoteBodyPreservesHTTPButBlocksPrivateTargets(t *testing.T) {
+	rendered := ToHTMLNoteBody("http://example.com/note https://10.0.0.1/secret http://127.0.0.1/x", "https://local.example")
+	if !strings.Contains(rendered.HTML, `href="http://example.com/note"`) {
+		t.Fatalf("plain http note link was dropped: %s", rendered.HTML)
+	}
+	if strings.Contains(rendered.HTML, `href="http://10.0.0.1`) || strings.Contains(rendered.HTML, `href="http://127.0.0.1`) {
+		t.Fatalf("private note link was rendered as an anchor: %s", rendered.HTML)
+	}
+}
+
+func TestToHTMLRequiresHTTPSOutsideNoteBodies(t *testing.T) {
+	rendered := ToHTML("http://example.com/note", "https://local.example")
+	if strings.Contains(rendered.HTML, `href="http://example.com/note"`) {
+		t.Fatalf("plain http link was rendered outside a note body: %s", rendered.HTML)
+	}
+}
+
 func TestToHTMLStopsParsingAtCurrentMFMNestingLimit(t *testing.T) {
 	input := strings.Repeat("**", maxNesting+2) + "text" + strings.Repeat("**", maxNesting+2)
 	rendered := ToHTML(input, "https://local.example")

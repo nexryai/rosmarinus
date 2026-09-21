@@ -1,6 +1,9 @@
 package mfm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFromHTMLMatchesCurrentMisskeyFixtures(t *testing.T) {
 	tests := map[string]string{
@@ -27,6 +30,19 @@ func TestFromHTMLMatchesCurrentMisskeyFixtures(t *testing.T) {
 				t.Fatalf("FromHTML = %q, want %q", actual, expected)
 			}
 		})
+	}
+}
+
+func TestFromHTMLDropsUnsafeLinkTargets(t *testing.T) {
+	actual, err := FromHTML(`<p><a href="http://127.0.0.1/secret">click</a> <a href="javascript:alert(1)">x</a> <a href="http://example.com/note">ok</a></p>`, nil)
+	if err != nil {
+		t.Fatalf("FromHTML returned error: %v", err)
+	}
+	if strings.Contains(actual, "127.0.0.1") || strings.Contains(actual, "javascript:") {
+		t.Fatalf("unsafe href was retained: %q", actual)
+	}
+	if !strings.Contains(actual, "[ok](http://example.com/note)") {
+		t.Fatalf("plain http note link was dropped: %q", actual)
 	}
 }
 
