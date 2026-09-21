@@ -1,6 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+// The salvia-develop command injects this so its dummy API can use any port.
+// Production builds never use the dev server proxy.
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:3000";
+
 export default defineConfig({
     plugins: [react()],
     build: {
@@ -9,7 +13,7 @@ export default defineConfig({
     },
     server: {
         proxy: {
-            "/api": "http://127.0.0.1:3000",
+            "/api": apiProxyTarget,
         },
     },
     test: {

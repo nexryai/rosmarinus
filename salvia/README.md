@@ -18,6 +18,21 @@ The Vite development server proxies `/api` to `http://127.0.0.1:3000`. Override
 the public REST base with `VITE_API_BASE_URL` only when the SPA is not served
 from the Rosmarinus origin. Never put credentials or secrets in Vite variables.
 
+For frontend work that does not need a real backend, the repository's
+`salvia-develop` command starts a dummy read-only API and the Vite dev server
+together, with no environment variables, MongoDB, Redis, or workers:
+
+```sh
+pnpm --dir salvia install --frozen-lockfile
+go run ./cmd/salvia-develop
+```
+
+Salvia loads already authenticated as a fixed development account against
+immutable sample data. The command listens on `127.0.0.1:3000` for the API and
+`127.0.0.1:5173` for Vite, and injects the Vite proxy target automatically.
+`SALVIA_DEVELOP_API_ADDR`, `SALVIA_DEVELOP_VITE_HOST`,
+`SALVIA_DEVELOP_VITE_PORT`, and `SALVIA_DEVELOP_DIR` override the defaults.
+
 ## Checks and production build
 
 ```sh
