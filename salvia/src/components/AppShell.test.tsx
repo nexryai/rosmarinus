@@ -39,7 +39,7 @@ describe("AppShell navigation and mobile account controls", () => {
     it("hides page headers beneath the mobile shell header", () => {
         render(
             <AppShell actors={actors} onActorChange={vi.fn()} onCompose={vi.fn()} onLogout={vi.fn()} onNavigate={vi.fn()} page="home" selectedActor={actors[0]} session={session}>
-                <PageHeader eyebrow="タイムライン" title="ホーム" />
+                <PageHeader title="ホーム" />
             </AppShell>,
         );
 

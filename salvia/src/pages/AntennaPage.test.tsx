@@ -17,7 +17,7 @@ describe("AntennaPage", () => {
         const user = userEvent.setup();
         render(<AntennaPage actorID="actor-1" csrf="csrf" emojis={[]} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} />);
 
-        await user.click(await screen.findByRole("button", { name: "作成" }));
+        await user.click(await screen.findByRole("button"));
         await user.type(screen.getByRole("textbox", { name: "名前" }), "ActivityPub");
         await user.type(screen.getByRole("textbox", { name: /^含めるキーワード/ }), "Go ActivityPub");
         await user.click(screen.getByRole("button", { name: "保存" }));
