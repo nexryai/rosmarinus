@@ -74,6 +74,69 @@
   focused backend scope, MongoDB model, mandatory follow approval policy, Go
   implementation, or real-world interoperability requirements, document and
   test the exception explicitly.
+- Similarity between Concorde and current Misskey must be established per
+  behavior, not assumed. Their shared merge base is historical context only.
+
+### Current Misskey Reference Code Map
+
+Follow these current Misskey files and their dependencies when a checkpoint
+needs federation detail:
+
+- `core/activitypub/ApInboxService.ts` for activity dispatch and per-activity
+  behavior.
+- `server/ActivityPubServerService.ts`,
+  `queue/processors/InboxProcessorService.ts`, and
+  `core/activitypub/ApRequestService.ts` for inbox validation and HTTP
+  signatures.
+- `core/activitypub/ApResolverService.ts` and `misc/check-against-url.ts` for
+  resolution, recursion, redirects, and URL trust boundaries.
+- `core/activitypub/models/ApPersonService.ts`, `ApNoteService.ts`, and
+  `ApQuestionService.ts` for Actor, Note, emoji, and poll ingestion.
+- `core/activitypub/ApRendererService.ts`,
+  `core/activitypub/ApDeliverManagerService.ts`, and
+  `queue/QueueProcessorService.ts` for rendering, delivery, and retry.
+- `packages/backend/test/unit` and `packages/backend/test-federation/test` for
+  executable behavior examples.
+
+### Intentional Rosmarinus Differences
+
+- Rosmarinus requires explicit local approval for every inbound follow and must
+  never reintroduce a per-user auto-acceptance policy.
+- Rosmarinus uses MongoDB and exposes ActivityPub plus a purpose-built,
+  authenticated REST API for Salvia. Misskey's PostgreSQL entities, public API
+  surface, and unrelated side effects are out of scope.
+- Rosmarinus verifies federation with HTTP Signatures only. Do not implement a
+  JSON-LD `RsaSignature2017` fallback or relay flows that require Linked Data
+  signatures.
+- Rosmarinus keeps completed inbound Activity IDs in MongoDB for seven days by
+  default so peer retries and queue replays cannot repeat federation side
+  effects.
+- Salvia is a static, same-origin client of the REST API and SSE stream and
+  never accesses MongoDB or Redis directly.
+
+## Runtime Architecture
+
+- Run the HTTP server and the queue workers in one `cmd/rosmarinus` process by
+  default. `RUN_HTTP`, `RUN_WORKERS`, and `WORKER_QUEUES` allow split
+  deployments but are not the default architecture.
+- Use Redis for queues, delayed retries, rate limits, distributed AP locks, and
+  local Pub/Sub fan-out. Wrap Asynq behind `internal/queue` interfaces so
+  ActivityPub services never depend on Asynq directly.
+- Queue names are `inbox`, `deliver`, `system`, `poll-ended`, `metadata`, and
+  `account-delete`. Processing is at-least-once; handler-level unique indexes
+  are the final guard against duplicates.
+- Match current Misskey's queue limits: `deliver` and `inbox` default to
+  128/sec and 32/sec with concurrency 128 and 16; 11 `deliver` and 7 `inbox`
+  Asynq retries (12 and 8 total attempts); `(2^attempts - 1) * 1m` backoff
+  capped at 8 hours with up to 20% jitter; 1-minute `deliver` and 5-minute
+  `inbox` timeouts.
+- Keep the inbound Activity processing lease short-lived and completed receipts
+  for seven days by default.
+- Rosmarinus is the only backend and owns every runtime MongoDB collection.
+  Do not add `salvia_*` split-ownership collections; migrate legacy data
+  offline before deploying a new ownership model.
+- Use lowercase MongoDB ObjectID strings for stored entity IDs while keeping
+  public ActivityPub URIs stable and independent of the internal ID.
 
 ## HTTP Signatures
 
@@ -116,6 +179,48 @@
   verified through the existing real-Misskey fixture. When it can, update
   `test/federation/misskey_test.go` and its workflow documentation in the same
   checkpoint.
+- Treat the real-Misskey suite as incremental acceptance coverage, not a
+  one-time smoke test. Add the smallest stable Misskey scenario that proves
+  each new capability, and record the gap when a capability cannot yet be
+  exercised through Misskey's public API.
+- Current Misskey unit tests and `packages/backend/test-federation` are the
+  primary fixture source. Keep Concorde fixtures only as supplemental
+  historical regressions.
+- Do not use `localhost` in ActivityPub IDs during federation tests; many
+  implementations reject or mishandle it. Prefer HTTPS and non-loopback
+  hostnames.
+
+## Implementation Checkpoints
+
+Before a checkpoint is complete:
+
+- Review the current Misskey source and its relevant unit/federation tests for
+  the changed federation behavior, and record intentional deviations in tests
+  or handoff notes.
+- Add focused unit/integration tests for the changed behavior.
+- If the behavior is observable through the real-Misskey fixture, update
+  `test/federation/misskey_test.go` with a clearly commented phase and keep the
+  federation workflow documentation accurate.
+- If the Salvia integration contract changes, update the applicable handoff
+  documents; otherwise confirm the change is internal-only.
+- Ensure formatting, tests, and relevant static checks pass before creating a
+  signed commit.
+
+## Open Work
+
+- Reconcile all completed inbox, resolver, renderer, and delivery behavior
+  against the pinned current Misskey commit and add focused regression tests for
+  every material difference.
+- Reconcile the ActivityPub type helpers with current Misskey's nullable type
+  handling, `Move`, and URL/href normalization.
+- Reconcile the Note parser with current Misskey's ActivityPub Note tests, and
+  add golden tests for incoming Mastodon- and Misskey-style notes.
+- Keep mining current Misskey's `test/unit/activitypub.ts`,
+  `test/unit/ap-request.ts`, and `test-federation/test` as the primary
+  compatibility fixtures, and add current-Misskey AP render/parse fixtures.
+- Add integration tests for initial setup, passkey login, session expiry,
+  cross-account Actor denial, multi-Actor switching, mutation idempotency,
+  event isolation, and state recovery after a missed Pub/Sub message.
 
 ## Salvia Integration Documentation
 
