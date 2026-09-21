@@ -13,8 +13,15 @@ func IsAllowedURL(checkURL string, allowUnsafeConnections bool) bool {
 	}
 
 	// https以外は拒否
-	if parsedURL.Scheme != "https" && !allowUnsafeConnections {
-		return false
+	// allowUnsafeConnectionsは、Noteの本文などHTTPSで保護されていないURLでも許可するべき場合のみtrueにし、基本的にはfalseで利用する
+	if allowUnsafeConnections {
+		if parsedURL.Scheme != "https" && parsedURL.Scheme != "http" {
+			return false			
+		}
+	} else {
+		if parsedURL.Scheme != "https" {
+			return false			
+		}
 	}
 
 	// UnixソケットとIPv6アドレス指定を拒否
