@@ -57,6 +57,15 @@ describe("Composer", () => {
         expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: "咲いた :salvia:", emoji_names: ["salvia"] }), expect.any(String));
     });
 
+    it("keeps icon-only composer controls labeled for assistive technology", () => {
+        render(<Composer actor={actor} csrf="csrf" intent={{ kind: "post" }} onClose={() => undefined} onSubmit={vi.fn()} />);
+
+        expect(screen.getByRole("button", { name: "CW" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "投票" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "絵文字" })).toBeInTheDocument();
+        expect(screen.getByLabelText("画像")).toHaveAttribute("type", "file");
+    });
+
     it("dismisses only the emoji picker when Escape is pressed", async () => {
         document.documentElement.dataset.reduceMotion = "true";
         const user = userEvent.setup();

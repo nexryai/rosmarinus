@@ -195,8 +195,6 @@ const styles = {
         border: "1px solid var(--border)",
         borderRadius: "9999px",
         color: "var(--muted)",
-        fontSize: "0.75rem",
-        fontWeight: 700,
     },
     iconToggleActive: {
         color: "var(--accent-ink)",
@@ -206,6 +204,16 @@ const styles = {
     upload: {
         position: "relative",
         cursor: "pointer",
+    },
+    srOnly: {
+        position: "absolute",
+        width: 1,
+        height: 1,
+        margin: -1,
+        padding: 0,
+        overflow: "hidden",
+        clipPath: "inset(50%)",
+        whiteSpace: "nowrap",
     },
     sensitive: {
         display: "flex",
@@ -245,9 +253,49 @@ const rules = {
         },
     }),
     iconToggle: css({
+        position: "relative",
         "& svg": {
             width: "1rem",
             height: "1rem",
+        },
+        "&::after": {
+            content: "attr(data-label)",
+            position: "absolute",
+            zIndex: 10,
+            bottom: "calc(100% + 0.5rem)",
+            left: "50%",
+            padding: "0.25rem 0.5rem",
+            borderRadius: "0.5rem",
+            color: "var(--panel)",
+            background: "var(--text)",
+            boxShadow: "0 6px 18px rgb(0 0 0 / 18%)",
+            fontSize: "0.7rem",
+            fontWeight: 700,
+            lineHeight: 1.2,
+            whiteSpace: "nowrap",
+            opacity: 0,
+            transform: "translateX(-50%) translateY(0.25rem)",
+            transition: "opacity 120ms ease, transform 120ms ease",
+            pointerEvents: "none",
+        },
+        "&:hover::after, &:focus-visible::after": {
+            opacity: 1,
+            transform: "translateX(-50%) translateY(0)",
+        },
+        "@media (prefers-reduced-motion: reduce)": {
+            "&::after": {
+                transitionDuration: "0.01ms",
+            },
+        },
+    }),
+    upload: css({
+        "&:focus-within": {
+            outline: "3px solid var(--accent)",
+            outlineOffset: "2px",
+        },
+        "&:focus-within::after": {
+            opacity: 1,
+            transform: "translateX(-50%) translateY(0)",
         },
     }),
 };
@@ -413,22 +461,19 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                                 <span style={styles.optionLabel}>公開範囲</span>
                                 <Dropdown label="公開範囲" onChange={setVisibility} options={visibilityOptions} placement="top" style={styles.visibility} triggerStyle={styles.visibilityTrigger} value={visibility} />
                             </div>
-                            <button aria-pressed={useCW} className={rules.iconToggle} onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
+                            <button aria-label="CW" aria-pressed={useCW} className={rules.iconToggle} data-label="CW" onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
                                 <IconAlertTriangle />
-                                CW
                             </button>
-                            <button aria-pressed={usePoll} className={rules.iconToggle} disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
+                            <button aria-label="投票" aria-pressed={usePoll} className={rules.iconToggle} data-label="投票" disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
                                 <IconChartBar />
-                                投票
                             </button>
-                            <label className={rules.iconToggle} style={{ ...styles.iconToggle, ...styles.upload }}>
+                            <label className={`${rules.iconToggle} ${rules.upload}`} data-label="画像" style={{ ...styles.iconToggle, ...styles.upload }}>
                                 <IconPhoto />
-                                画像
+                                <span style={styles.srOnly}>画像</span>
                                 <ImageFileInput disabled={images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
                             </label>
-                            <button aria-label="絵文字" className={rules.iconToggle} onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
+                            <button aria-label="絵文字" className={rules.iconToggle} data-label="絵文字" onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
                                 <IconMoodSmile />
-                                絵文字
                             </button>
                         </div>
                         {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
