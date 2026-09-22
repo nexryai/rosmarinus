@@ -1,12 +1,13 @@
 import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
 
-import { IconAlertTriangle, IconChartBar, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconChartBar, IconMoodSmile, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
 
 import { api, type CreatePostInput } from "../lib/api";
 import { css } from "../lib/css";
 import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
 import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
 import { uploadImage } from "../lib/uploader";
+import { EmojiPickerDialog } from "./EmojiPickerDialog";
 import { EmojiText } from "./EmojiText";
 import { ImageFileInput } from "./ImageFileInput";
 import { Mfm } from "./Mfm";
@@ -96,31 +97,6 @@ const styles = {
         color: "#fff",
         backgroundColor: "rgb(0 0 0 / 55%)",
         fontSize: "10px",
-    },
-    emojiPicker: {
-        maxHeight: "8rem",
-        marginTop: "0.5rem",
-        padding: "0.5rem",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.25rem",
-        overflowY: "auto",
-        border: "1px solid var(--border)",
-        borderRadius: "1rem",
-        background: "var(--panel)",
-    },
-    emojiButton: {
-        width: "2.25rem",
-        height: "2.25rem",
-        display: "grid",
-        placeItems: "center",
-        borderRadius: "0.75rem",
-        fontSize: "1.25rem",
-    },
-    emojiImage: {
-        width: "1.5rem",
-        height: "1.5rem",
-        objectFit: "contain",
     },
     input: {
         width: "100%",
@@ -255,11 +231,6 @@ const rules = {
             height: "1rem",
         },
     }),
-    emojiButton: css({
-        "&:hover": {
-            background: "var(--accent-soft)",
-        },
-    }),
     choiceIcon: css({
         "& svg": {
             width: "1rem",
@@ -303,6 +274,7 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
     const [images, setImages] = useState<PendingImage[]>([]);
     const [sensitive, setSensitive] = useState(false);
     const [emojis, setEmojis] = useState<Emoji[]>([]);
+    const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const postIntentKey = useRef<string>(crypto.randomUUID());
@@ -367,102 +339,107 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
     };
     const title = intent.kind === "reply" ? "返信する" : intent.kind === "quote" ? "引用する" : "新しいノート";
     return (
-        <Modal label={title} onClose={onClose}>
-            <form onSubmit={submit}>
-                <header>
-                    <p style={styles.eyebrow}>@{actor.username}として</p>
-                    <h2 style={styles.title}>{title}</h2>
-                </header>
-                {intent.kind !== "post" && (
-                    <p style={styles.target}>
-                        <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} nyaize={intent.target.author?.is_cat} text={intent.target.text || "（本文なし）"} />
-                    </p>
-                )}
-                {error && <ErrorBanner message={error} />}
-                <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} style={styles.textarea} value={text} />
-                {images.length > 0 && (
-                    <div style={styles.previews}>
-                        {images.map((image) => (
-                            <figure key={image.id} style={styles.preview}>
-                                <img alt={image.file.name} src={image.thumbnail.url} style={styles.previewImage} />
-                                <button
-                                    aria-label={`${image.file.name}を削除`}
-                                    onClick={() => {
-                                        revokeCanvasThumbnail(image.thumbnail);
-                                        setImages((current) => current.filter((item) => item.id !== image.id));
-                                    }}
-                                    className={rules.previewRemove}
-                                    style={styles.previewRemove}
-                                    type="button"
-                                >
-                                    <IconX />
-                                </button>
-                                <figcaption style={styles.previewCaption}>
-                                    {image.thumbnail.originalWidth} × {image.thumbnail.originalHeight}
-                                </figcaption>
-                            </figure>
-                        ))}
-                    </div>
-                )}
-                {emojis.length > 0 && (
-                    <div aria-label="カスタム絵文字" style={styles.emojiPicker}>
-                        {emojis.map((emoji) => (
-                            <button aria-label={`:${emoji.name}:`} className={rules.emojiButton} key={emoji.name} onClick={() => setText((value) => `${value}:${emoji.name}:`)} style={styles.emojiButton} title={`:${emoji.name}:`} type="button">
-                                <img alt="" src={emoji.url} style={styles.emojiImage} />
-                            </button>
-                        ))}
-                    </div>
-                )}
-                {useCW && <input aria-label="内容の注記" className={rules.input} maxLength={500} onChange={(event) => setCW(event.target.value)} placeholder="内容の注記" style={styles.input} value={cw} />}
-                {usePoll && (
-                    <fieldset style={styles.poll}>
-                        <legend style={styles.pollLegend}>アンケート</legend>
-                        {choices.map((choice, index) => (
-                            <div key={choice.id} style={styles.choiceRow}>
-                                <input aria-label={`選択肢 ${index + 1}`} maxLength={200} onChange={(event) => setChoices((current) => current.map((value) => (value.id === choice.id ? { ...value, text: event.target.value } : value)))} placeholder={`選択肢 ${index + 1}`} style={styles.choiceInput} value={choice.text} />
-                                {choices.length > 2 && (
-                                    <button aria-label={`選択肢 ${index + 1}を削除`} className={rules.choiceIcon} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} style={styles.choiceRemove} type="button">
+        <>
+            <Modal dismissible={!emojiPickerOpen} label={title} onClose={onClose}>
+                <form onSubmit={submit}>
+                    <header>
+                        <p style={styles.eyebrow}>@{actor.username}として</p>
+                        <h2 style={styles.title}>{title}</h2>
+                    </header>
+                    {intent.kind !== "post" && (
+                        <p style={styles.target}>
+                            <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} nyaize={intent.target.author?.is_cat} text={intent.target.text || "（本文なし）"} />
+                        </p>
+                    )}
+                    {error && <ErrorBanner message={error} />}
+                    <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} style={styles.textarea} value={text} />
+                    {images.length > 0 && (
+                        <div style={styles.previews}>
+                            {images.map((image) => (
+                                <figure key={image.id} style={styles.preview}>
+                                    <img alt={image.file.name} src={image.thumbnail.url} style={styles.previewImage} />
+                                    <button
+                                        aria-label={`${image.file.name}を削除`}
+                                        onClick={() => {
+                                            revokeCanvasThumbnail(image.thumbnail);
+                                            setImages((current) => current.filter((item) => item.id !== image.id));
+                                        }}
+                                        className={rules.previewRemove}
+                                        style={styles.previewRemove}
+                                        type="button"
+                                    >
                                         <IconX />
                                     </button>
-                                )}
-                            </div>
-                        ))}
-                        {choices.length < 10 && (
-                            <button className={rules.choiceIcon} onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} style={styles.addChoice} type="button">
-                                <IconPlus />
-                                選択肢を追加
-                            </button>
-                        )}
-                        <Switch checked={multiple} label="複数回答を許可" onChange={setMultiple} style={styles.pollToggle} />
-                    </fieldset>
-                )}
-                <footer className={rules.footer} style={styles.footer}>
-                    <div style={styles.options}>
-                        <div>
-                            <span style={styles.optionLabel}>公開範囲</span>
-                            <Dropdown label="公開範囲" onChange={setVisibility} options={visibilityOptions} placement="top" style={styles.visibility} triggerStyle={styles.visibilityTrigger} value={visibility} />
+                                    <figcaption style={styles.previewCaption}>
+                                        {image.thumbnail.originalWidth} × {image.thumbnail.originalHeight}
+                                    </figcaption>
+                                </figure>
+                            ))}
                         </div>
-                        <button aria-pressed={useCW} className={rules.iconToggle} onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
-                            <IconAlertTriangle />
-                            CW
-                        </button>
-                        <button aria-pressed={usePoll} className={rules.iconToggle} disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
-                            <IconChartBar />
-                            投票
-                        </button>
-                        <label className={rules.iconToggle} style={{ ...styles.iconToggle, ...styles.upload }}>
-                            <IconPhoto />
-                            画像
-                            <ImageFileInput disabled={images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
-                        </label>
-                    </div>
-                    {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
-                    <Button disabled={busy || !canSubmit} type="submit">
-                        <IconSend />
-                        投稿する
-                    </Button>
-                </footer>
-            </form>
-        </Modal>
+                    )}
+                    {useCW && <input aria-label="内容の注記" className={rules.input} maxLength={500} onChange={(event) => setCW(event.target.value)} placeholder="内容の注記" style={styles.input} value={cw} />}
+                    {usePoll && (
+                        <fieldset style={styles.poll}>
+                            <legend style={styles.pollLegend}>アンケート</legend>
+                            {choices.map((choice, index) => (
+                                <div key={choice.id} style={styles.choiceRow}>
+                                    <input
+                                        aria-label={`選択肢 ${index + 1}`}
+                                        maxLength={200}
+                                        onChange={(event) => setChoices((current) => current.map((value) => (value.id === choice.id ? { ...value, text: event.target.value } : value)))}
+                                        placeholder={`選択肢 ${index + 1}`}
+                                        style={styles.choiceInput}
+                                        value={choice.text}
+                                    />
+                                    {choices.length > 2 && (
+                                        <button aria-label={`選択肢 ${index + 1}を削除`} className={rules.choiceIcon} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} style={styles.choiceRemove} type="button">
+                                            <IconX />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                            {choices.length < 10 && (
+                                <button className={rules.choiceIcon} onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} style={styles.addChoice} type="button">
+                                    <IconPlus />
+                                    選択肢を追加
+                                </button>
+                            )}
+                            <Switch checked={multiple} label="複数回答を許可" onChange={setMultiple} style={styles.pollToggle} />
+                        </fieldset>
+                    )}
+                    <footer className={rules.footer} style={styles.footer}>
+                        <div style={styles.options}>
+                            <div>
+                                <span style={styles.optionLabel}>公開範囲</span>
+                                <Dropdown label="公開範囲" onChange={setVisibility} options={visibilityOptions} placement="top" style={styles.visibility} triggerStyle={styles.visibilityTrigger} value={visibility} />
+                            </div>
+                            <button aria-pressed={useCW} className={rules.iconToggle} onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
+                                <IconAlertTriangle />
+                                CW
+                            </button>
+                            <button aria-pressed={usePoll} className={rules.iconToggle} disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
+                                <IconChartBar />
+                                投票
+                            </button>
+                            <label className={rules.iconToggle} style={{ ...styles.iconToggle, ...styles.upload }}>
+                                <IconPhoto />
+                                画像
+                                <ImageFileInput disabled={images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
+                            </label>
+                            <button aria-label="絵文字" className={rules.iconToggle} onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
+                                <IconMoodSmile />
+                                絵文字
+                            </button>
+                        </div>
+                        {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
+                        <Button disabled={busy || !canSubmit} type="submit">
+                            <IconSend />
+                            投稿する
+                        </Button>
+                    </footer>
+                </form>
+            </Modal>
+            {emojiPickerOpen && <EmojiPickerDialog emojis={emojis} label="絵文字を選択" onClose={() => setEmojiPickerOpen(false)} onSelect={(value) => setText((current) => `${current}${value}`)} title="絵文字" />}
+        </>
     );
 }

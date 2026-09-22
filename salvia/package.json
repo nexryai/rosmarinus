@@ -17,6 +17,8 @@
     "dependencies": {
         "@exis9/jdecked-twemoji": "17.0.3",
         "@tabler/icons-react": "^3.46.0",
+        "emojibase": "^17.0.0",
+        "emojibase-data": "^17.0.0",
         "mfm-js": "0.26.0",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",

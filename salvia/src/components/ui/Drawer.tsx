@@ -94,10 +94,15 @@ const rules = {
 
 export type DrawerPhase = "open" | "closing";
 
-export function DrawerFrame({ children, label, onDismiss, phase }: PropsWithChildren<{ label: string; onDismiss: () => void; phase: DrawerPhase }>) {
+export function DrawerFrame({ children, dismissible = true, label, onDismiss, phase }: PropsWithChildren<{ dismissible?: boolean; label: string; onDismiss: () => void; phase: DrawerPhase }>) {
     useEffect(() => {
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = "hidden";
+        if (!dismissible) {
+            return () => {
+                document.body.style.overflow = previousOverflow;
+            };
+        }
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== "Escape" || event.defaultPrevented) return;
             event.preventDefault();
@@ -108,14 +113,14 @@ export function DrawerFrame({ children, label, onDismiss, phase }: PropsWithChil
             document.removeEventListener("keydown", onKeyDown);
             document.body.style.overflow = previousOverflow;
         };
-    }, [onDismiss]);
+    }, [dismissible, onDismiss]);
 
     return createPortal(
         <div
             aria-hidden={phase === "closing" ? true : undefined}
             className={rules.backdrop}
             onPointerDown={(event) => {
-                if (event.currentTarget === event.target) onDismiss();
+                if (dismissible && event.currentTarget === event.target) onDismiss();
             }}
             role="presentation"
             style={{

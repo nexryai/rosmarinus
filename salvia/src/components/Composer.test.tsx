@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +14,7 @@ describe("Composer", () => {
     afterEach(() => {
         cleanup();
         vi.restoreAllMocks();
+        delete document.documentElement.dataset.reduceMotion;
     });
 
     it("submits a reply with the canonical target URI", async () => {
@@ -39,5 +40,36 @@ describe("Composer", () => {
         await user.click(screen.getByRole("button", { name: "投稿する" }));
 
         expect(submit).toHaveBeenCalledWith(expect.objectContaining({ poll: { choices: ["A", "B"], multiple: false } }), expect.any(String));
+    });
+
+    it("inserts a custom emoji chosen from the shared picker", async () => {
+        vi.spyOn(api, "emojis").mockResolvedValue([{ name: "salvia", url: "/media/salvia", media_type: "image/webp" }]);
+        const user = userEvent.setup();
+        const submit = vi.fn().mockResolvedValue(undefined);
+        render(<Composer actor={actor} csrf="csrf" intent={{ kind: "post" }} onClose={() => undefined} onSubmit={submit} />);
+
+        await user.type(screen.getByLabelText("ノート本文"), "咲いた ");
+        await user.click(screen.getByRole("button", { name: "絵文字" }));
+        await user.type(screen.getByLabelText("絵文字を検索"), "salvia");
+        await user.click(await screen.findByRole("button", { name: ":salvia:" }));
+        await user.click(screen.getByRole("button", { name: "投稿する" }));
+
+        expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: "咲いた :salvia:", emoji_names: ["salvia"] }), expect.any(String));
+    });
+
+    it("dismisses only the emoji picker when Escape is pressed", async () => {
+        document.documentElement.dataset.reduceMotion = "true";
+        const user = userEvent.setup();
+        const onClose = vi.fn();
+        render(<Composer actor={actor} csrf="csrf" intent={{ kind: "post" }} onClose={onClose} onSubmit={vi.fn()} />);
+
+        await user.click(screen.getByRole("button", { name: "絵文字" }));
+        expect(screen.getByRole("dialog", { name: "絵文字を選択" })).toBeInTheDocument();
+
+        fireEvent.keyDown(document, { key: "Escape" });
+
+        expect(screen.queryByRole("dialog", { name: "絵文字を選択" })).not.toBeInTheDocument();
+        expect(screen.getByRole("dialog", { name: "新しいノート" })).toBeInTheDocument();
+        expect(onClose).not.toHaveBeenCalled();
     });
 });

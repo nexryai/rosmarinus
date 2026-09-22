@@ -4,6 +4,7 @@ import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuo
 
 import { css } from "../lib/css";
 import type { Emoji, Note } from "../lib/schema";
+import { EmojiPickerDialog } from "./EmojiPickerDialog";
 import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
 import { Mfm } from "./Mfm";
@@ -194,31 +195,6 @@ const styles = {
     deleteAction: {
         marginLeft: "auto",
     },
-    picker: {
-        maxHeight: "8rem",
-        marginTop: "0.5rem",
-        padding: "0.5rem",
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "0.25rem",
-        overflowY: "auto",
-        border: "1px solid var(--border)",
-        borderRadius: "1rem",
-        background: "var(--panel)",
-    },
-    pickerButton: {
-        width: "2.25rem",
-        height: "2.25rem",
-        display: "grid",
-        placeItems: "center",
-        borderRadius: "0.75rem",
-        fontSize: "1.25rem",
-    },
-    pickerImage: {
-        width: "1.5rem",
-        height: "1.5rem",
-        objectFit: "contain",
-    },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
@@ -271,11 +247,6 @@ const rules = {
     deleteAction: css({
         "&:hover": {
             color: "var(--danger)",
-        },
-    }),
-    pickerButton: css({
-        "&:hover": {
-            background: "var(--accent-soft)",
         },
     }),
 };
@@ -379,7 +350,7 @@ export function NoteCard({
     const [revealed, setRevealed] = useState(!displayedNote.content_warning);
     const [busy, setBusy] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-    const [pickerOpen, setPickerOpen] = useState(false);
+    const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
     const [reactions, setReactions] = useState(displayedNote.reactions);
     useEffect(() => setReactions(displayedNote.reactions), [displayedNote.reactions]);
@@ -503,7 +474,7 @@ export function NoteCard({
                                     <b style={styles.reactionCount}>{reaction.count}</b>
                                 </button>
                             ))}
-                            <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setPickerOpen((value) => !value)} style={styles.action} type="button">
+                            <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setEmojiPickerOpen(true)} style={styles.action} type="button">
                                 ＋
                             </button>
                             {note.author?.id === ownActorID && (
@@ -512,28 +483,11 @@ export function NoteCard({
                                 </button>
                             )}
                         </footer>
-                        {pickerOpen && (
-                            <div style={styles.picker}>
-                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("👍", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    👍
-                                </button>
-                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("❤️", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    ❤️
-                                </button>
-                                <button className={rules.pickerButton} onClick={() => void act(() => changeReaction("😂", false)).then(() => setPickerOpen(false))} style={styles.pickerButton} type="button">
-                                    😂
-                                </button>
-                                {emojis.map((emoji) => (
-                                    <button aria-label={`:${emoji.name}:`} className={rules.pickerButton} key={emoji.name} onClick={() => void act(() => changeReaction(`:${emoji.name}:`, false)).then(() => setPickerOpen(false))} style={styles.pickerButton} title={`:${emoji.name}:`} type="button">
-                                        <img alt="" src={emoji.url} style={styles.pickerImage} />
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 </>
             )}
             {viewerIndex !== undefined && <ImageViewer images={imageAttachments} initialIndex={viewerIndex} onClose={() => setViewerIndex(undefined)} />}
+            {emojiPickerOpen && <EmojiPickerDialog emojis={emojis} label="リアクションを選択" onClose={() => setEmojiPickerOpen(false)} onSelect={(value) => void act(() => changeReaction(value, false))} title="リアクション" />}
             {deleteDialogOpen && (
                 <ConfirmDialog
                     busy={busy}

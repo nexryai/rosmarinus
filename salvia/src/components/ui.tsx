@@ -438,7 +438,7 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
     );
 }
 
-export function Modal({ children, label, onClose }: PropsWithChildren<{ label: string; onClose: () => void }>) {
+export function Modal({ children, dismissible = true, label, onClose }: PropsWithChildren<{ dismissible?: boolean; label: string; onClose: () => void }>) {
     const [phase, setPhase] = useState<"open" | "closing">("open");
     const closeTimer = useRef<number | undefined>(undefined);
     const isMobile = useIsMobile();
@@ -454,7 +454,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
     }, [onClose, phase]);
 
     useEffect(() => {
-        if (isMobile) return;
+        if (isMobile || !dismissible) return;
         const onKeyDown = (event: globalThis.KeyboardEvent) => {
             if (event.key !== "Escape") return;
             event.preventDefault();
@@ -462,7 +462,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
         };
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [isMobile, requestClose]);
+    }, [dismissible, isMobile, requestClose]);
 
     useEffect(
         () => () => {
@@ -482,7 +482,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
 
     if (isMobile) {
         return (
-            <DrawerFrame label={label} onDismiss={requestClose} phase={phase}>
+            <DrawerFrame dismissible={dismissible} label={label} onDismiss={requestClose} phase={phase}>
                 {content}
             </DrawerFrame>
         );
@@ -493,7 +493,7 @@ export function Modal({ children, label, onClose }: PropsWithChildren<{ label: s
             aria-hidden={phase === "closing" ? true : undefined}
             className={rules.modalBackdrop}
             onMouseDown={(event) => {
-                if (event.currentTarget === event.target) requestClose();
+                if (dismissible && event.currentTarget === event.target) requestClose();
             }}
             role="presentation"
             style={{
