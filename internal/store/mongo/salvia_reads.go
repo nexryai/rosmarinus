@@ -118,6 +118,61 @@ func (r *SalviaReader) ListVisibleThread(ctx context.Context, viewerActorID, not
 	return r.enrichNotes(ctx, viewerActorID, docs)
 }
 
+// ListNoteReactors returns one page of Actors who reacted to a Note with a
+// specific reaction, newest first. It is the hover-detail companion to the
+// reaction counts embedded in Note projections.
+func (r *SalviaReader) ListNoteReactors(ctx context.Context, viewerActorID, noteID, reaction string, after readmodel.Cursor, limit int) ([]readmodel.ReactionReactor, error) {
+	visible, err := r.FindVisibleNote(ctx, viewerActorID, noteID)
+	if err != nil {
+		return nil, err
+	}
+	if visible == nil {
+		return nil, nil
+	}
+	// Local reactions are stored without the "@." local host suffix that Note
+	// projections use, so normalize the requested reaction the same way Misskey
+	// does before matching stored rows.
+	canonical := reaction
+	if strings.HasSuffix(canonical, "@.:") {
+		canonical = strings.TrimSuffix(canonical, "@.:") + ":"
+	}
+	blocked, err := r.blockedActorIDs(ctx, viewerActorID)
+	if err != nil {
+		return nil, err
+	}
+	filter := bson.M{"noteId": noteID, "reaction": canonical, "deletedAt": nil}
+	if len(blocked) > 0 {
+		filter["actorId"] = bson.M{"$nin": blocked}
+	}
+	filter = withCreatedCursor(filter, after)
+	cursor, err := r.db.Collection("reactions").Find(ctx, filter, options.Find().SetSort(newestSort()).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []reactionDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	actorIDs := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		actorIDs = append(actorIDs, doc.ActorID)
+	}
+	actorsByID, err := r.findActors(ctx, actorIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]readmodel.ReactionReactor, 0, len(docs))
+	for _, doc := range docs {
+		actor := actorsByID[doc.ActorID]
+		if actor == nil {
+			continue
+		}
+		result = append(result, readmodel.ReactionReactor{Reaction: doc.Reaction, CreatedAt: doc.CreatedAt, ID: doc.ID, Actor: actor})
+	}
+	return result, nil
+}
+
 func (r *SalviaReader) ListProfileNotes(ctx context.Context, viewerActorID, actorID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
 	visibility, err := r.visibleNoteFilter(ctx, viewerActorID)
 	if err != nil {
@@ -793,6 +848,94 @@ func (r *SalviaReader) findActor(ctx context.Context, actorID string) (*actors.A
 		return nil, err
 	}
 	return &actor, nil
+}
+
+// findActors resolves a batch of actor IDs with their display emojis in two
+// queries so reaction hover details do not fan out into per-reactor lookups.
+func (r *SalviaReader) findActors(ctx context.Context, actorIDs []string) (map[string]*actors.Actor, error) {
+	result := make(map[string]*actors.Actor, len(actorIDs))
+	unique := make([]string, 0, len(actorIDs))
+	seen := make(map[string]struct{}, len(actorIDs))
+	for _, actorID := range actorIDs {
+		if actorID == "" {
+			continue
+		}
+		if _, exists := seen[actorID]; exists {
+			continue
+		}
+		seen[actorID] = struct{}{}
+		unique = append(unique, actorID)
+	}
+	if len(unique) == 0 {
+		return result, nil
+	}
+	cursor, err := r.db.Collection("actors").Find(ctx, bson.M{"_id": bson.M{"$in": unique}, "deletedAt": nil, "isSuspended": bson.M{"$ne": true}})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []actorDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	namesByHost := make(map[string]map[string]struct{})
+	for _, doc := range docs {
+		host := ""
+		if doc.Host != nil {
+			host = *doc.Host
+		}
+		for _, name := range doc.EmojiNames {
+			if namesByHost[host] == nil {
+				namesByHost[host] = make(map[string]struct{})
+			}
+			namesByHost[host][name] = struct{}{}
+		}
+	}
+	emojisByKey := make(map[string]emojis.Reference)
+	if len(namesByHost) > 0 {
+		or := make(bson.A, 0, len(namesByHost))
+		for host, names := range namesByHost {
+			list := make([]string, 0, len(names))
+			for name := range names {
+				list = append(list, name)
+			}
+			or = append(or, bson.M{"host": host, "name": bson.M{"$in": list}})
+		}
+		emojiCursor, err := r.db.Collection("emojis").Find(ctx, bson.M{"$or": or})
+		if err != nil {
+			return nil, err
+		}
+		defer emojiCursor.Close(ctx)
+		var emojiDocs []emojiRecord
+		if err := emojiCursor.All(ctx, &emojiDocs); err != nil {
+			return nil, err
+		}
+		for _, doc := range emojiDocs {
+			url := doc.PublicURL
+			if url == "" {
+				url = doc.OriginalURL
+			}
+			if url == "" {
+				continue
+			}
+			emojisByKey[doc.Host+"\x00"+doc.Name] = emojis.Reference{Name: doc.Name, URL: url, MediaType: doc.MediaType}
+		}
+	}
+	for _, doc := range docs {
+		actor := actorFromDocument(doc)
+		host := ""
+		if actor.Host != nil {
+			host = *actor.Host
+		}
+		actor.ResolvedEmojis = []emojis.Reference{}
+		for _, name := range actor.EmojiNames {
+			if ref, ok := emojisByKey[host+"\x00"+name]; ok {
+				actor.ResolvedEmojis = append(actor.ResolvedEmojis, ref)
+			}
+		}
+		result[actor.ID] = &actor
+	}
+	return result, nil
 }
 
 func (r *SalviaReader) hydrateActorEmojis(ctx context.Context, actor *actors.Actor) error {

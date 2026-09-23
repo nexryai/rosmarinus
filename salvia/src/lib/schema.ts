@@ -59,6 +59,19 @@ export type Actor = z.infer<typeof actorSchema>;
 const attachmentSchema = z.object({ type: z.string().optional(), media_type: z.string().optional(), url: z.string(), thumbnail_url: z.string().optional(), name: z.string().optional(), width: z.number().optional(), height: z.number().optional(), sensitive: z.boolean() });
 const reactionSummarySchema = z.object({ reaction: z.string(), count: z.number(), reacted: z.boolean(), emoji: emojiSchema.optional() });
 
+export const reactionActorSchema = z.object({
+    id: z.string(),
+    username: z.string(),
+    name: z.string().default(""),
+    avatar_url: z.string().default(""),
+    uri: z.string().default(""),
+    emojis: z
+        .array(emojiSchema)
+        .nullish()
+        .transform((value) => value ?? []),
+});
+export type ReactionActor = z.infer<typeof reactionActorSchema>;
+
 const noteReferenceBaseSchema = z.object({
     id: z.string(),
     uri: z.string(),

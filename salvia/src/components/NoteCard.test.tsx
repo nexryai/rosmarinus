@@ -341,4 +341,44 @@ describe("NoteCard social actions", () => {
 
         expect(onReact).toHaveBeenCalledWith("note-1", "❤️", true);
     });
+
+    it("fetches and shows the reacting Actors when a reaction is hovered", async () => {
+        const onOpenProfile = vi.fn();
+        const onLoadReactions = vi.fn().mockResolvedValue([
+            { id: "alice", username: "alice", name: "Alice", avatar_url: "", uri: "https://example.test/users/alice", emojis: [] },
+            { id: "bob", username: "bob", name: "Bob", avatar_url: "", uri: "https://example.test/users/bob", emojis: [] },
+        ]);
+        const reacted = { ...note, reactions: [{ reaction: "👍", count: 3, reacted: false }] } as Note;
+        render(<NoteCard note={reacted} ownActorID="carol" onDelete={vi.fn()} onLoadReactions={onLoadReactions} onOpenProfile={onOpenProfile} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        expect(onLoadReactions).not.toHaveBeenCalled();
+        expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+        fireEvent.mouseEnter(screen.getByRole("button", { name: /👍.*3/ }));
+        expect(onLoadReactions).toHaveBeenCalledWith("note-1", "👍");
+        const tooltip = await screen.findByRole("tooltip");
+        expect(tooltip).toHaveTextContent("Alice");
+        expect(tooltip).toHaveTextContent("@alice");
+        expect(tooltip).toHaveTextContent("Bob");
+        expect(tooltip).toHaveTextContent("他 1 人");
+
+        const user = userEvent.setup();
+        await user.click(screen.getByRole("button", { name: /Alice/ }));
+        expect(onOpenProfile).toHaveBeenCalledWith("alice");
+    });
+
+    it("reports an empty or failed reactor list without breaking the card", async () => {
+        const onLoadReactions = vi.fn().mockResolvedValue([]);
+        const reacted = { ...note, reactions: [{ reaction: "👍", count: 3, reacted: false }] } as Note;
+        const { unmount } = render(<NoteCard note={reacted} ownActorID="carol" onDelete={vi.fn()} onLoadReactions={onLoadReactions} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+
+        fireEvent.mouseEnter(screen.getByRole("button", { name: /👍.*3/ }));
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("表示できるユーザーはいません");
+        unmount();
+
+        onLoadReactions.mockRejectedValue(new Error("failed"));
+        render(<NoteCard note={reacted} ownActorID="carol" onDelete={vi.fn()} onLoadReactions={onLoadReactions} onOpenProfile={vi.fn()} onQuote={vi.fn()} onReact={vi.fn()} onRenote={vi.fn()} onReply={vi.fn()} onVote={vi.fn()} />);
+        fireEvent.mouseEnter(screen.getByRole("button", { name: /👍.*3/ }));
+        expect(await screen.findByRole("tooltip")).toHaveTextContent("読み込めませんでした");
+    });
 });

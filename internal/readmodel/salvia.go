@@ -60,6 +60,13 @@ type ReactionSummary struct {
 	Emoji    *emojis.Reference
 }
 
+type ReactionReactor struct {
+	Reaction  string
+	CreatedAt time.Time
+	ID        string
+	Actor     *actors.Actor
+}
+
 type Connection struct {
 	Follow follows.Follow
 	Actor  *actors.Actor
@@ -89,6 +96,7 @@ type Reader interface {
 	ListHomeTimeline(context.Context, string, Cursor, int) ([]Note, error)
 	FindVisibleNote(context.Context, string, string) (*Note, error)
 	ListVisibleThread(context.Context, string, string, Cursor, int) ([]Note, error)
+	ListNoteReactors(context.Context, string, string, string, Cursor, int) ([]ReactionReactor, error)
 	ListProfileNotes(context.Context, string, string, Cursor, int) ([]Note, error)
 	ListConnections(context.Context, string, string, string, string, int) ([]Connection, error)
 	ListNotifications(context.Context, string, string, Cursor, int, *bool) ([]Notification, error)

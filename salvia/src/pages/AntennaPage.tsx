@@ -262,6 +262,7 @@ export function AntennaPage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                 onDelete={(id) => mutate(() => api.deletePost(csrf, actorID, id))}
                                 onOpenNote={onOpenNote}
                                 onOpenProfile={onOpenProfile}
+                                onLoadReactions={(id, reaction) => api.noteReactions(actorID, id, reaction)}
                                 onQuote={(target) => onCompose("quote", target)}
                                 onReact={(id, reaction, reacted) => mutate(() => (reacted ? api.unreact(csrf, actorID, id) : api.react(csrf, actorID, id, reaction)))}
                                 onRenote={(target) => mutate(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}

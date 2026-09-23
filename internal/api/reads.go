@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
 	"github.com/nexryai/rosmarinus/internal/domain/polls"
 	"github.com/nexryai/rosmarinus/internal/mediaproxy"
@@ -89,7 +90,51 @@ func (h *Handler) noteResource(w http.ResponseWriter, r *http.Request, accountID
 		h.writeNotePage(w, items, limit)
 		return
 	}
+	if len(segments) == 2 && segments[1] == "reactions" {
+		h.noteReactions(w, r, actorID, segments[0])
+		return
+	}
 	h.writeError(w, http.StatusNotFound, "not_found", "resource not found")
+}
+
+// noteReactions lists the Actors behind one reaction on a Note. Salvia requests
+// it only when a reaction is hovered so Note projections stay lightweight.
+func (h *Handler) noteReactions(w http.ResponseWriter, r *http.Request, actorID, noteID string) {
+	reaction := strings.TrimSpace(r.URL.Query().Get("reaction"))
+	if reaction == "" || len(reaction) > 128 {
+		h.writeError(w, http.StatusBadRequest, "invalid_reaction", "reaction is required")
+		return
+	}
+	limit, after, ok := h.readPage(w, r)
+	if !ok {
+		return
+	}
+	items, err := h.reader.ListNoteReactors(r.Context(), actorID, noteID, reaction, after, limit)
+	if err != nil {
+		h.internalError(w, r, fmt.Errorf("list note reactors: %w", err))
+		return
+	}
+	if len(items) == 0 {
+		exists, findErr := h.reader.FindVisibleNote(r.Context(), actorID, noteID)
+		if findErr != nil {
+			h.internalError(w, r, fmt.Errorf("find visible note: %w", findErr))
+			return
+		}
+		if exists == nil {
+			h.writeError(w, http.StatusNotFound, "note_not_found", "Note not found")
+			return
+		}
+	}
+	views := make([]reactionActorView, 0, len(items))
+	for _, item := range items {
+		views = append(views, h.projectReactionActor(item.Actor))
+	}
+	next := ""
+	if len(items) == limit {
+		last := items[len(items)-1]
+		next = encodeCursor(last.CreatedAt, last.ID)
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"data": views, "next": next})
 }
 
 func (h *Handler) connections(w http.ResponseWriter, r *http.Request, accountID, actorID, kind string, segments []string) {
@@ -562,6 +607,17 @@ type reactionSummaryView struct {
 	Emoji    *emojiView `json:"emoji,omitempty"`
 }
 
+// reactionActorView is the minimal reactor projection required to render the
+// hover list without exposing full profiles or internal Actor state.
+type reactionActorView struct {
+	ID        string      `json:"id"`
+	Username  string      `json:"username"`
+	Name      string      `json:"name"`
+	AvatarURL string      `json:"avatar_url"`
+	URI       string      `json:"uri"`
+	Emojis    []emojiView `json:"emojis"`
+}
+
 type noteReferenceView struct {
 	ID             string                `json:"id"`
 	URI            string                `json:"uri"`
@@ -719,6 +775,21 @@ func projectShallowNoteReference(reference *readmodel.NoteReference, proxy *medi
 	}
 	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author}, proxy)
 	return view
+}
+
+func (h *Handler) projectReactionActor(actor *actors.Actor) reactionActorView {
+	return projectReactionActorWithMediaProxy(actor, h.mediaProxy)
+}
+
+func projectReactionActorWithMediaProxy(actor *actors.Actor, proxy *mediaproxy.Proxy) reactionActorView {
+	emojis := make([]emojiView, 0, len(actor.ResolvedEmojis))
+	for _, emoji := range actor.ResolvedEmojis {
+		emojis = append(emojis, emojiView{Name: emoji.Name, URL: proxy.URL(emoji.URL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
+	}
+	return reactionActorView{
+		ID: actor.ID, Username: actor.Username, Name: actor.Name,
+		AvatarURL: proxy.URL(actor.AvatarURL, mediaproxy.VariantAvatar), URI: actor.URI, Emojis: emojis,
+	}
 }
 
 func projectPoll(poll *polls.Poll, myVotes []int) *pollView {

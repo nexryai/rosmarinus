@@ -216,6 +216,7 @@ export function TimelinePage({
                                         onOpenNote={onOpenNote}
                                         onOpenProfile={onOpenProfile}
                                         onQuote={(target) => onCompose("quote", target)}
+                                        onLoadReactions={(noteID, reaction) => api.noteReactions(actorID, noteID, reaction)}
                                         onReact={(noteID, reaction, reacted) => mutate(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
                                         onRenote={(target) => mutate(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
                                         onReply={(target) => onCompose("reply", target)}

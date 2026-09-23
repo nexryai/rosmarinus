@@ -32,6 +32,7 @@ type fakeReader struct {
 	unreadCount    int64
 	emojiQuery     readmodel.EmojiListQuery
 	antennas       []antennas.Antenna
+	reactors       []readmodel.ReactionReactor
 	connectionKind string
 	calls          int
 }
@@ -67,6 +68,12 @@ func (f *fakeReader) ListVisibleThread(_ context.Context, actorID, _ string, _ r
 	return f.publicItems, nil
 }
 
+func (f *fakeReader) ListNoteReactors(_ context.Context, viewerActorID, noteID, reaction string, _ readmodel.Cursor, _ int) ([]readmodel.ReactionReactor, error) {
+	f.actorID, f.calls = viewerActorID, f.calls+1
+	f.connectionKind = reaction
+	return f.reactors, nil
+}
+
 func (f *fakeReader) ListProfileNotes(_ context.Context, viewerActorID, targetActorID string, _ readmodel.Cursor, _ int) ([]readmodel.Note, error) {
 	f.actorID, f.targetActorID, f.calls = viewerActorID, targetActorID, f.calls+1
 	return f.publicItems, nil
@@ -96,6 +103,62 @@ func (f *fakeReader) FindAntenna(_ context.Context, accountID, actorID, antennaI
 func (f *fakeReader) ListAntennaNotes(_ context.Context, accountID, actorID, _ string, _ readmodel.Cursor, _ int) ([]readmodel.Note, error) {
 	f.accountID, f.actorID, f.calls = accountID, actorID, f.calls+1
 	return f.publicItems, nil
+}
+
+func TestNoteReactionsEndpointReturnsReactors(t *testing.T) {
+	reactor := &actors.Actor{ID: "reactor-1", Username: "alice", Name: "Alice", AvatarURL: "https://remote.test/alice.png", URI: "https://remote.test/users/alice", PrivateKeyPEM: "secret"}
+	reader := &fakeReader{
+		note:     &readmodel.Note{Note: notes.Note{ID: "note-1", Visibility: notes.VisibilityPublic}},
+		reactors: []readmodel.ReactionReactor{{Reaction: "👍", CreatedAt: time.Now(), ID: "reaction-1", Actor: reactor}},
+	}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/notes/note-1/reactions?actor_id=actor-1&reaction=%F0%9F%91%8D&limit=1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if reader.connectionKind != "👍" {
+		t.Fatalf("reaction = %q", reader.connectionKind)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	data := body["data"].([]any)
+	if len(data) != 1 {
+		t.Fatalf("reactors = %#v", data)
+	}
+	actor := data[0].(map[string]any)
+	if actor["username"] != "alice" || actor["name"] != "Alice" {
+		t.Fatalf("reactor projection = %#v", actor)
+	}
+	if _, ok := actor["summary"]; ok {
+		t.Fatalf("reactor projection must stay minimal: %#v", actor)
+	}
+	for _, forbidden := range []string{"secret", "PrivateKey"} {
+		if bytes.Contains(recorder.Body.Bytes(), []byte(forbidden)) {
+			t.Fatalf("response leaked %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+}
+
+func TestNoteReactionsEndpointRequiresReactionAndVisibleNote(t *testing.T) {
+	reader := &fakeReader{note: nil}
+	store := &fakeActorStore{actors: []actors.Actor{{ID: "actor-1", OwnerAccountID: "account-1"}}}
+	handler := NewHandlerWithAuthAndReader(fakeAuthenticator{session: &Session{AccountID: "account-1"}}, store, &fakeExecutor{}, nil, reader, nil, nil, 0)
+
+	missingReaction := httptest.NewRecorder()
+	handler.ServeHTTP(missingReaction, httptest.NewRequest(http.MethodGet, "/api/v1/notes/note-1/reactions?actor_id=actor-1", nil))
+	if missingReaction.Code != http.StatusBadRequest {
+		t.Fatalf("missing reaction status = %d body=%s", missingReaction.Code, missingReaction.Body.String())
+	}
+
+	hiddenNote := httptest.NewRecorder()
+	handler.ServeHTTP(hiddenNote, httptest.NewRequest(http.MethodGet, "/api/v1/notes/note-1/reactions?actor_id=actor-1&reaction=%F0%9F%91%8D", nil))
+	if hiddenNote.Code != http.StatusNotFound {
+		t.Fatalf("hidden note status = %d body=%s", hiddenNote.Code, hiddenNote.Body.String())
+	}
 }
 
 func TestSentFollowRequestsUseOutboundPendingConnections(t *testing.T) {

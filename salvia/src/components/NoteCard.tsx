@@ -1,9 +1,9 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash, IconWorld } from "@tabler/icons-react";
 
 import { css } from "../lib/css";
-import type { Emoji, Note } from "../lib/schema";
+import type { Emoji, Note, ReactionActor } from "../lib/schema";
 import { EmojiPickerDialog } from "./EmojiPickerDialog";
 import { CustomEmoji, EmojiText } from "./EmojiText";
 import { ImageViewer } from "./ImageViewer";
@@ -188,6 +188,67 @@ const styles = {
         fontSize: "0.75rem",
         fontVariantNumeric: "tabular-nums",
     },
+    reactionWrap: {
+        position: "relative",
+        display: "inline-flex",
+    },
+    reactionTooltip: {
+        position: "fixed",
+        zIndex: 60,
+        width: "max-content",
+        minWidth: "12rem",
+        maxWidth: "18rem",
+        padding: "0.5rem",
+        display: "grid",
+        gap: "0.25rem",
+        border: "1px solid var(--border)",
+        borderRadius: "0.75rem",
+        color: "var(--text)",
+        background: "var(--panel)",
+        boxShadow: "0 12px 32px -12px #00000066",
+        fontSize: "0.8125rem",
+    },
+    reactionTooltipTitle: {
+        paddingInline: "0.375rem",
+        paddingBlock: "0.125rem",
+        color: "var(--muted)",
+        fontWeight: 700,
+    },
+    reactionTooltipStatus: {
+        paddingInline: "0.375rem",
+        paddingBlock: "0.25rem",
+        color: "var(--muted)",
+    },
+    reactionActor: {
+        minWidth: 0,
+        width: "100%",
+        padding: "0.25rem 0.375rem",
+        display: "flex",
+        alignItems: "center",
+        gap: "0.5rem",
+        borderRadius: "0.5rem",
+        color: "inherit",
+        textAlign: "left",
+    },
+    reactionActorName: {
+        minWidth: 0,
+        overflow: "hidden",
+        color: "var(--text)",
+        fontWeight: 600,
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    reactionActorHandle: {
+        minWidth: 0,
+        overflow: "hidden",
+        color: "var(--muted)",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+    },
+    reactionActorMore: {
+        paddingInline: "0.375rem",
+        color: "var(--muted)",
+    },
     replyAction: {
         display: "flex",
         gap: "0.25rem",
@@ -247,6 +308,11 @@ const rules = {
     deleteAction: css({
         "&:hover": {
             color: "var(--danger)",
+        },
+    }),
+    reactionActor: css({
+        "&:hover": {
+            background: "var(--accent-soft)",
         },
     }),
 };
@@ -314,6 +380,8 @@ const changedReactions = (reactions: Note["reactions"], requestedReaction: strin
     return [...next, { reaction, count: 1, reacted: true, emoji: localEmoji }];
 };
 
+type ReactionTooltip = { reaction: string; x: number; y: number; below: boolean };
+
 export function NoteCard({
     note,
     ownActorID,
@@ -325,6 +393,7 @@ export function NoteCard({
     onRenote,
     onReply,
     onVote,
+    onLoadReactions,
     emojis = [],
     pinned = false,
     showReplyContext = true,
@@ -339,6 +408,7 @@ export function NoteCard({
     onRenote: (note: Note) => Promise<void>;
     onReply: (note: Note) => void;
     onVote: (noteID: string, choice: number) => Promise<void>;
+    onLoadReactions?: (noteID: string, reaction: string) => Promise<ReactionActor[]>;
     emojis?: Emoji[];
     pinned?: boolean;
     showReplyContext?: boolean;
@@ -354,6 +424,17 @@ export function NoteCard({
     const [viewerIndex, setViewerIndex] = useState<number | undefined>(undefined);
     const [reactions, setReactions] = useState(displayedNote.reactions);
     useEffect(() => setReactions(displayedNote.reactions), [displayedNote.reactions]);
+    const [reactors, setReactors] = useState<{ reaction: string; actors: ReactionActor[]; loading: boolean; failed: boolean } | null>(null);
+    const [reactionTooltip, setReactionTooltip] = useState<ReactionTooltip | null>(null);
+    const tooltipHideTimer = useRef<number | undefined>(undefined);
+    const reactorRequest = useRef<AbortController | undefined>(undefined);
+    useEffect(
+        () => () => {
+            window.clearTimeout(tooltipHideTimer.current);
+            reactorRequest.current?.abort();
+        },
+        [],
+    );
     const author = displayedNote.author;
     const visibility = visibilityDetails(displayedNote.visibility);
     const VisibilityIcon = visibility.icon;
@@ -378,6 +459,36 @@ export function NoteCard({
             setReactions(previous);
             throw error;
         }
+    };
+    const requestReactors = (reaction: string, element: HTMLElement) => {
+        window.clearTimeout(tooltipHideTimer.current);
+        const rect = element.getBoundingClientRect();
+        const below = rect.top < 220;
+        const halfWidth = 144;
+        const x = Math.min(Math.max(rect.left + rect.width / 2, halfWidth), Math.max(halfWidth, window.innerWidth - halfWidth));
+        setReactionTooltip({ reaction, x, y: below ? rect.bottom + 8 : rect.top - 8, below });
+        if (!onLoadReactions || reactors?.reaction === reaction) return;
+        reactorRequest.current?.abort();
+        const controller = new AbortController();
+        reactorRequest.current = controller;
+        setReactors({ reaction, actors: [], loading: true, failed: false });
+        onLoadReactions(displayedNote.id, reaction)
+            .then((actors) => {
+                if (controller.signal.aborted) return;
+                setReactors({ reaction, actors, loading: false, failed: false });
+            })
+            .catch(() => {
+                if (controller.signal.aborted) return;
+                setReactors({ reaction, actors: [], loading: false, failed: true });
+            });
+    };
+    const scheduleReactionTooltipHide = () => {
+        window.clearTimeout(tooltipHideTimer.current);
+        tooltipHideTimer.current = window.setTimeout(() => setReactionTooltip(null), 120);
+    };
+    const hideReactionTooltip = () => {
+        window.clearTimeout(tooltipHideTimer.current);
+        setReactionTooltip(null);
     };
     return (
         <NoteSurface>
@@ -460,20 +571,68 @@ export function NoteCard({
                             <button aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
                                 <IconQuote />
                             </button>
-                            {reactions.map((reaction) => (
-                                <button
-                                    aria-pressed={reaction.reacted}
-                                    className={rules.action}
-                                    disabled={busy}
-                                    key={reaction.reaction}
-                                    onClick={() => act(() => changeReaction(reaction.reaction, reaction.reacted))}
-                                    style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
-                                    type="button"
-                                >
-                                    {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
-                                    <b style={styles.reactionCount}>{reaction.count}</b>
-                                </button>
-                            ))}
+                            {reactions.map((reaction) => {
+                                const tooltipOpen = reactionTooltip !== null && reactionTooltip.reaction === reaction.reaction;
+                                const item = reactors?.reaction === reaction.reaction ? reactors : null;
+                                return (
+                                    <span key={reaction.reaction} style={styles.reactionWrap}>
+                                        <button
+                                            aria-describedby={tooltipOpen ? "reaction-tooltip" : undefined}
+                                            aria-pressed={reaction.reacted}
+                                            className={rules.action}
+                                            disabled={busy}
+                                            onBlur={scheduleReactionTooltipHide}
+                                            onClick={() => act(() => changeReaction(reaction.reaction, reaction.reacted))}
+                                            onFocus={(event) => requestReactors(reaction.reaction, event.currentTarget)}
+                                            onMouseEnter={(event) => requestReactors(reaction.reaction, event.currentTarget)}
+                                            onMouseLeave={scheduleReactionTooltipHide}
+                                            style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
+                                            type="button"
+                                        >
+                                            {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
+                                            <b style={styles.reactionCount}>{reaction.count}</b>
+                                        </button>
+                                        {tooltipOpen && (
+                                            <div
+                                                id="reaction-tooltip"
+                                                onMouseEnter={() => window.clearTimeout(tooltipHideTimer.current)}
+                                                onMouseLeave={scheduleReactionTooltipHide}
+                                                role="tooltip"
+                                                style={{ ...styles.reactionTooltip, left: reactionTooltip.x, top: reactionTooltip.y, ...(reactionTooltip.below ? {} : { transform: "translate(-50%, -100%)" }) }}
+                                            >
+                                                <div style={styles.reactionTooltipTitle}>{reaction.reaction.replace("@.", "")} したユーザー</div>
+                                                {item === null || item.loading ? (
+                                                    <div style={styles.reactionTooltipStatus}>読み込み中…</div>
+                                                ) : item.failed ? (
+                                                    <div style={styles.reactionTooltipStatus}>読み込めませんでした</div>
+                                                ) : item.actors.length === 0 ? (
+                                                    <div style={styles.reactionTooltipStatus}>表示できるユーザーはいません</div>
+                                                ) : (
+                                                    item.actors.map((actor) => (
+                                                        <button
+                                                            className={rules.reactionActor}
+                                                            key={actor.id}
+                                                            onClick={() => {
+                                                                hideReactionTooltip();
+                                                                onOpenProfile(actor.id);
+                                                            }}
+                                                            style={styles.reactionActor}
+                                                            type="button"
+                                                        >
+                                                            <Avatar actor={actor} size="xsmall" />
+                                                            <span style={styles.reactionActorName}>
+                                                                <EmojiText emojis={actor.emojis} text={actor.name || actor.username} />
+                                                            </span>
+                                                            <span style={styles.reactionActorHandle}>@{actor.username}</span>
+                                                        </button>
+                                                    ))
+                                                )}
+                                                {item !== null && !item.loading && !item.failed && reaction.count > item.actors.length && <div style={styles.reactionActorMore}>他 {reaction.count - item.actors.length} 人</div>}
+                                            </div>
+                                        )}
+                                    </span>
+                                );
+                            })}
                             <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setEmojiPickerOpen(true)} style={styles.action} type="button">
                                 ＋
                             </button>

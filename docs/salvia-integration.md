@@ -254,6 +254,7 @@ idempotency key identifies a logical retry; it is not used as the Note ID.
 | `GET` | `/api/v1/timelines/home?actor_id={viewer}` | Home timeline for the selected owned Actor |
 | `GET` | `/api/v1/notes/{noteId}?actor_id={viewer}` | Visibility-checked Note detail with reply/quote/renote projections |
 | `GET` | `/api/v1/notes/{noteId}/thread?actor_id={viewer}` | Visibility-checked direct replies |
+| `GET` | `/api/v1/notes/{noteId}/reactions?actor_id={viewer}&reaction={reaction}` | Visibility- and block-filtered, cursor-paginated Actors behind one reaction |
 | `GET` | `/api/v1/profiles/{actorId}?actor_id={viewer}` | Safe local or remote Actor profile with visible pinned Notes |
 | `GET` | `/api/v1/profiles/{actorId}/notes?actor_id={viewer}` | Cursor-paginated, visibility- and block-filtered Notes authored by the profile Actor |
 | `GET` | `/api/v1/profiles/{actorId}/followers?actor_id={viewer}` | Block-filtered followers |
@@ -328,12 +329,20 @@ custom-emoji text renderer, which expands `:name:` codes from `emojis` but
 intentionally leaves MFM syntax literal.
 
 Each Note reaction summary contains `reaction`, `count`, `reacted`, and an
-optional `emoji` reference with the same shape. Reaction notifications contain
-the concrete `reaction` value and an optional `reaction_emoji` reference.
-Rosmarinus stores the emoji metadata received with a federated reaction so the
-notification and Note remain renderable even when the reaction code contains
-a remote host suffix. Legacy reaction rows are resolved against the validated
-emoji catalog when possible and otherwise retain their literal reaction code.
+optional `emoji` reference with the same shape. To keep Note projections
+lightweight, reactor identities are not embedded in them; Salvia requests
+`GET /api/v1/notes/{noteId}/reactions` with the reaction value when it needs to
+name who reacted. That endpoint enforces Note visibility and bilateral blocks,
+excludes blocked, suspended, and deleted Actors, sorts reactors newest first,
+returns opaque `next` cursors, and projects each reactor as only `id`,
+`username`, `name`, `avatar_url`, `uri`, and resolved display `emojis`. The
+reaction value accepts both the stored local form and the `:name@.:` form used
+in Note projections. Reaction notifications contain the concrete `reaction`
+value and an optional `reaction_emoji` reference. Rosmarinus stores the emoji
+metadata received with a federated reaction so the notification and Note remain
+renderable even when the reaction code contains a remote host suffix. Legacy
+reaction rows are resolved against the validated emoji catalog when possible
+and otherwise retain their literal reaction code.
 
 The navigation unread badge uses the Actor-scoped `unread-count` endpoint and
 refreshes after notification SSE invalidations. Opening the default Actor

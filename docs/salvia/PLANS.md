@@ -72,6 +72,12 @@ part of the target architecture.
 - Completed: use MediaProxy `thumbnail=1` projections for Note-card images and
   retain the default MediaProxy projection for the opened full-image viewer.
 
+- Completed: reveal who reacted to a Note when a reaction is hovered. Salvia
+  calls the visibility- and block-filtered
+  `GET /api/v1/notes/{noteId}/reactions` endpoint on demand instead of
+  embedding reactor lists in every Note projection, so timeline and profile
+  reads keep their existing shape and payload size.
+
 - Use React, TypeScript, Vite, and `pnpm`; produce static assets suitable for
   same-origin deployment with Rosmarinus.
 - Do not add Next.js, server rendering, frontend API routes, Ably, or direct
@@ -201,7 +207,7 @@ Pub/Sub message arriving.
       deduplication; retire the public discovery page from Salvia navigation.
 - [x] Render notes, replies, quotes, renotes, content warnings, visibility,
       polls, attachments, mentions, and custom emoji reactions from sanitized
-      API projections.
+      API projections, including the reactor list fetched on reaction hover.
 - [x] Implement compose, delete, reaction, poll vote, follow/unfollow,
       block/unblock, and mandatory follow approve/reject flows.
 - [x] Keep follow as the primary profile action and place block plus

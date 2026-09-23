@@ -381,6 +381,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                 onDelete={(noteID) => mutateNote(() => api.deletePost(csrf, actorID, noteID))}
                 onOpenNote={onOpenNote}
                 onOpenProfile={onOpenProfile}
+                onLoadReactions={(noteID, reaction) => api.noteReactions(actorID, noteID, reaction)}
                 onQuote={(target) => onCompose("quote", target)}
                 onReact={(noteID, reaction, reacted) => mutateNote(() => (reacted ? api.unreact(csrf, actorID, noteID) : api.react(csrf, actorID, noteID, reaction)))}
                 onRenote={(target) => mutateNote(() => api.createPost(csrf, actorID, { renote_id: target.id, visibility: target.visibility }))}
