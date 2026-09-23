@@ -308,7 +308,23 @@ const visibilityOptions = [
     { value: "followers", label: "フォロワー", description: "フォロワーだけに公開" },
 ] satisfies DropdownOption<Visibility>[];
 
-export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit }: { actor: Actor; actorSettings?: ActorSettings; csrf: string; intent: ComposerIntent; onClose: () => void; onSubmit: (input: CreatePostInput, intentKey: string) => Promise<void> }) {
+export function Composer({
+    actor,
+    actorSettings,
+    csrf,
+    intent,
+    onClose,
+    onOpenProfile,
+    onSubmit,
+}: {
+    actor: Actor;
+    actorSettings?: ActorSettings;
+    csrf: string;
+    intent: ComposerIntent;
+    onClose: () => void;
+    onOpenProfile?: (actorID: string) => void;
+    onSubmit: (input: CreatePostInput, intentKey: string) => Promise<void>;
+}) {
     const [text, setText] = useState("");
     const [visibility, setVisibility] = useState<Visibility>(actorSettings?.default_visibility || "public");
     const [useCW, setUseCW] = useState(false);
@@ -396,7 +412,8 @@ export function Composer({ actor, actorSettings, csrf, intent, onClose, onSubmit
                     </header>
                     {intent.kind !== "post" && (
                         <p style={styles.target}>
-                            <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />: <Mfm emojis={intent.target.emojis} nyaize={intent.target.author?.is_cat} text={intent.target.text || "（本文なし）"} />
+                            <EmojiText emojis={intent.target.author?.emojis} text={intent.target.author?.name || intent.target.author?.username || "Unknown"} />:{" "}
+                            <Mfm emojis={intent.target.emojis} mentions={intent.target.mentions} nyaize={intent.target.author?.is_cat} onOpenProfile={onOpenProfile} text={intent.target.text || "（本文なし）"} />
                         </p>
                     )}
                     {error && <ErrorBanner message={error} />}

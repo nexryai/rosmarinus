@@ -72,6 +72,20 @@ export const reactionActorSchema = z.object({
 });
 export type ReactionActor = z.infer<typeof reactionActorSchema>;
 
+export const mentionActorSchema = z.object({
+    id: z.string(),
+    username: z.string(),
+    name: z.string().default(""),
+    host: z.string().default(""),
+    avatar_url: z.string().default(""),
+    uri: z.string().default(""),
+    emojis: z
+        .array(emojiSchema)
+        .nullish()
+        .transform((value) => value ?? []),
+});
+export type MentionActor = z.infer<typeof mentionActorSchema>;
+
 const noteReferenceBaseSchema = z.object({
     id: z.string(),
     uri: z.string(),
@@ -82,6 +96,10 @@ const noteReferenceBaseSchema = z.object({
     created_at: z.string(),
     replies_count: z.number().int().nonnegative().default(0),
     author: actorSchema.optional(),
+    mentions: z
+        .array(mentionActorSchema)
+        .nullish()
+        .transform((value) => value ?? []),
     emojis: z
         .array(emojiSchema)
         .nullish()
@@ -112,6 +130,10 @@ export const noteSchema = z.object({
     renote_id: z.string().optional(),
     visibility: z.string(),
     mention_uris: strings,
+    mentions: z
+        .array(mentionActorSchema)
+        .nullish()
+        .transform((value) => value ?? []),
     hashtags: strings,
     emojis: z
         .array(emojiSchema)

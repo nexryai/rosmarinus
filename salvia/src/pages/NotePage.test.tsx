@@ -21,6 +21,7 @@ const makeNote = (id: string, text: string, replyID?: string) =>
         emojis: [],
         reactions: [],
         mention_uris: [],
+        mentions: [],
         hashtags: [],
         ...(replyID ? { reply_id: replyID } : {}),
     }) as Note;

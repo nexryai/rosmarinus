@@ -93,19 +93,30 @@ type poll struct {
 	Expired   bool         `json:"expired"`
 }
 
+type mentionActor struct {
+	ID        string  `json:"id"`
+	Username  string  `json:"username"`
+	Name      string  `json:"name"`
+	Host      string  `json:"host"`
+	AvatarURL string  `json:"avatar_url"`
+	URI       string  `json:"uri"`
+	Emojis    []emoji `json:"emojis"`
+}
+
 type noteReference struct {
-	ID             string       `json:"id"`
-	URI            string       `json:"uri"`
-	Text           string       `json:"text"`
-	ContentWarning *string      `json:"content_warning"`
-	Sensitive      bool         `json:"sensitive"`
-	Visibility     string       `json:"visibility"`
-	CreatedAt      string       `json:"created_at"`
-	RepliesCount   int          `json:"replies_count"`
-	Author         *actor       `json:"author,omitempty"`
-	Emojis         []emoji      `json:"emojis"`
-	Attachments    []attachment `json:"attachments"`
-	Reactions      []reaction   `json:"reactions"`
+	ID             string         `json:"id"`
+	URI            string         `json:"uri"`
+	Text           string         `json:"text"`
+	ContentWarning *string        `json:"content_warning"`
+	Sensitive      bool           `json:"sensitive"`
+	Visibility     string         `json:"visibility"`
+	CreatedAt      string         `json:"created_at"`
+	RepliesCount   int            `json:"replies_count"`
+	Author         *actor         `json:"author,omitempty"`
+	Mentions       []mentionActor `json:"mentions"`
+	Emojis         []emoji        `json:"emojis"`
+	Attachments    []attachment   `json:"attachments"`
+	Reactions      []reaction     `json:"reactions"`
 }
 
 type note struct {
@@ -119,6 +130,7 @@ type note struct {
 	RenoteID       string         `json:"renote_id,omitempty"`
 	Visibility     string         `json:"visibility"`
 	MentionURIs    []string       `json:"mention_uris"`
+	Mentions       []mentionActor `json:"mentions"`
 	Hashtags       []string       `json:"hashtags"`
 	Emojis         []emoji        `json:"emojis"`
 	Attachments    []attachment   `json:"attachments"`
@@ -277,8 +289,12 @@ func buildDemoData() *demoData {
 	notes := []note{
 		{
 			ID: "dev-note-1", URI: "https://salvia.dev/notes/dev-note-1",
-			Text:       "Welcome to the Salvia development server! This timeline is fixed dummy data.\n\nTry **bold**, `code`, and a custom emoji :rosemary:.",
-			Visibility: "public", MentionURIs: []string{}, Hashtags: []string{"salvia", "dev"},
+			Text:       "Welcome to the Salvia development server! This timeline is fixed dummy data.\n\nTry **bold**, `code`, and a custom emoji :rosemary:.\n\nThanks @thyme and @mint@mint.example for testing mentions.",
+			Visibility: "public", MentionURIs: []string{thyme.URI, mint.URI}, Hashtags: []string{"salvia", "dev"},
+			Mentions: []mentionActor{
+				{ID: thyme.ID, Username: thyme.Username, Name: thyme.Name, Host: "", AvatarURL: placeholderImage, URI: thyme.URI, Emojis: []emoji{}},
+				{ID: mint.ID, Username: mint.Username, Name: mint.Name, Host: "mint.example", AvatarURL: placeholderImage, URI: mint.URI, Emojis: []emoji{}},
+			},
 			CreatedAt: "2026-09-01T12:00:00Z", Author: &rosemary,
 			Reactions: []reaction{{Reaction: "⭐", Count: 3, Reacted: true}, {Reaction: "👍", Count: 1, Reacted: false}},
 		},
@@ -345,7 +361,7 @@ func buildDemoData() *demoData {
 		return &noteReference{
 			ID: target.ID, URI: target.URI, Text: target.Text, ContentWarning: target.ContentWarning,
 			Sensitive: target.Sensitive, Visibility: target.Visibility, CreatedAt: target.CreatedAt,
-			RepliesCount: target.RepliesCount, Author: target.Author, Emojis: target.Emojis,
+			RepliesCount: target.RepliesCount, Author: target.Author, Mentions: target.Mentions, Emojis: target.Emojis,
 			Attachments: target.Attachments, Reactions: target.Reactions,
 		}
 	}

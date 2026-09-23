@@ -410,6 +410,10 @@ function App() {
                     csrf={session.csrf_token}
                     intent={composerIntent}
                     onClose={() => setComposerIntent(undefined)}
+                    onOpenProfile={(id) => {
+                        setComposerIntent(undefined);
+                        navigate(`/profiles/${encodeURIComponent(id)}`);
+                    }}
                     onSubmit={async (input, intentKey) => {
                         await api.createPost(session.csrf_token, selectedActor.id, input, intentKey);
                         setRefreshKey((value) => value + 1);

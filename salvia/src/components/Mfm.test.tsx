@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmojiText } from "./EmojiText";
 import { Mfm } from "./Mfm";
@@ -50,6 +50,37 @@ describe("federated text rendering", () => {
         expect(screen.getByText("@bob@remote.test")).toBeInTheDocument();
         expect(container).not.toHaveTextContent("@@alice");
         expect(container).not.toHaveTextContent("@@bob@remote.test");
+    });
+
+    it("renders resolved local and remote mentions as linked avatar pills", () => {
+        const onOpenProfile = vi.fn();
+        render(
+            <Mfm
+                mentions={[
+                    { id: "actor-1", username: "alice", name: "Alice", host: "", avatar_url: "/media/alice", uri: "https://example.test/users/alice", emojis: [] },
+                    { id: "actor-2", username: "bob", name: "Bob", host: "remote.test", avatar_url: "/media/bob", uri: "https://remote.test/users/bob", emojis: [] },
+                ]}
+                onOpenProfile={onOpenProfile}
+                text="@alice と @bob@remote.test と @carol へ"
+            />,
+        );
+
+        const alice = screen.getByRole("link", { name: "@alice" });
+        expect(alice).toHaveAttribute("href", "/profiles/actor-1");
+        expect(alice.querySelector("img")).toHaveAttribute("src", "/media/alice");
+        const bob = screen.getByRole("link", { name: "@bob@remote.test" });
+        expect(bob).toHaveAttribute("href", "/profiles/actor-2");
+        expect(screen.getByText("@carol")).toBeInTheDocument();
+
+        fireEvent.click(alice);
+        expect(onOpenProfile).toHaveBeenCalledWith("actor-1");
+    });
+
+    it("keeps unresolved mentions as plain text", () => {
+        const { container } = render(<Mfm text="@ghost@remote.test へ" />);
+
+        expect(screen.getByText("@ghost@remote.test")).toBeInTheDocument();
+        expect(container.querySelector("a")).toBeNull();
     });
 
     it("keeps numbers in code on a text font before falling back to Twemoji", () => {

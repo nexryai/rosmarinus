@@ -328,6 +328,17 @@ renderer and never inserts them as HTML. Actor display names use the separate
 custom-emoji text renderer, which expands `:name:` codes from `emojis` but
 intentionally leaves MFM syntax literal.
 
+Note and Note-reference projections include `mentions`, an array of
+`{ "id", "username", "name", "host", "avatar_url", "uri", "emojis" }` Actor
+references for the note's mention URIs that are already known, active, and not
+blocked for the viewer. `host` is empty for local Actors and the remote host
+otherwise. Salvia matches each parsed MFM mention token to one of these
+references by username and host, then renders a linked avatar pill; unresolved,
+deleted, suspended, or blocked mentions fall back to the plain `@user` text
+already present in the note body. Mention projections use the same
+MediaProxy-backed avatar and emoji URLs as other Actor projections and never
+expose public key or delivery state.
+
 Each Note reaction summary contains `reaction`, `count`, `reacted`, and an
 optional `emoji` reference with the same shape. To keep Note projections
 lightweight, reactor identities are not embedded in them; Salvia requests

@@ -169,7 +169,7 @@ export function ThreadNote({
                     {noteDate(note.created_at)}
                 </time>
             </span>
-            {note.content_warning ? <span style={styles.warning}>閲覧注意: {note.content_warning}（詳細を開いて表示）</span> : <Mfm emojis={note.emojis} nyaize={author?.is_cat} style={styles.text} text={note.text || "本文のないノート"} />}
+            {note.content_warning ? <span style={styles.warning}>閲覧注意: {note.content_warning}（詳細を開いて表示）</span> : <Mfm emojis={note.emojis} mentions={note.mentions} nyaize={author?.is_cat} onOpenProfile={onOpenProfile} style={styles.text} text={note.text || "本文のないノート"} />}
             {imageCount > 0 && (
                 <span style={styles.media}>
                     <IconPhoto aria-hidden="true" size={15} />

@@ -33,8 +33,12 @@ type EmojiListQuery struct {
 }
 
 type Note struct {
-	Note         notes.Note
-	Author       *actors.Actor
+	Note   notes.Note
+	Author *actors.Actor
+	// Mentions are the Actors named by the note's mention URIs that are known
+	// and visible to the viewer, letting the SPA render linked avatars without
+	// extra resolution requests.
+	Mentions     []*actors.Actor
 	Poll         *polls.Poll
 	Reactions    []ReactionSummary
 	MyVotes      []int
@@ -47,6 +51,7 @@ type Note struct {
 type NoteReference struct {
 	Note         notes.Note
 	Author       *actors.Actor
+	Mentions     []*actors.Actor
 	Reactions    []ReactionSummary
 	RepliesCount int
 	Reply        *NoteReference

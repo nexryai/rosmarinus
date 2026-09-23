@@ -690,6 +690,7 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 	if err != nil {
 		return nil, err
 	}
+	mentions := newMentionCache(r, blocked)
 	for _, doc := range docs {
 		item := readmodel.Note{Note: *toNote(doc), RepliesCount: repliesCount[doc.ID]}
 		var err error
@@ -699,6 +700,10 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 		}
 		if item.Author == nil {
 			continue
+		}
+		item.Mentions, err = mentions.resolve(ctx, doc.MentionURIs)
+		if err != nil {
+			return nil, err
 		}
 		item.Poll, err = NewPollRepository(r.db).FindByNoteID(ctx, doc.ID)
 		if err != nil {
@@ -714,21 +719,21 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 				return nil, err
 			}
 		}
-		item.Reply, err = r.findNoteReference(ctx, doc.ReplyID, visibility, viewerActorID, blocked, false)
+		item.Reply, err = r.findNoteReference(ctx, doc.ReplyID, visibility, viewerActorID, blocked, false, mentions)
 		if err != nil {
 			return nil, err
 		}
 		if item.Reply != nil {
 			item.Reply.RepliesCount = repliesCount[doc.ReplyID]
 		}
-		item.Quote, err = r.findNoteReference(ctx, doc.QuoteID, visibility, viewerActorID, blocked, false)
+		item.Quote, err = r.findNoteReference(ctx, doc.QuoteID, visibility, viewerActorID, blocked, false, mentions)
 		if err != nil {
 			return nil, err
 		}
 		if item.Quote != nil {
 			item.Quote.RepliesCount = repliesCount[doc.QuoteID]
 		}
-		item.Renote, err = r.findNoteReference(ctx, doc.RenoteID, visibility, viewerActorID, blocked, true)
+		item.Renote, err = r.findNoteReference(ctx, doc.RenoteID, visibility, viewerActorID, blocked, true, mentions)
 		if err != nil {
 			return nil, err
 		}
@@ -736,6 +741,60 @@ func (r *SalviaReader) enrichNotes(ctx context.Context, viewerActorID string, do
 			item.Renote.RepliesCount = repliesCount[doc.RenoteID]
 		}
 		result = append(result, item)
+	}
+	return result, nil
+}
+
+// mentionCache resolves mention URIs to known, visible Actors for one Note
+// batch. Sharing it across the batch keeps repeated mentions of the same Actor
+// from fanning out into per-Note queries.
+type mentionCache struct {
+	reader  *SalviaReader
+	blocked []string
+	actors  map[string]*actors.Actor
+	loaded  map[string]struct{}
+}
+
+func newMentionCache(reader *SalviaReader, blocked []string) *mentionCache {
+	return &mentionCache{reader: reader, blocked: blocked, actors: map[string]*actors.Actor{}, loaded: map[string]struct{}{}}
+}
+
+func (c *mentionCache) resolve(ctx context.Context, uris []string) ([]*actors.Actor, error) {
+	if len(uris) == 0 {
+		return nil, nil
+	}
+	missing := make([]string, 0, len(uris))
+	for _, uri := range uris {
+		if uri == "" {
+			continue
+		}
+		if _, loaded := c.loaded[uri]; loaded {
+			continue
+		}
+		c.loaded[uri] = struct{}{}
+		missing = append(missing, uri)
+	}
+	if len(missing) > 0 {
+		found, err := c.reader.findActorsByURI(ctx, missing, c.blocked)
+		if err != nil {
+			return nil, err
+		}
+		for uri, actor := range found {
+			c.actors[uri] = actor
+		}
+	}
+	result := make([]*actors.Actor, 0, len(uris))
+	seen := make(map[string]struct{}, len(uris))
+	for _, uri := range uris {
+		actor, ok := c.actors[uri]
+		if !ok || actor == nil {
+			continue
+		}
+		if _, dup := seen[uri]; dup {
+			continue
+		}
+		seen[uri] = struct{}{}
+		result = append(result, actor)
 	}
 	return result, nil
 }
@@ -767,12 +826,12 @@ func (r *SalviaReader) replyCounts(ctx context.Context, noteIDs []string) (map[s
 	return result, nil
 }
 
-func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeReactions bool) (*readmodel.NoteReference, error) {
+func (r *SalviaReader) findNoteReference(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeReactions bool, mentions *mentionCache) (*readmodel.NoteReference, error) {
 	// One nested reply or quote preserves the target's context without allowing cycles in API projections.
-	return r.findNoteReferenceWithContext(ctx, noteID, visibility, viewerActorID, blockedActorIDs, true, includeReactions)
+	return r.findNoteReferenceWithContext(ctx, noteID, visibility, viewerActorID, blockedActorIDs, true, includeReactions, mentions)
 }
 
-func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeContext, includeReactions bool) (*readmodel.NoteReference, error) {
+func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID string, visibility bson.M, viewerActorID string, blockedActorIDs []string, includeContext, includeReactions bool, mentions *mentionCache) (*readmodel.NoteReference, error) {
 	if noteID == "" {
 		return nil, nil
 	}
@@ -789,6 +848,12 @@ func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID 
 		return nil, err
 	}
 	reference := &readmodel.NoteReference{Note: *toNote(doc), Author: author}
+	if mentions != nil {
+		reference.Mentions, err = mentions.resolve(ctx, doc.MentionURIs)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if includeReactions {
 		reference.Reactions, err = r.reactionSummary(ctx, doc.ID, viewerActorID, blockedActorIDs)
 		if err != nil {
@@ -796,11 +861,11 @@ func (r *SalviaReader) findNoteReferenceWithContext(ctx context.Context, noteID 
 		}
 	}
 	if includeContext {
-		reference.Reply, err = r.findNoteReferenceWithContext(ctx, doc.ReplyID, visibility, viewerActorID, blockedActorIDs, false, false)
+		reference.Reply, err = r.findNoteReferenceWithContext(ctx, doc.ReplyID, visibility, viewerActorID, blockedActorIDs, false, false, mentions)
 		if err != nil {
 			return nil, err
 		}
-		reference.Quote, err = r.findNoteReferenceWithContext(ctx, doc.QuoteID, visibility, viewerActorID, blockedActorIDs, false, false)
+		reference.Quote, err = r.findNoteReferenceWithContext(ctx, doc.QuoteID, visibility, viewerActorID, blockedActorIDs, false, false, mentions)
 		if err != nil {
 			return nil, err
 		}
@@ -854,18 +919,7 @@ func (r *SalviaReader) findActor(ctx context.Context, actorID string) (*actors.A
 // queries so reaction hover details do not fan out into per-reactor lookups.
 func (r *SalviaReader) findActors(ctx context.Context, actorIDs []string) (map[string]*actors.Actor, error) {
 	result := make(map[string]*actors.Actor, len(actorIDs))
-	unique := make([]string, 0, len(actorIDs))
-	seen := make(map[string]struct{}, len(actorIDs))
-	for _, actorID := range actorIDs {
-		if actorID == "" {
-			continue
-		}
-		if _, exists := seen[actorID]; exists {
-			continue
-		}
-		seen[actorID] = struct{}{}
-		unique = append(unique, actorID)
-	}
+	unique := uniqueStrings(actorIDs)
 	if len(unique) == 0 {
 		return result, nil
 	}
@@ -878,6 +932,49 @@ func (r *SalviaReader) findActors(ctx context.Context, actorIDs []string) (map[s
 	if err := cursor.All(ctx, &docs); err != nil {
 		return nil, err
 	}
+	actors, err := r.hydrateActorDocuments(ctx, docs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range actors {
+		result[actors[i].ID] = &actors[i]
+	}
+	return result, nil
+}
+
+// findActorsByURI resolves known, active Actors by their canonical URI for Note
+// mention projections. Unknown, deleted, suspended, and blocked Actors are
+// omitted so the SPA falls back to plain mention text instead of a broken link.
+func (r *SalviaReader) findActorsByURI(ctx context.Context, uris []string, blockedActorIDs []string) (map[string]*actors.Actor, error) {
+	result := make(map[string]*actors.Actor, len(uris))
+	unique := uniqueStrings(uris)
+	if len(unique) == 0 {
+		return result, nil
+	}
+	filter := bson.M{"uri": bson.M{"$in": unique}, "deletedAt": nil, "isSuspended": bson.M{"$ne": true}}
+	if len(blockedActorIDs) > 0 {
+		filter["_id"] = bson.M{"$nin": blockedActorIDs}
+	}
+	cursor, err := r.db.Collection("actors").Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var docs []actorDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	actors, err := r.hydrateActorDocuments(ctx, docs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range actors {
+		result[actors[i].URI] = &actors[i]
+	}
+	return result, nil
+}
+
+func (r *SalviaReader) hydrateActorDocuments(ctx context.Context, docs []actorDocument) ([]actors.Actor, error) {
 	namesByHost := make(map[string]map[string]struct{})
 	for _, doc := range docs {
 		host := ""
@@ -921,6 +1018,7 @@ func (r *SalviaReader) findActors(ctx context.Context, actorIDs []string) (map[s
 			emojisByKey[doc.Host+"\x00"+doc.Name] = emojis.Reference{Name: doc.Name, URL: url, MediaType: doc.MediaType}
 		}
 	}
+	result := make([]actors.Actor, 0, len(docs))
 	for _, doc := range docs {
 		actor := actorFromDocument(doc)
 		host := ""
@@ -933,9 +1031,25 @@ func (r *SalviaReader) findActors(ctx context.Context, actorIDs []string) (map[s
 				actor.ResolvedEmojis = append(actor.ResolvedEmojis, ref)
 			}
 		}
-		result[actor.ID] = &actor
+		result = append(result, actor)
 	}
 	return result, nil
+}
+
+func uniqueStrings(values []string) []string {
+	unique := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func (r *SalviaReader) hydrateActorEmojis(ctx context.Context, actor *actors.Actor) error {

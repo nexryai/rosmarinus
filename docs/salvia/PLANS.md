@@ -208,6 +208,9 @@ Pub/Sub message arriving.
 - [x] Render notes, replies, quotes, renotes, content warnings, visibility,
       polls, attachments, mentions, and custom emoji reactions from sanitized
       API projections, including the reactor list fetched on reaction hover.
+- [x] Render MFM mentions as Misskey-style linked avatar pills from the Note
+      projection's `mentions` Actor references, falling back to plain `@user`
+      text for mentions whose Actor is unknown, deleted, suspended, or blocked.
 - [x] Implement compose, delete, reaction, poll vote, follow/unfollow,
       block/unblock, and mandatory follow approve/reject flows.
 - [x] Keep follow as the primary profile action and place block plus

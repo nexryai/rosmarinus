@@ -186,6 +186,11 @@ Account
   component, using the canonical `mfm-js` parser and React elements only.
   Validate URL protocols and MFM style arguments, retain unknown syntax as
   text, and respect reduced-motion preferences.
+- Render mentions from the Note projection's `mentions` Actor references as
+  linked avatar pills, matching each MFM mention token by username and `host`.
+  Never resolve a mention handle in the browser; when Rosmarinus omits a
+  mention because its Actor is unknown, deleted, suspended, or blocked, keep
+  the plain `@user` text.
 - Render Actor display names through the shared `EmojiText` domain component.
   It may replace custom-emoji codes from the Actor's `emojis` projection, but
   must not interpret display names as MFM. Use the shared `CustomEmoji`

@@ -555,6 +555,7 @@ type noteView struct {
 	RenoteID       string                `json:"renote_id,omitempty"`
 	Visibility     string                `json:"visibility"`
 	MentionURIs    []string              `json:"mention_uris"`
+	Mentions       []mentionActorView    `json:"mentions"`
 	Hashtags       []string              `json:"hashtags"`
 	Emojis         []noteEmojiView       `json:"emojis"`
 	Attachments    []attachmentView      `json:"attachments"`
@@ -618,6 +619,19 @@ type reactionActorView struct {
 	Emojis    []emojiView `json:"emojis"`
 }
 
+// mentionActorView is the minimal Actor projection required to render an MFM
+// mention as a linked avatar. It includes host so Salvia can match a parsed
+// mention token without deriving locality from an opaque Actor ID.
+type mentionActorView struct {
+	ID        string      `json:"id"`
+	Username  string      `json:"username"`
+	Name      string      `json:"name"`
+	Host      string      `json:"host"`
+	AvatarURL string      `json:"avatar_url"`
+	URI       string      `json:"uri"`
+	Emojis    []emojiView `json:"emojis"`
+}
+
 type noteReferenceView struct {
 	ID             string                `json:"id"`
 	URI            string                `json:"uri"`
@@ -628,6 +642,7 @@ type noteReferenceView struct {
 	CreatedAt      time.Time             `json:"created_at"`
 	RepliesCount   int                   `json:"replies_count"`
 	Author         *actorView            `json:"author,omitempty"`
+	Mentions       []mentionActorView    `json:"mentions"`
 	Emojis         []noteEmojiView       `json:"emojis"`
 	Attachments    []attachmentView      `json:"attachments"`
 	Reactions      []reactionSummaryView `json:"reactions"`
@@ -698,6 +713,7 @@ func projectNoteWithMediaProxy(item readmodel.Note, proxy *mediaproxy.Proxy) not
 		PublishedAt: item.Note.PublishedAt, RepliesCount: item.RepliesCount, Emojis: make([]noteEmojiView, 0, len(item.Note.Emojis)),
 		Attachments: make([]attachmentView, 0, len(item.Note.Attachments)),
 		Reactions:   make([]reactionSummaryView, 0, len(item.Reactions)),
+		Mentions:    projectMentionActorsWithMediaProxy(item.Mentions, proxy),
 	}
 	if item.Author != nil {
 		author := projectActorWithMediaProxy(item.Author, proxy)
@@ -741,6 +757,7 @@ func projectNoteReference(reference *readmodel.NoteReference, proxy *mediaproxy.
 		Emojis:      make([]noteEmojiView, 0, len(reference.Note.Emojis)),
 		Attachments: make([]attachmentView, 0, len(reference.Note.Attachments)),
 		Reactions:   make([]reactionSummaryView, 0, len(reference.Reactions)),
+		Mentions:    projectMentionActorsWithMediaProxy(reference.Mentions, proxy),
 	}
 	if reference.Author != nil {
 		author := projectActorWithMediaProxy(reference.Author, proxy)
@@ -773,7 +790,7 @@ func projectShallowNoteReference(reference *readmodel.NoteReference, proxy *medi
 	if reference == nil {
 		return nil
 	}
-	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author}, proxy)
+	view := projectNoteReference(&readmodel.NoteReference{Note: reference.Note, Author: reference.Author, Mentions: reference.Mentions}, proxy)
 	return view
 }
 
@@ -788,6 +805,32 @@ func projectReactionActorWithMediaProxy(actor *actors.Actor, proxy *mediaproxy.P
 	}
 	return reactionActorView{
 		ID: actor.ID, Username: actor.Username, Name: actor.Name,
+		AvatarURL: proxy.URL(actor.AvatarURL, mediaproxy.VariantAvatar), URI: actor.URI, Emojis: emojis,
+	}
+}
+
+func projectMentionActorsWithMediaProxy(mentions []*actors.Actor, proxy *mediaproxy.Proxy) []mentionActorView {
+	views := make([]mentionActorView, 0, len(mentions))
+	for _, actor := range mentions {
+		if actor == nil {
+			continue
+		}
+		views = append(views, projectMentionActorWithMediaProxy(actor, proxy))
+	}
+	return views
+}
+
+func projectMentionActorWithMediaProxy(actor *actors.Actor, proxy *mediaproxy.Proxy) mentionActorView {
+	emojis := make([]emojiView, 0, len(actor.ResolvedEmojis))
+	for _, emoji := range actor.ResolvedEmojis {
+		emojis = append(emojis, emojiView{Name: emoji.Name, URL: proxy.URL(emoji.URL, mediaproxy.VariantEmoji), MediaType: emoji.MediaType})
+	}
+	host := ""
+	if actor.Host != nil {
+		host = *actor.Host
+	}
+	return mentionActorView{
+		ID: actor.ID, Username: actor.Username, Name: actor.Name, Host: host,
 		AvatarURL: proxy.URL(actor.AvatarURL, mediaproxy.VariantAvatar), URI: actor.URI, Emojis: emojis,
 	}
 }

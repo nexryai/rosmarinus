@@ -5,7 +5,7 @@ import { type MfmNode, parse } from "mfm-js";
 import { emojiFontFamily } from "../globalStyles";
 import { css, keyframes } from "../lib/css";
 import { nyaize as transformNyaize } from "../lib/nyaize";
-import type { Emoji } from "../lib/schema";
+import type { Emoji, MentionActor } from "../lib/schema";
 import { CustomEmoji } from "./EmojiText";
 
 const monospaceFontFamily = `SFMono-Regular, Consolas, "Liberation Mono", "DejaVu Sans Mono", ${emojiFontFamily}, ui-monospace, monospace`;
@@ -95,6 +95,29 @@ const styles = {
     mention: {
         color: "var(--accent-hover)",
         fontWeight: 700,
+    },
+    mentionLink: {
+        padding: "0.1em 0.5em 0.1em 0.15em",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "0.25em",
+        borderRadius: "9999px",
+        color: "var(--accent-hover)",
+        background: "var(--accent-soft)",
+        fontWeight: 700,
+        textDecoration: "none",
+        verticalAlign: "baseline",
+    },
+    mentionAvatar: {
+        width: "1.5em",
+        height: "1.5em",
+        flexShrink: 0,
+        borderRadius: "100%",
+        objectFit: "cover",
+    },
+    mentionHost: {
+        opacity: 0.5,
+        fontWeight: 400,
     },
     hashtag: {
         color: "var(--accent-hover)",
@@ -205,10 +228,14 @@ const functionStyle = (node: Extract<MfmNode, { type: "fn" }>): CSSProperties | 
     }
 };
 
-const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, shouldNyaize: boolean, path = "mfm"): ReactNode[] =>
+const mentionKey = (username: string, host: string | null) => `${username.toLowerCase()}@${(host ?? "").toLowerCase()}`;
+
+const mentionActorsByHandle = (mentions: MentionActor[]) => new Map(mentions.map((actor) => [mentionKey(actor.username, actor.host || null), actor]));
+
+const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, shouldNyaize: boolean, mentions: Map<string, MentionActor>, onOpenProfile: ((actorID: string) => void) | undefined, path = "mfm"): ReactNode[] =>
     nodes.map((node, index) => {
         const key = `${path}-${index}`;
-        const children = "children" in node && node.children ? renderNodes(node.children, emojis, shouldNyaize, key) : undefined;
+        const children = "children" in node && node.children ? renderNodes(node.children, emojis, shouldNyaize, mentions, onOpenProfile, key) : undefined;
         switch (node.type) {
             case "text":
                 return shouldNyaize ? transformNyaize(node.props.text) : node.props.text;
@@ -266,12 +293,35 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, shouldNyaize:
                         {children}
                     </span>
                 );
-            case "mention":
+            case "mention": {
+                const actor = mentions.get(mentionKey(node.props.username, node.props.host));
+                if (!actor) {
+                    return (
+                        <span key={key} style={styles.mention}>
+                            {node.props.acct}
+                        </span>
+                    );
+                }
+                const href = `/profiles/${encodeURIComponent(actor.id)}`;
                 return (
-                    <span key={key} style={styles.mention}>
-                        {node.props.acct}
-                    </span>
+                    <a
+                        href={href}
+                        key={key}
+                        onClick={(event) => {
+                            if (!onOpenProfile) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onOpenProfile(actor.id);
+                        }}
+                        rel="nofollow noreferrer noopener ugc"
+                        style={styles.mentionLink}
+                    >
+                        {actor.avatar_url && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={actor.avatar_url} style={styles.mentionAvatar} />}
+                        <span>@{actor.username}</span>
+                        {actor.host && <span style={styles.mentionHost}>@{actor.host}</span>}
+                    </a>
                 );
+            }
             case "hashtag":
                 return (
                     <span key={key} style={styles.hashtag}>
@@ -355,8 +405,9 @@ const renderNodes = (nodes: MfmNode[], emojis: Map<string, Emoji>, shouldNyaize:
         }
     });
 
-export function Mfm({ className = "", emojis = [], nyaize = false, style, text }: { className?: string; emojis?: Emoji[]; nyaize?: boolean; style?: CSSProperties; text: string }) {
+export function Mfm({ className = "", emojis = [], mentions = [], nyaize = false, onOpenProfile, style, text }: { className?: string; emojis?: Emoji[]; mentions?: MentionActor[]; nyaize?: boolean; onOpenProfile?: (actorID: string) => void; style?: CSSProperties; text: string }) {
     const byName = new Map(emojis.map((emoji) => [emoji.name, emoji]));
+    const mentionsByHandle = mentionActorsByHandle(mentions);
     let nodes: MfmNode[];
     try {
         nodes = parse(text, { nestLimit: 20 });
@@ -369,7 +420,7 @@ export function Mfm({ className = "", emojis = [], nyaize = false, style, text }
     }
     return (
         <span className={className} style={{ ...styles.root, ...style }}>
-            {renderNodes(nodes, byName, nyaize)}
+            {renderNodes(nodes, byName, nyaize, mentionsByHandle, onOpenProfile)}
         </span>
     );
 }

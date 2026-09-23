@@ -347,6 +347,45 @@ func TestSalviaProjectionsIncludeRemoteActorAndReactionEmojis(t *testing.T) {
 	}
 }
 
+func TestSalviaProjectionsIncludeMentionActors(t *testing.T) {
+	proxy, err := mediaproxy.New("https://media-proxy.example/function")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteHost := "remote.test"
+	view := projectNoteWithMediaProxy(readmodel.Note{
+		Note: notes.Note{ID: "note-1", URI: "https://local.test/notes/1", Visibility: notes.VisibilityPublic, CreatedAt: time.Now(), MentionURIs: []string{"https://local.test/users/local-2", "https://remote.test/users/remote-1"}},
+		Mentions: []*actors.Actor{
+			{ID: "local-2", Username: "local2", Name: "Local Two", URI: "https://local.test/users/local-2"},
+			{ID: "remote-1", Username: "remote", Name: "Remote", Host: &remoteHost, URI: "https://remote.test/users/remote-1", AvatarURL: "https://remote.test/avatar.png", ResolvedEmojis: []emojis.Reference{{Name: "party", URL: "https://remote.test/party.webp", MediaType: "image/webp"}}, PublicKeyPEM: "secret-key"},
+		},
+	}, proxy)
+
+	if len(view.Mentions) != 2 {
+		t.Fatalf("mentions = %#v", view.Mentions)
+	}
+	local := view.Mentions[0]
+	if local.ID != "local-2" || local.Username != "local2" || local.Host != "" || local.AvatarURL != "" {
+		t.Fatalf("local mention = %#v", local)
+	}
+	remote := view.Mentions[1]
+	if remote.ID != "remote-1" || remote.Host != "remote.test" {
+		t.Fatalf("remote mention = %#v", remote)
+	}
+	assertMediaProxyURL(t, remote.AvatarURL, "https://remote.test/avatar.png", "avatar")
+	if len(remote.Emojis) != 1 {
+		t.Fatalf("remote mention emojis = %#v", remote.Emojis)
+	}
+	assertMediaProxyURL(t, remote.Emojis[0].URL, "https://remote.test/party.webp", "emoji")
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("secret-key")) {
+		t.Fatalf("mention projection leaked private key: %s", encoded)
+	}
+}
+
 func TestSalviaImageProjectionsUseMediaProxy(t *testing.T) {
 	proxy, err := mediaproxy.New("https://media-proxy.example/function")
 	if err != nil {

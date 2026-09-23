@@ -87,6 +87,27 @@ func TestDummyAPIUsesVersionedEnvelope(t *testing.T) {
 	}
 }
 
+func TestDummyAPINotesIncludeMentionActors(t *testing.T) {
+	handler := newDummyAPI(buildDemoData())
+	status, payload := getJSON(t, handler, http.MethodGet, "/api/v1/notes/dev-note-1")
+	if status != http.StatusOK {
+		t.Fatalf("note status = %d", status)
+	}
+	data, _ := payload["data"].(map[string]any)
+	mentions, _ := data["mentions"].([]any)
+	if len(mentions) != 2 {
+		t.Fatalf("mentions = %#v", data["mentions"])
+	}
+	local, _ := mentions[0].(map[string]any)
+	if local["username"] != "thyme" || local["host"] != "" {
+		t.Fatalf("local mention = %#v", local)
+	}
+	remote, _ := mentions[1].(map[string]any)
+	if remote["username"] != "mint" || remote["host"] != "mint.example" {
+		t.Fatalf("remote mention = %#v", remote)
+	}
+}
+
 func TestDummyAPIMutationsDoNotChangeData(t *testing.T) {
 	handler := newDummyAPI(buildDemoData())
 
