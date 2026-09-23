@@ -157,8 +157,15 @@ const styles = {
         opacity: 0.6,
         background: "var(--accent-soft)",
     },
+    reactions: {
+        marginTop: "0.75rem",
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: "0.5rem",
+    },
     actions: {
-        marginTop: "1rem",
+        marginTop: "0.75rem",
         display: "flex",
         alignItems: "center",
         flexWrap: "wrap",
@@ -560,6 +567,72 @@ export function NoteCard({
                                 ))}
                             </div>
                         )}
+                        {reactions.length > 0 && (
+                            <div style={styles.reactions}>
+                                {reactions.map((reaction) => {
+                                    const tooltipOpen = reactionTooltip !== null && reactionTooltip.reaction === reaction.reaction;
+                                    const item = reactors?.reaction === reaction.reaction ? reactors : null;
+                                    return (
+                                        <span key={reaction.reaction} style={styles.reactionWrap}>
+                                            <button
+                                                aria-describedby={tooltipOpen ? "reaction-tooltip" : undefined}
+                                                aria-pressed={reaction.reacted}
+                                                className={rules.action}
+                                                disabled={busy}
+                                                onBlur={scheduleReactionTooltipHide}
+                                                onClick={() => act(() => changeReaction(reaction.reaction, reaction.reacted))}
+                                                onFocus={(event) => requestReactors(reaction.reaction, event.currentTarget)}
+                                                onMouseEnter={(event) => requestReactors(reaction.reaction, event.currentTarget)}
+                                                onMouseLeave={scheduleReactionTooltipHide}
+                                                style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
+                                                type="button"
+                                            >
+                                                {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
+                                                <b style={styles.reactionCount}>{reaction.count}</b>
+                                            </button>
+                                            {tooltipOpen && (
+                                                <div
+                                                    id="reaction-tooltip"
+                                                    onMouseEnter={() => window.clearTimeout(tooltipHideTimer.current)}
+                                                    onMouseLeave={scheduleReactionTooltipHide}
+                                                    role="tooltip"
+                                                    style={{ ...styles.reactionTooltip, left: reactionTooltip.x, top: reactionTooltip.y, ...(reactionTooltip.below ? {} : { transform: "translate(-50%, -100%)" }) }}
+                                                >
+                                                    <div style={styles.reactionTooltipTitle}>{reaction.reaction.replace("@.", "")} したユーザー</div>
+                                                    {item === null || item.loading ? (
+                                                        <div style={styles.reactionTooltipStatus}>読み込み中…</div>
+                                                    ) : item.failed ? (
+                                                        <div style={styles.reactionTooltipStatus}>読み込めませんでした</div>
+                                                    ) : item.actors.length === 0 ? (
+                                                        <div style={styles.reactionTooltipStatus}>表示できるユーザーはいません</div>
+                                                    ) : (
+                                                        item.actors.map((actor) => (
+                                                            <button
+                                                                className={rules.reactionActor}
+                                                                key={actor.id}
+                                                                onClick={() => {
+                                                                    hideReactionTooltip();
+                                                                    onOpenProfile(actor.id);
+                                                                }}
+                                                                style={styles.reactionActor}
+                                                                type="button"
+                                                            >
+                                                                <Avatar actor={actor} size="xsmall" />
+                                                                <span style={styles.reactionActorName}>
+                                                                    <EmojiText emojis={actor.emojis} text={actor.name || actor.username} />
+                                                                </span>
+                                                                <span style={styles.reactionActorHandle}>@{actor.username}</span>
+                                                            </button>
+                                                        ))
+                                                    )}
+                                                    {item !== null && !item.loading && !item.failed && reaction.count > item.actors.length && <div style={styles.reactionActorMore}>他 {reaction.count - item.actors.length} 人</div>}
+                                                </div>
+                                            )}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        )}
                         <footer style={styles.actions}>
                             <button aria-label={displayedNote.replies_count > 0 ? `返信（${displayedNote.replies_count}件）` : "返信"} className={rules.action} onClick={() => onReply(displayedNote)} style={{ ...styles.action, ...styles.replyAction }} type="button">
                                 <IconMessageCircle />
@@ -571,68 +644,6 @@ export function NoteCard({
                             <button aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
                                 <IconQuote />
                             </button>
-                            {reactions.map((reaction) => {
-                                const tooltipOpen = reactionTooltip !== null && reactionTooltip.reaction === reaction.reaction;
-                                const item = reactors?.reaction === reaction.reaction ? reactors : null;
-                                return (
-                                    <span key={reaction.reaction} style={styles.reactionWrap}>
-                                        <button
-                                            aria-describedby={tooltipOpen ? "reaction-tooltip" : undefined}
-                                            aria-pressed={reaction.reacted}
-                                            className={rules.action}
-                                            disabled={busy}
-                                            onBlur={scheduleReactionTooltipHide}
-                                            onClick={() => act(() => changeReaction(reaction.reaction, reaction.reacted))}
-                                            onFocus={(event) => requestReactors(reaction.reaction, event.currentTarget)}
-                                            onMouseEnter={(event) => requestReactors(reaction.reaction, event.currentTarget)}
-                                            onMouseLeave={scheduleReactionTooltipHide}
-                                            style={{ ...styles.action, ...styles.reaction, ...(reaction.reacted ? styles.reactionActive : {}) }}
-                                            type="button"
-                                        >
-                                            {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
-                                            <b style={styles.reactionCount}>{reaction.count}</b>
-                                        </button>
-                                        {tooltipOpen && (
-                                            <div
-                                                id="reaction-tooltip"
-                                                onMouseEnter={() => window.clearTimeout(tooltipHideTimer.current)}
-                                                onMouseLeave={scheduleReactionTooltipHide}
-                                                role="tooltip"
-                                                style={{ ...styles.reactionTooltip, left: reactionTooltip.x, top: reactionTooltip.y, ...(reactionTooltip.below ? {} : { transform: "translate(-50%, -100%)" }) }}
-                                            >
-                                                <div style={styles.reactionTooltipTitle}>{reaction.reaction.replace("@.", "")} したユーザー</div>
-                                                {item === null || item.loading ? (
-                                                    <div style={styles.reactionTooltipStatus}>読み込み中…</div>
-                                                ) : item.failed ? (
-                                                    <div style={styles.reactionTooltipStatus}>読み込めませんでした</div>
-                                                ) : item.actors.length === 0 ? (
-                                                    <div style={styles.reactionTooltipStatus}>表示できるユーザーはいません</div>
-                                                ) : (
-                                                    item.actors.map((actor) => (
-                                                        <button
-                                                            className={rules.reactionActor}
-                                                            key={actor.id}
-                                                            onClick={() => {
-                                                                hideReactionTooltip();
-                                                                onOpenProfile(actor.id);
-                                                            }}
-                                                            style={styles.reactionActor}
-                                                            type="button"
-                                                        >
-                                                            <Avatar actor={actor} size="xsmall" />
-                                                            <span style={styles.reactionActorName}>
-                                                                <EmojiText emojis={actor.emojis} text={actor.name || actor.username} />
-                                                            </span>
-                                                            <span style={styles.reactionActorHandle}>@{actor.username}</span>
-                                                        </button>
-                                                    ))
-                                                )}
-                                                {item !== null && !item.loading && !item.failed && reaction.count > item.actors.length && <div style={styles.reactionActorMore}>他 {reaction.count - item.actors.length} 人</div>}
-                                            </div>
-                                        )}
-                                    </span>
-                                );
-                            })}
                             <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setEmojiPickerOpen(true)} style={styles.action} type="button">
                                 ＋
                             </button>
