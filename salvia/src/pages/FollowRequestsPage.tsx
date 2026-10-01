@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { IconBan, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
+import { IconBan, IconInbox, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
 import { EmojiText } from "../components/EmojiText";
 import { RemoteUserSearch } from "../components/RemoteUserSearch";
@@ -187,17 +187,19 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     return (
         <>
             <PageHeader title="フォローリクエスト" trailing={<IconUserCheck style={styles.headerIcon} />} />
-            <Tabs
-                ariaLabel="フォローリクエスト"
-                items={[
-                    { value: "received", label: "受け取ったリクエスト" },
-                    { value: "sent", label: "送信したリクエスト" },
-                ]}
-                onChange={setTab}
-                style={styles.tabs}
-                value={tab}
-                variant="underline"
-            />
+            <div style={{ overflowX: "auto" }}>
+                <Tabs
+                    ariaLabel="フォローリクエスト"
+                    items={[
+                        { value: "received", label: "受け取ったリクエスト", icon: <IconInbox /> },
+                        { value: "sent", label: "送信したリクエスト", icon: <IconSend /> },
+                    ]}
+                    onChange={setTab}
+                    style={{ ...styles.tabs, minWidth: "max-content" }}
+                    value={tab}
+                    variant="underline"
+                />
+            </div>
             {tab === "sent" && (
                 <section aria-label="リモートユーザー検索" style={styles.sentSearch}>
                     <RemoteUserSearch actorID={actorID} csrf={csrf} onOpenProfile={onOpenProfile} />

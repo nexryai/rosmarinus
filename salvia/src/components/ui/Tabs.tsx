@@ -1,4 +1,4 @@
-import { type CSSProperties, type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 import { css } from "../../lib/css";
 
@@ -8,15 +8,15 @@ type TabOption<T extends string> = {
     disabled?: boolean;
 };
 
+type UnderlineTabOption<T extends string> = TabOption<T> & { icon: ReactElement };
+
 type TabsProps<T extends string> = {
     ariaLabel: string;
-    items: readonly TabOption<T>[];
     onChange: (value: T) => void;
     value: T;
-    variant?: "pill" | "underline";
     className?: string;
     style?: CSSProperties;
-};
+} & ({ variant: "underline"; items: readonly UnderlineTabOption<T>[] } | { variant?: "pill"; items: readonly TabOption<T>[] });
 
 const rules = {
     root: css({
@@ -58,6 +58,18 @@ const rules = {
         flex: "0 0 auto",
         padding: "0.75rem 1rem",
         fontWeight: 800,
+    }),
+    tabContent: css({
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "0.375rem",
+        whiteSpace: "nowrap",
+        "& svg": {
+            width: "1.125rem",
+            height: "1.125rem",
+            flexShrink: 0,
+        },
     }),
     pillSelected: css({
         color: "var(--accent-ink)",
@@ -155,7 +167,10 @@ export function Tabs<T extends string>({ ariaLabel, className = "", items, onCha
                         tabIndex={selected ? 0 : -1}
                         type="button"
                     >
-                        {item.label}
+                        <span className={rules.tabContent}>
+                            {"icon" in item && <span aria-hidden="true">{item.icon}</span>}
+                            {item.label}
+                        </span>
                     </button>
                 );
             })}

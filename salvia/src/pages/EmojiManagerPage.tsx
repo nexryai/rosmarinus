@@ -1,6 +1,6 @@
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { IconDownload, IconMoodSmile, IconPencil, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
+import { IconDownload, IconMoodSmile, IconPencil, IconPlus, IconSearch, IconTrash, IconWorld } from "@tabler/icons-react";
 
 import { CustomEmoji } from "../components/EmojiText";
 import { ImageFileInput } from "../components/ImageFileInput";
@@ -341,8 +341,8 @@ export function EmojiManagerPage({ actorID, csrf, onCatalogChanged }: { actorID:
                 <Tabs
                     ariaLabel="絵文字の種類"
                     items={[
-                        { value: "local", label: "ローカル" },
-                        { value: "remote", label: "リモート" },
+                        { value: "local", label: "ローカル", icon: <IconMoodSmile /> },
+                        { value: "remote", label: "リモート", icon: <IconWorld /> },
                     ]}
                     onChange={switchScope}
                     value={scope}

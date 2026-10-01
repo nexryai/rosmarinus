@@ -1,6 +1,6 @@
-import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
+import { type CSSProperties, type FormEvent, type ReactElement, useEffect, useState } from "react";
 
-import { IconPalette, IconPlus, IconTrash, IconUserCircle } from "@tabler/icons-react";
+import { IconPalette, IconPlus, IconServer, IconSettings, IconShieldLock, IconTrash, IconUserCircle, IconUsers } from "@tabler/icons-react";
 
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { Button, ErrorBanner, PageHeader, Tabs } from "../components/ui";
@@ -12,13 +12,13 @@ import { css } from "../lib/css";
 import type { AccountSettings, Actor, ActorSettings, QueueStatus } from "../lib/schema";
 
 type SettingsTab = "general" | "profile" | "actor" | "security" | "system";
-const settingsTabs: { value: SettingsTab; label: string }[] = [
-    { value: "general", label: "General" },
-    { value: "profile", label: "Profile" },
-    { value: "actor", label: "Actor" },
-    { value: "security", label: "Security" },
-    { value: "system", label: "System" },
-];
+const settingsTabs = [
+    { value: "general", label: "General", icon: <IconSettings /> },
+    { value: "profile", label: "Profile", icon: <IconUserCircle /> },
+    { value: "actor", label: "Actor", icon: <IconUsers /> },
+    { value: "security", label: "Security", icon: <IconShieldLock /> },
+    { value: "system", label: "System", icon: <IconServer /> },
+] satisfies { value: SettingsTab; label: string; icon: ReactElement }[];
 
 const queueLabels: Record<string, string> = {
     inbox: "受信",

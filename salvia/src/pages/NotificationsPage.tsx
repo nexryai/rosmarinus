@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
-import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserPlus } from "@tabler/icons-react";
+import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserCircle, IconUserPlus, IconUsers } from "@tabler/icons-react";
 
 import { CustomEmoji, EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
@@ -140,6 +140,10 @@ const rules = {
             paddingInline: "1.75rem",
         },
     }),
+    tabsScroller: css({
+        maxWidth: "100%",
+        overflowX: "auto",
+    }),
     notification: css({
         paddingInline: "1.25rem",
         "@media (width >= 40rem)": {
@@ -222,17 +226,20 @@ export function NotificationsPage({
     return (
         <>
             <PageHeader title="通知" trailing={<IconBellCheck style={styles.headerIcon} />} />
-            <Tabs
-                ariaLabel="通知の範囲"
-                className={rules.tabs}
-                items={[
-                    { value: "actor", label: "このActor" },
-                    { value: "account", label: "すべてのActor" },
-                ]}
-                onChange={setScope}
-                value={scope}
-                variant="underline"
-            />
+            <div className={rules.tabsScroller}>
+                <Tabs
+                    ariaLabel="通知の範囲"
+                    className={rules.tabs}
+                    items={[
+                        { value: "actor", label: "このActor", icon: <IconUserCircle /> },
+                        { value: "account", label: "すべてのActor", icon: <IconUsers /> },
+                    ]}
+                    onChange={setScope}
+                    style={{ minWidth: "max-content" }}
+                    value={scope}
+                    variant="underline"
+                />
+            </div>
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading ? (
                 <Loading />
