@@ -99,6 +99,7 @@ const styles = {
         alignItems: "center",
         justifyContent: "center",
         gap: "0.5rem",
+        whiteSpace: "nowrap",
     },
     ripple: {
         position: "absolute",
