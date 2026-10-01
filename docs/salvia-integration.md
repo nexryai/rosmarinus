@@ -297,8 +297,8 @@ The queue snapshot returns `{ queues, updated_at }`. Each configured queue has
 `name`, `pending`, `active`, `scheduled`, `retry`, `archived`, `completed`,
 `aggregating`, and `paused`. Queues with no jobs are included with zero counts.
 This endpoint exposes counts only and requires an account session; Salvia never
-accesses Redis directly. The System tab loads a snapshot when opened and on
-manual refresh.
+accesses Redis directly. The System tab loads a snapshot when opened and
+refreshes it every second while the tab is active.
 
 `actor_id` on read routes is the viewing identity. It is required and must be
 an active local Actor owned by the authenticated account; it is never accepted

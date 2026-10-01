@@ -131,7 +131,6 @@ const styles = {
         gap: "0.75rem",
     },
     tabsScroller: { overflowX: "auto" },
-    queueHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" },
     queueGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(7rem, 1fr))", gap: "0.75rem", marginBlock: "1rem" },
     queueMetric: { padding: "0.875rem", borderRadius: "1rem", background: "var(--panel-muted)" },
     queueValue: { display: "block", fontSize: "1.5rem", fontWeight: 800, fontVariantNumeric: "tabular-nums" },
@@ -211,8 +210,6 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     const HeaderIcon = settingsHeaderIcons[tab];
     const [queueStatus, setQueueStatus] = useState<QueueStatus>();
     const [queueError, setQueueError] = useState("");
-    const [queueLoading, setQueueLoading] = useState(false);
-    const [queueRefresh, setQueueRefresh] = useState(0);
     const [actorSettings, setActorSettings] = useState<ActorSettings>();
     const [name, setName] = useState(selectedActor.name);
     const [summary, setSummary] = useState(selectedActor.summary);
@@ -232,13 +229,14 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
             .then(setActorSettings)
             .catch((reason) => setError(reason instanceof Error ? reason.message : "Actor設定を読み込めませんでした"));
     }, [selectedActor.avatar_url, selectedActor.id, selectedActor.name, selectedActor.summary]);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: the refresh counter intentionally triggers a new queue snapshot.
     useEffect(() => {
         if (tab !== "system") return;
         const controller = new AbortController();
         let current = true;
+        let inFlight = false;
         const load = async () => {
-            setQueueLoading(true);
+            if (inFlight) return;
+            inFlight = true;
             try {
                 const status = await api.queueStatus(controller.signal);
                 if (current) {
@@ -248,15 +246,17 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
             } catch (reason) {
                 if (current) setQueueError(reason instanceof Error ? reason.message : "ジョブキューを読み込めませんでした");
             } finally {
-                if (current) setQueueLoading(false);
+                inFlight = false;
             }
         };
         void load();
+        const interval = window.setInterval(() => void load(), 1000);
         return () => {
             current = false;
+            window.clearInterval(interval);
             controller.abort();
         };
-    }, [tab, queueRefresh]);
+    }, [tab]);
     const queueTotals = queueStatus?.queues.reduce(
         (totals, item) => ({
             active: totals.active + item.active,
@@ -437,14 +437,9 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                 )}
                 {tab === "system" && (
                     <section className={rules.card} style={styles.card}>
-                        <div style={styles.queueHeader}>
-                            <div>
-                                <h2 style={styles.cardTitle}>ジョブキュー</h2>
-                                <p style={styles.cardText}>各キューの現在のジョブ数を表示します。</p>
-                            </div>
-                            <Button disabled={queueLoading} onClick={() => setQueueRefresh((value) => value + 1)} size="small" type="button">
-                                更新
-                            </Button>
+                        <div>
+                            <h2 style={styles.cardTitle}>ジョブキュー</h2>
+                            <p style={styles.cardText}>各キューの現在のジョブ数を表示します。</p>
                         </div>
                         {queueError && <ErrorBanner message={queueError} onDismiss={() => setQueueError("")} />}
                         {queueStatus ? (
