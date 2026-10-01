@@ -78,8 +78,6 @@ const styles = {
         fontWeight: 900,
     },
     button: {
-        minHeight: "2.5rem",
-        paddingInline: "1.25rem",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
@@ -323,6 +321,25 @@ const rules = {
     }),
 };
 
+type ButtonSize = "small" | "medium" | "large";
+
+const buttonSizes = {
+    small: {
+        minHeight: "2.25rem",
+        paddingInline: "0.875rem",
+        fontSize: "0.875rem",
+    },
+    medium: {
+        minHeight: "2.5rem",
+        paddingInline: "1.25rem",
+    },
+    large: {
+        minHeight: "3rem",
+        paddingInline: "1.5rem",
+        fontSize: "1rem",
+    },
+} satisfies Record<ButtonSize, CSSProperties>;
+
 export function PageHeader({ leading, title, trailing }: { leading?: ReactNode; title: string; trailing?: ReactNode }) {
     return (
         <header className={rules.pageHeader} style={styles.pageHeader}>
@@ -372,7 +389,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
 
 type Ripple = { id: number; x: number; y: number; radius: number };
 
-export function Button({ children, className = "", disableRipple = false, onMouseDown, style, type = "button", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { disableRipple?: boolean; variant?: "primary" | "secondary" | "ghost" | "danger" }) {
+export function Button({ children, className = "", disableRipple = false, onMouseDown, size = "small", style, type = "button", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { disableRipple?: boolean; size?: ButtonSize; variant?: "primary" | "secondary" | "ghost" | "danger" }) {
     const [ripples, setRipples] = useState<Ripple[]>([]);
     const nextRippleID = useRef(0);
     const timers = useRef<number[]>([]);
@@ -402,7 +419,7 @@ export function Button({ children, className = "", disableRipple = false, onMous
     };
 
     return (
-        <button className={`${rules.button} ${rules[variant]} ${className}`} onMouseDown={handleMouseDown} style={{ ...styles.button, ...style }} type={type} {...props}>
+        <button className={`${rules.button} ${rules[variant]} ${className}`} onMouseDown={handleMouseDown} style={{ ...styles.button, ...buttonSizes[size], ...style }} type={type} {...props}>
             {ripples.map((ripple) => (
                 <span aria-hidden="true" data-testid="button-ripple" key={ripple.id} style={{ ...styles.ripple, left: ripple.x - 1, top: ripple.y - 1, "--ripple-radius": `${ripple.radius}px` } as CSSProperties} />
             ))}

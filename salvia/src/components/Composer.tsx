@@ -494,7 +494,7 @@ export function Composer({
                             </button>
                         </div>
                         {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
-                        <Button disabled={busy || !canSubmit} type="submit">
+                        <Button disabled={busy || !canSubmit} size="medium" type="submit">
                             <IconSend />
                             投稿する
                         </Button>
