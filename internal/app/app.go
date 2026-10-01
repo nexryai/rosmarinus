@@ -75,6 +75,7 @@ type App struct {
 	apClient           *apclient.Client
 	apWorker           *apworker.Handler
 	queueClient        *queue.AsynqClient
+	queueStatus        *queue.AsynqStatusReader
 	queueServer        *queue.AsynqServer
 	httpServer         *http.Server
 }
@@ -191,6 +192,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		DB:       cfg.RedisDB,
 	}
 	queueClient := queue.NewAsynqClient(redisCfg)
+	queueStatus := queue.NewAsynqStatusReader(redisCfg)
 	apClient := apclient.New(cfg, nil)
 	queueServer := queue.NewAsynqServer(redisCfg, queue.WorkerConfig{
 		Concurrency: cfg.InboxQueue.Concurrency + cfg.DeliverQueue.Concurrency + 32,
@@ -230,6 +232,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		_ = mongoClient.Disconnect(context.Background())
 		_ = redisClient.Close()
 		_ = queueClient.Close()
+		_ = queueStatus.Close()
 		return nil, err
 	}
 	authLimiter := ratelimit.NewRedisLimiter(redisClient)
@@ -238,7 +241,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	applicationAPI := api.NewHandlerCompleteWithMediaProxy(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
 		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
-		mediaUploads, apWorker, emojiAdmin, mediaProxy, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
+		mediaUploads, apWorker, emojiAdmin, mediaProxy, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL, queueStatus,
 	)
 
 	return &App{
@@ -275,6 +278,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		apClient:           apClient,
 		apWorker:           apWorker,
 		queueClient:        queueClient,
+		queueStatus:        queueStatus,
 		queueServer:        queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
@@ -316,6 +320,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.queueClient != nil {
 		if err := a.queueClient.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if a.queueStatus != nil {
+		if err := a.queueStatus.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

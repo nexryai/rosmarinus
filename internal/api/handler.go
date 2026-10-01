@@ -25,6 +25,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/idempotency"
 	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/objectstorage"
+	"github.com/nexryai/rosmarinus/internal/queue"
 	"github.com/nexryai/rosmarinus/internal/readmodel"
 	"github.com/nexryai/rosmarinus/internal/realtime"
 	"github.com/nexryai/rosmarinus/internal/settings"
@@ -82,6 +83,7 @@ type Handler struct {
 	remoteProfiles RemoteProfileResolver
 	emojiAdmin     EmojiAdmin
 	mediaProxy     *mediaproxy.Proxy
+	queueStatus    queue.StatusReader
 	mediaMaxBytes  int64
 	authRoutes     http.Handler
 	logger         *log.Logger
@@ -125,11 +127,11 @@ func NewHandlerCompleteWithEmojiAdmin(authenticator Authenticator, actorStore Ac
 	return NewHandlerCompleteWithMediaProxy(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, mediaUploads, remoteProfiles, emojiAdmin, nil, mediaMaxBytes, authRoutes, logger, receiptTTL)
 }
 
-func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaProxy *mediaproxy.Proxy, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration) http.Handler {
+func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaProxy *mediaproxy.Proxy, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration, queueStatus ...queue.StatusReader) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
-	return &Handler{
+	handler := &Handler{
 		authenticator:  authenticator,
 		actors:         actorStore,
 		executor:       executor,
@@ -149,6 +151,10 @@ func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore Ac
 		now:            func() time.Time { return time.Now().UTC() },
 		receiptTTL:     receiptTTL,
 	}
+	if len(queueStatus) > 0 {
+		handler.queueStatus = queueStatus[0]
+	}
+	return handler
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +206,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(segments) == 1 && segments[0] == "settings" {
 		h.accountSettings(w, r, accountID)
+		return
+	}
+	if len(segments) == 2 && segments[0] == "system" && segments[1] == "queues" {
+		h.queueOverview(w, r)
 		return
 	}
 	if len(segments) == 1 && segments[0] == "notifications" {

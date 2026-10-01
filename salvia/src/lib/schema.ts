@@ -197,6 +197,25 @@ export const actorSettingsSchema = z.object({
 
 export type ActorSettings = z.infer<typeof actorSettingsSchema>;
 
+export const queueStatusSchema = z.object({
+    queues: z.array(
+        z.object({
+            name: z.string(),
+            pending: z.number().int().nonnegative(),
+            active: z.number().int().nonnegative(),
+            scheduled: z.number().int().nonnegative(),
+            retry: z.number().int().nonnegative(),
+            archived: z.number().int().nonnegative(),
+            completed: z.number().int().nonnegative(),
+            aggregating: z.number().int().nonnegative(),
+            paused: z.boolean(),
+        }),
+    ),
+    updated_at: z.string(),
+});
+
+export type QueueStatus = z.infer<typeof queueStatusSchema>;
+
 export const notificationSchema = z.object({
     id: z.string(),
     actor_id: z.string(),
