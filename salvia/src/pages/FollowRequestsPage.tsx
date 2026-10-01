@@ -4,7 +4,7 @@ import { IconBan, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabl
 
 import { EmojiText } from "../components/EmojiText";
 import { RemoteUserSearch } from "../components/RemoteUserSearch";
-import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
+import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
 import { api } from "../lib/api";
@@ -68,9 +68,7 @@ const styles = {
         height: "1.125rem",
         flexShrink: 0,
     },
-    tabs: { padding: "0.75rem 1.25rem", display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--border)" },
-    tab: { minWidth: 0, padding: "0.625rem 0.75rem", flex: 1, borderRadius: "9999px", color: "var(--muted)", fontSize: "0.8125rem", fontWeight: 700 },
-    tabActive: { color: "var(--accent-ink)", background: "var(--accent-soft)" },
+    tabs: { padding: "0.75rem 1.25rem" },
     sentSearch: { borderBottom: "1px solid var(--border)" },
 } satisfies Record<string, CSSProperties>;
 
@@ -189,14 +187,16 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
     return (
         <>
             <PageHeader title="フォローリクエスト" trailing={<IconUserCheck style={styles.headerIcon} />} />
-            <div role="tablist" style={styles.tabs}>
-                <button aria-selected={tab === "received"} onClick={() => setTab("received")} role="tab" style={{ ...styles.tab, ...(tab === "received" ? styles.tabActive : {}) }} type="button">
-                    受け取ったリクエスト
-                </button>
-                <button aria-selected={tab === "sent"} onClick={() => setTab("sent")} role="tab" style={{ ...styles.tab, ...(tab === "sent" ? styles.tabActive : {}) }} type="button">
-                    送信したリクエスト
-                </button>
-            </div>
+            <Tabs
+                ariaLabel="フォローリクエスト"
+                items={[
+                    { value: "received", label: "受け取ったリクエスト" },
+                    { value: "sent", label: "送信したリクエスト" },
+                ]}
+                onChange={setTab}
+                style={styles.tabs}
+                value={tab}
+            />
             {tab === "sent" && (
                 <section aria-label="リモートユーザー検索" style={styles.sentSearch}>
                     <RemoteUserSearch actorID={actorID} csrf={csrf} onOpenProfile={onOpenProfile} />

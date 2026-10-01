@@ -222,6 +222,6 @@ describe("social inbox mutations", () => {
 
         rerender(<NotificationsPage actorID="alice" csrf="csrf" onActorChange={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} refreshKey={0} />);
         expect(await screen.findByRole("alert")).toHaveTextContent("offline");
-        expect(screen.getByRole("button", { name: "このActor" })).toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "このActor" })).toBeInTheDocument();
     });
 });

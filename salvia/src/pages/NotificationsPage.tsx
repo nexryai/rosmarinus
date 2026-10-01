@@ -4,7 +4,7 @@ import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRe
 
 import { CustomEmoji, EmojiText } from "../components/EmojiText";
 import { Mfm } from "../components/Mfm";
-import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader } from "../components/ui";
+import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "../components/ui";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { Notification } from "../lib/schema";
@@ -34,23 +34,6 @@ const styles = {
         height: "1.5rem",
         marginLeft: "auto",
         color: "var(--accent-hover)",
-    },
-    tabs: {
-        paddingBlock: "0.75rem",
-        display: "flex",
-        gap: "0.5rem",
-        borderBottom: "1px solid var(--border)",
-    },
-    tab: {
-        padding: "0.5rem 1rem",
-        borderRadius: "9999px",
-        color: "var(--muted)",
-        fontSize: "0.875rem",
-        fontWeight: 700,
-    },
-    tabActive: {
-        color: "var(--accent-ink)",
-        background: "var(--accent-soft)",
     },
     notification: {
         position: "relative",
@@ -239,14 +222,16 @@ export function NotificationsPage({
     return (
         <>
             <PageHeader title="通知" trailing={<IconBellCheck style={styles.headerIcon} />} />
-            <div className={rules.tabs} style={styles.tabs}>
-                <button aria-pressed={scope === "actor"} onClick={() => setScope("actor")} style={{ ...styles.tab, ...(scope === "actor" ? styles.tabActive : {}) }} type="button">
-                    このActor
-                </button>
-                <button aria-pressed={scope === "account"} onClick={() => setScope("account")} style={{ ...styles.tab, ...(scope === "account" ? styles.tabActive : {}) }} type="button">
-                    すべてのActor
-                </button>
-            </div>
+            <Tabs
+                ariaLabel="通知の範囲"
+                className={rules.tabs}
+                items={[
+                    { value: "actor", label: "このActor" },
+                    { value: "account", label: "すべてのActor" },
+                ]}
+                onChange={setScope}
+                value={scope}
+            />
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading ? (
                 <Loading />

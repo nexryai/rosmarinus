@@ -4,7 +4,7 @@ import { IconDownload, IconMoodSmile, IconPencil, IconPlus, IconSearch, IconTras
 
 import { CustomEmoji } from "../components/EmojiText";
 import { ImageFileInput } from "../components/ImageFileInput";
-import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader } from "../components/ui";
+import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader, Tabs } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { api } from "../lib/api";
 import { css } from "../lib/css";
@@ -37,21 +37,6 @@ const styles = {
     mobileTitle: {
         margin: 0,
         fontSize: "1.25rem",
-    },
-    tabs: {
-        display: "flex",
-        gap: "0.5rem",
-        borderBottom: "1px solid var(--border)",
-    },
-    tab: {
-        padding: "0.75rem 1rem",
-        borderBottom: "2px solid transparent",
-        color: "var(--muted)",
-        fontWeight: 800,
-    },
-    tabActive: {
-        borderBottomColor: "var(--accent-hover)",
-        color: "var(--text)",
     },
     filters: {
         display: "grid",
@@ -353,13 +338,16 @@ export function EmojiManagerPage({ actorID, csrf, onCatalogChanged }: { actorID:
                         </Button>
                     )}
                 </div>
-                <div aria-label="絵文字の種類" role="tablist" style={styles.tabs}>
-                    {(["local", "remote"] as const).map((value) => (
-                        <button aria-selected={scope === value} key={value} onClick={() => switchScope(value)} role="tab" style={{ ...styles.tab, ...(scope === value ? styles.tabActive : {}) }} type="button">
-                            {value === "local" ? "ローカル" : "リモート"}
-                        </button>
-                    ))}
-                </div>
+                <Tabs
+                    ariaLabel="絵文字の種類"
+                    items={[
+                        { value: "local", label: "ローカル" },
+                        { value: "remote", label: "リモート" },
+                    ]}
+                    onChange={switchScope}
+                    value={scope}
+                    variant="underline"
+                />
                 <form
                     className={scope === "remote" ? rules.remoteFilters : rules.localFilters}
                     onSubmit={(event) => {

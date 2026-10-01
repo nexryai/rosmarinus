@@ -7,6 +7,7 @@ import { useIsMobile } from "../lib/responsive";
 import { DrawerFrame } from "./ui/Drawer";
 
 export { Avatar } from "./ui/Avatar";
+export { Tabs } from "./ui/Tabs";
 
 const spin = keyframes({
     to: {
