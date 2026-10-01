@@ -231,6 +231,7 @@ export function NotificationsPage({
                 ]}
                 onChange={setScope}
                 value={scope}
+                variant="underline"
             />
             {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
             {loading ? (

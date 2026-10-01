@@ -196,6 +196,7 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
                 onChange={setTab}
                 style={styles.tabs}
                 value={tab}
+                variant="underline"
             />
             {tab === "sent" && (
                 <section aria-label="リモートユーザー検索" style={styles.sentSearch}>
