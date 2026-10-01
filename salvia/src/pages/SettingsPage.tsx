@@ -1,6 +1,6 @@
 import { type CSSProperties, type FormEvent, type ReactElement, useEffect, useState } from "react";
 
-import { IconPalette, IconPlus, IconServer, IconSettings, IconShieldLock, IconTrash, IconUserCircle, IconUsers } from "@tabler/icons-react";
+import { IconPlus, IconServer, IconSettings, IconShieldLock, IconTrash, IconUserCircle, IconUsers } from "@tabler/icons-react";
 
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { Button, ErrorBanner, PageHeader, Tabs } from "../components/ui";
@@ -19,6 +19,13 @@ const settingsTabs = [
     { value: "security", label: "Security", icon: <IconShieldLock /> },
     { value: "system", label: "System", icon: <IconServer /> },
 ] satisfies { value: SettingsTab; label: string; icon: ReactElement }[];
+const settingsHeaderIcons = {
+    general: IconSettings,
+    profile: IconUserCircle,
+    actor: IconUsers,
+    security: IconShieldLock,
+    system: IconServer,
+} satisfies Record<SettingsTab, typeof IconSettings>;
 
 const queueLabels: Record<string, string> = {
     inbox: "受信",
@@ -201,6 +208,7 @@ const visibilityOptions = [
 
 export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, onSettingsChanged, selectedActor }: { accountSettings: AccountSettings; actors: Actor[]; csrf: string; onActorsChanged: () => Promise<void>; onSettingsChanged: (value: AccountSettings) => void; selectedActor: Actor }) {
     const [tab, setTab] = useState<SettingsTab>("general");
+    const HeaderIcon = settingsHeaderIcons[tab];
     const [queueStatus, setQueueStatus] = useState<QueueStatus>();
     const [queueError, setQueueError] = useState("");
     const [queueLoading, setQueueLoading] = useState(false);
@@ -315,7 +323,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     };
     return (
         <>
-            <PageHeader title="設定" trailing={<IconPalette style={styles.headerIcon} />} />
+            <PageHeader title="設定" trailing={<HeaderIcon style={styles.headerIcon} />} />
             <div className={rules.stack}>
                 <div style={styles.tabsScroller}>
                     <Tabs ariaLabel="設定カテゴリー" items={settingsTabs} onChange={setTab} style={{ minWidth: "max-content" }} value={tab} variant="underline" />
