@@ -38,8 +38,10 @@ type accountDocument struct {
 }
 
 type passkeyCredentialDocument struct {
-	ID   string `bson:"id"`
-	Data []byte `bson:"data"`
+	ID        string    `bson:"id"`
+	Data      []byte    `bson:"data"`
+	Name      string    `bson:"name,omitempty"`
+	CreatedAt time.Time `bson:"createdAt,omitempty"`
 }
 
 func NewAccountRepository(db *mongo.Database) *AccountRepository {
@@ -89,7 +91,7 @@ func (r *AccountRepository) ActivateInitial(ctx context.Context, id string, cred
 	}, bson.M{
 		"$set": bson.M{
 			"status": account.StatusActive, "updatedAt": now,
-			"credentials": bson.A{passkeyCredentialDocument{ID: credentialID(credential.ID), Data: encoded}},
+			"credentials": bson.A{passkeyCredentialDocument{ID: credentialID(credential.ID), Data: encoded, Name: "最初のパスキー", CreatedAt: now}},
 		},
 		"$unset": bson.M{"expiresAt": ""},
 	})
@@ -109,6 +111,96 @@ func (r *AccountRepository) DeletePending(ctx context.Context, id string) error 
 
 func (r *AccountRepository) FindActiveByUserHandle(ctx context.Context, handle []byte) (*appauth.User, error) {
 	return r.findUser(ctx, bson.M{"webAuthnId": handle, "status": account.StatusActive, "deletedAt": nil})
+}
+
+func (r *AccountRepository) FindActiveByID(ctx context.Context, id string) (*appauth.User, error) {
+	return r.findUser(ctx, bson.M{"_id": id, "status": account.StatusActive, "deletedAt": nil})
+}
+
+func (r *AccountRepository) ListPasskeys(ctx context.Context, accountID string) ([]appauth.PasskeyInfo, error) {
+	var doc accountDocument
+	err := r.collection.FindOne(ctx, bson.M{"_id": accountID, "status": account.StatusActive, "deletedAt": nil}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, appauth.ErrUnauthenticated
+	}
+	if err != nil {
+		return nil, err
+	}
+	passkeys := make([]appauth.PasskeyInfo, 0, len(doc.Credentials))
+	for _, stored := range doc.Credentials {
+		name := stored.Name
+		if name == "" {
+			name = "パスキー"
+		}
+		createdAt := stored.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = doc.CreatedAt
+		}
+		passkeys = append(passkeys, appauth.PasskeyInfo{ID: stored.ID, Name: name, CreatedAt: &createdAt})
+	}
+	return passkeys, nil
+}
+
+func (r *AccountRepository) AddPasskey(ctx context.Context, accountID, name string, credential webauthn.Credential, now time.Time) error {
+	encoded, err := json.Marshal(credential)
+	if err != nil {
+		return err
+	}
+	id := credentialID(credential.ID)
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id": accountID, "status": account.StatusActive, "deletedAt": nil,
+		"credentials.id": bson.M{"$ne": id},
+	}, bson.M{
+		"$push": bson.M{"credentials": passkeyCredentialDocument{ID: id, Data: encoded, Name: name, CreatedAt: now}},
+		"$set":  bson.M{"updatedAt": now},
+	})
+	if mongo.IsDuplicateKeyError(err) {
+		return appauth.ErrPasskeyExists
+	}
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return appauth.ErrPasskeyExists
+	}
+	return nil
+}
+
+func (r *AccountRepository) RenamePasskey(ctx context.Context, accountID, passkeyID, name string, now time.Time) error {
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id": accountID, "status": account.StatusActive, "deletedAt": nil, "credentials.id": passkeyID,
+	}, bson.M{"$set": bson.M{"credentials.$.name": name, "updatedAt": now}})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount != 1 {
+		return appauth.ErrPasskeyNotFound
+	}
+	return nil
+}
+
+func (r *AccountRepository) DeletePasskey(ctx context.Context, accountID, passkeyID string, now time.Time) error {
+	result, err := r.collection.UpdateOne(ctx, bson.M{
+		"_id": accountID, "status": account.StatusActive, "deletedAt": nil,
+		"credentials.id": passkeyID, "credentials.1": bson.M{"$exists": true},
+	}, bson.M{
+		"$pull": bson.M{"credentials": bson.M{"id": passkeyID}},
+		"$set":  bson.M{"updatedAt": now},
+	})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 1 {
+		return nil
+	}
+	passkeys, err := r.ListPasskeys(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if len(passkeys) == 1 && passkeys[0].ID == passkeyID {
+		return appauth.ErrLastPasskey
+	}
+	return appauth.ErrPasskeyNotFound
 }
 
 func (r *AccountRepository) UpdateCredential(ctx context.Context, accountID string, previous, credential webauthn.Credential, now time.Time) error {

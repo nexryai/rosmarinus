@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nexryai/rosmarinus/internal/account"
+	appauth "github.com/nexryai/rosmarinus/internal/auth"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
@@ -69,6 +70,19 @@ type EmojiAdmin interface {
 	ImportRemote(context.Context, string, string, string) (*emojis.Emoji, error)
 }
 
+type PasskeyManager interface {
+	ListPasskeys(context.Context, string) ([]appauth.PasskeyInfo, error)
+	BeginAdditionalRegistration(context.Context, string, string) (appauth.CeremonyOptions, error)
+	FinishAdditionalRegistration(context.Context, string, string, *http.Request) error
+	RenamePasskey(context.Context, string, string, string) error
+	DeletePasskey(context.Context, string, string) error
+}
+
+type HandlerExtras struct {
+	QueueStatus queue.StatusReader
+	Passkeys    PasskeyManager
+}
+
 type Handler struct {
 	authenticator  Authenticator
 	actors         ActorStore
@@ -84,6 +98,7 @@ type Handler struct {
 	emojiAdmin     EmojiAdmin
 	mediaProxy     *mediaproxy.Proxy
 	queueStatus    queue.StatusReader
+	passkeys       PasskeyManager
 	mediaMaxBytes  int64
 	authRoutes     http.Handler
 	logger         *log.Logger
@@ -127,7 +142,7 @@ func NewHandlerCompleteWithEmojiAdmin(authenticator Authenticator, actorStore Ac
 	return NewHandlerCompleteWithMediaProxy(authenticator, actorStore, executor, receipts, reader, settingsStore, instance, events, accounts, mediaUploads, remoteProfiles, emojiAdmin, nil, mediaMaxBytes, authRoutes, logger, receiptTTL)
 }
 
-func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaProxy *mediaproxy.Proxy, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration, queueStatus ...queue.StatusReader) http.Handler {
+func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore ActorStore, executor connector.CommandExecutor, receipts idempotency.Store, reader readmodel.Reader, settingsStore settings.Repository, instance InstanceInfo, events realtime.Broker, accounts AccountLookup, mediaUploads MediaUploadStore, remoteProfiles RemoteProfileResolver, emojiAdmin EmojiAdmin, mediaProxy *mediaproxy.Proxy, mediaMaxBytes int64, authRoutes http.Handler, logger *log.Logger, receiptTTL time.Duration, extras ...HandlerExtras) http.Handler {
 	if receiptTTL <= 0 {
 		receiptTTL = 7 * 24 * time.Hour
 	}
@@ -151,8 +166,9 @@ func NewHandlerCompleteWithMediaProxy(authenticator Authenticator, actorStore Ac
 		now:            func() time.Time { return time.Now().UTC() },
 		receiptTTL:     receiptTTL,
 	}
-	if len(queueStatus) > 0 {
-		handler.queueStatus = queueStatus[0]
+	if len(extras) > 0 {
+		handler.queueStatus = extras[0].QueueStatus
+		handler.passkeys = extras[0].Passkeys
 	}
 	return handler
 }
@@ -210,6 +226,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(segments) == 2 && segments[0] == "system" && segments[1] == "queues" {
 		h.queueOverview(w, r)
+		return
+	}
+	if len(segments) >= 1 && segments[0] == "passkeys" {
+		h.passkeyResource(w, r, accountID, segments[1:])
 		return
 	}
 	if len(segments) == 1 && segments[0] == "notifications" {

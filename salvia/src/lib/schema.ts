@@ -216,6 +216,14 @@ export const queueStatusSchema = z.object({
 
 export type QueueStatus = z.infer<typeof queueStatusSchema>;
 
+export const passkeySchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    created_at: z.string().optional(),
+});
+
+export type Passkey = z.infer<typeof passkeySchema>;
+
 export const notificationSchema = z.object({
     id: z.string(),
     actor_id: z.string(),

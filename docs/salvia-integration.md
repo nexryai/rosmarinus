@@ -174,13 +174,28 @@ The first REST milestone must cover:
 | `POST` | `/api/v1/auth/login/finish` | Consume and verify the assertion and create a session |
 | `POST` | `/api/v1/auth/logout` | Revoke the current session and expire its cookie |
 | `GET` | `/api/v1/session` | Return the authenticated account projection and CSRF token |
+| `GET` | `/api/v1/passkeys` | List the current account's passkey names, IDs, and registration dates |
+| `POST` | `/api/v1/passkeys/register/start` | Start an additional, account-bound passkey registration with a name |
+| `POST` | `/api/v1/passkeys/register/finish` | Verify and add the passkey; return the updated list |
+| `PATCH`, `DELETE` | `/api/v1/passkeys/{passkeyId}` | Rename or remove a passkey owned by the current account |
 
-The two finish endpoints receive the standard WebAuthn credential JSON body
+The setup, login, and additional-registration finish endpoints receive the standard WebAuthn credential JSON body
 and require `X-WebAuthn-Ceremony-ID` from their matching start response.
 Ceremonies are short-lived, stored server-side, and atomically consumed before
 verification. A finish request therefore cannot be replayed. Successful setup
 or login sets a random HTTP-only session cookie; only its SHA-256 digest is
 stored in MongoDB.
+
+The authenticated passkey management routes require the session cookie and
+CSRF token for mutations. Registration start accepts `{ "name": string }` and
+returns the same `{ ceremony_id, public_key }` shape as initial setup. The
+browser creates a credential with `navigator.credentials.create`, then sends
+the WebAuthn JSON to registration finish with `X-WebAuthn-Ceremony-ID`. Each
+ceremony is bound to the current account and can be consumed once. Passkey
+IDs are URL-safe base64 credential IDs; list responses omit credential public
+keys and verification data. Renaming accepts `{ "name": string }`. Deletion
+atomically refuses to remove an account's final passkey. This account-only
+feature has no observable behavior in the real-Misskey federation fixture.
 
 ### Implemented Actor and mutation endpoints
 

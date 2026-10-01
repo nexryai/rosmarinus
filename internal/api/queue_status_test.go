@@ -24,14 +24,14 @@ func (f *fakeQueueStatusReader) Snapshot(context.Context) (queue.Snapshot, error
 
 func TestQueueOverviewRequiresSessionAndReturnsCounts(t *testing.T) {
 	reader := &fakeQueueStatusReader{}
-	handler := NewHandlerCompleteWithMediaProxy(fakeAuthenticator{}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, reader)
+	handler := NewHandlerCompleteWithMediaProxy(fakeAuthenticator{}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, HandlerExtras{QueueStatus: reader})
 	unauthorized := httptest.NewRecorder()
 	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/v1/system/queues", nil))
 	if unauthorized.Code != http.StatusUnauthorized || reader.called {
 		t.Fatalf("unauthorized status=%d called=%t", unauthorized.Code, reader.called)
 	}
 
-	handler = NewHandlerCompleteWithMediaProxy(fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf"}}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, reader)
+	handler = NewHandlerCompleteWithMediaProxy(fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf"}}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, HandlerExtras{QueueStatus: reader})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/system/queues", nil))
 	if response.Code != http.StatusOK || !reader.called {
@@ -51,7 +51,7 @@ func TestQueueOverviewRequiresSessionAndReturnsCounts(t *testing.T) {
 
 func TestQueueOverviewFailureReturnsServerError(t *testing.T) {
 	reader := &fakeQueueStatusReader{err: errors.New("redis unavailable")}
-	handler := NewHandlerCompleteWithMediaProxy(fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf"}}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, reader)
+	handler := NewHandlerCompleteWithMediaProxy(fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf"}}, nil, nil, nil, nil, nil, InstanceInfo{}, nil, nil, nil, nil, nil, nil, 0, nil, nil, 0, HandlerExtras{QueueStatus: reader})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/system/queues", nil))
 	if response.Code != http.StatusInternalServerError {

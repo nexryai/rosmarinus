@@ -2,6 +2,7 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 
 import { IconPalette, IconPlus, IconTrash, IconUserCircle } from "@tabler/icons-react";
 
+import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { Button, ErrorBanner, PageHeader, Tabs } from "../components/ui";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
@@ -10,11 +11,12 @@ import { api } from "../lib/api";
 import { css } from "../lib/css";
 import type { AccountSettings, Actor, ActorSettings, QueueStatus } from "../lib/schema";
 
-type SettingsTab = "general" | "profile" | "actor" | "system";
+type SettingsTab = "general" | "profile" | "actor" | "security" | "system";
 const settingsTabs: { value: SettingsTab; label: string }[] = [
     { value: "general", label: "General" },
     { value: "profile", label: "Profile" },
     { value: "actor", label: "Actor" },
+    { value: "security", label: "Security" },
     { value: "system", label: "System" },
 ];
 
@@ -486,6 +488,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                         )}
                     </section>
                 )}
+                {tab === "security" && <SecuritySettings csrf={csrf} />}
             </div>
             {deleteDialogOpen && (
                 <ConfirmDialog busy={deleting} confirmLabel="削除する" onCancel={() => setDeleteDialogOpen(false)} onConfirm={() => void deleteActor()} title="Actorを削除しますか？">

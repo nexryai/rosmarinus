@@ -21,7 +21,9 @@ import {
     type Notification,
     noteSchema,
     notificationSchema,
+    type Passkey,
     type Profile,
+    passkeySchema,
     profileSchema,
     type QueueStatus,
     queueStatusSchema,
@@ -110,6 +112,15 @@ export const api = {
     setupFinish: (ceremonyID: string, credential: unknown) => request("/auth/setup/finish", envelope(z.object({ csrf_token: z.string() })), { method: "POST", body: credential, headers: { "X-WebAuthn-Ceremony-ID": ceremonyID } }),
     loginStart: () => request("/auth/login/start", envelope(z.object({ ceremony_id: z.string(), public_key: z.unknown() })), { method: "POST" }),
     loginFinish: (ceremonyID: string, credential: unknown) => request("/auth/login/finish", envelope(z.object({ csrf_token: z.string() })), { method: "POST", body: credential, headers: { "X-WebAuthn-Ceremony-ID": ceremonyID } }),
+    passkeys: async (signal?: AbortSignal): Promise<Passkey[]> => (await request("/passkeys", envelope(z.array(passkeySchema)), { signal })).data,
+    passkeyRegistrationStart: async (csrf: string, name: string) => (await request("/passkeys/register/start", envelope(z.object({ ceremony_id: z.string(), public_key: z.unknown() })), { method: "POST", body: { name }, csrf })).data,
+    passkeyRegistrationFinish: async (csrf: string, ceremonyID: string, credential: unknown): Promise<Passkey[]> => (await request("/passkeys/register/finish", envelope(z.array(passkeySchema)), { method: "POST", body: credential, csrf, headers: { "X-WebAuthn-Ceremony-ID": ceremonyID } })).data,
+    renamePasskey: async (csrf: string, id: string, name: string): Promise<void> => {
+        await request(`/passkeys/${encodeURIComponent(id)}`, z.undefined(), { method: "PATCH", body: { name }, csrf });
+    },
+    deletePasskey: async (csrf: string, id: string): Promise<void> => {
+        await request(`/passkeys/${encodeURIComponent(id)}`, z.undefined(), { method: "DELETE", csrf });
+    },
     logout: (csrf: string) => request("/auth/logout", z.undefined(), { method: "POST", csrf }),
     session: async (): Promise<Session> => (await request("/session", envelope(sessionSchema))).data,
     actors: async (): Promise<Actor[]> => (await request("/actors?limit=100", pageEnvelope(actorSchema))).data,

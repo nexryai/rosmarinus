@@ -23,6 +23,7 @@ type webAuthnCeremonyDocument struct {
 	ID        string               `bson:"_id"`
 	Type      appauth.CeremonyType `bson:"type"`
 	AccountID string               `bson:"accountId,omitempty"`
+	Name      string               `bson:"name,omitempty"`
 	Session   []byte               `bson:"session"`
 	CreatedAt time.Time            `bson:"createdAt"`
 	ExpiresAt time.Time            `bson:"expiresAt"`
@@ -45,7 +46,7 @@ func (r *WebAuthnCeremonyRepository) Create(ctx context.Context, ceremony appaut
 		return nil, fmt.Errorf("generate WebAuthn ceremony id: %w", err)
 	}
 	_, err = r.collection.InsertOne(ctx, webAuthnCeremonyDocument{
-		ID: ceremony.ID, Type: ceremony.Type, AccountID: ceremony.AccountID,
+		ID: ceremony.ID, Type: ceremony.Type, AccountID: ceremony.AccountID, Name: ceremony.Name,
 		Session: session, CreatedAt: ceremony.CreatedAt, ExpiresAt: ceremony.ExpiresAt,
 	})
 	if err != nil {
@@ -73,7 +74,7 @@ func (r *WebAuthnCeremonyRepository) Consume(ctx context.Context, id string, cer
 		return nil, fmt.Errorf("decode WebAuthn ceremony: %w", err)
 	}
 	return &appauth.Ceremony{
-		ID: document.ID, Type: document.Type, AccountID: document.AccountID,
+		ID: document.ID, Type: document.Type, AccountID: document.AccountID, Name: document.Name,
 		Session: session, CreatedAt: document.CreatedAt, ExpiresAt: document.ExpiresAt,
 	}, nil
 }

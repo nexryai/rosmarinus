@@ -241,7 +241,8 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	applicationAPI := api.NewHandlerCompleteWithMediaProxy(
 		sessionManager, cachedActorRepo, apWorker, idempotencyRepo, salviaReader, settingsRepo,
 		api.NewInstanceInfo(cfg.WebAuthnRPName, cfg.PublicURL, cfg.UserAgent), realtimeBroker, accountRepo,
-		mediaUploads, apWorker, emojiAdmin, mediaProxy, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL, queueStatus,
+		mediaUploads, apWorker, emojiAdmin, mediaProxy, cfg.MediaMaxBytes, authAPI, logger, cfg.APIIdempotencyTTL,
+		api.HandlerExtras{QueueStatus: queueStatus, Passkeys: passkeys},
 	)
 
 	return &App{

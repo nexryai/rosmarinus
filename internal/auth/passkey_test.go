@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/nexryai/rosmarinus/internal/account"
@@ -15,6 +16,7 @@ type fakePasskeyAccounts struct {
 	reserved account.Account
 	expires  time.Time
 	err      error
+	active   *User
 }
 
 func (s *fakePasskeyAccounts) ReserveInitial(_ context.Context, value account.Account, expires time.Time) (*User, error) {
@@ -40,6 +42,21 @@ func (*fakePasskeyAccounts) FindActiveByUserHandle(context.Context, []byte) (*Us
 }
 
 func (*fakePasskeyAccounts) UpdateCredential(context.Context, string, webauthn.Credential, webauthn.Credential, time.Time) error {
+	return nil
+}
+func (s *fakePasskeyAccounts) FindActiveByID(context.Context, string) (*User, error) {
+	return s.active, s.err
+}
+func (*fakePasskeyAccounts) ListPasskeys(context.Context, string) ([]PasskeyInfo, error) {
+	return nil, nil
+}
+func (*fakePasskeyAccounts) AddPasskey(context.Context, string, string, webauthn.Credential, time.Time) error {
+	return nil
+}
+func (*fakePasskeyAccounts) RenamePasskey(context.Context, string, string, string, time.Time) error {
+	return nil
+}
+func (*fakePasskeyAccounts) DeletePasskey(context.Context, string, string, time.Time) error {
 	return nil
 }
 
@@ -95,6 +112,38 @@ func TestPasskeyServiceBeginsSoleInitialRegistration(t *testing.T) {
 	}
 	if !accounts.expires.Equal(now.Add(5 * time.Minute)) {
 		t.Fatalf("expiry = %s", accounts.expires)
+	}
+}
+
+func TestAdditionalPasskeyCeremonyIsScopedAndExcludesExistingKey(t *testing.T) {
+	accounts := &fakePasskeyAccounts{active: &User{
+		Account:     account.Account{ID: "account-1", Username: "admin", DisplayName: "Administrator", WebAuthnID: make([]byte, 32)},
+		Credentials: []webauthn.Credential{{ID: []byte("existing-key")}},
+	}}
+	ceremonies := &fakeCeremonies{}
+	service, err := NewPasskeyService(&webauthn.Config{
+		RPID: "example.test", RPDisplayName: "Rosmarinus", RPOrigins: []string{"https://example.test"},
+	}, accounts, ceremonies, nil, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.random = func(int) (string, error) { return "ceremony-id", nil }
+	options, err := service.BeginAdditionalRegistration(context.Background(), "account-1", " Phone ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	creation, ok := options.PublicKey.(*protocol.CredentialCreation)
+	if !ok {
+		t.Fatalf("creation type = %T", options.PublicKey)
+	}
+	if len(creation.Response.CredentialExcludeList) != 1 || string(creation.Response.CredentialExcludeList[0].CredentialID) != "existing-key" {
+		t.Fatalf("excluded credentials = %+v", creation.Response.CredentialExcludeList)
+	}
+	if ceremonies.ceremony == nil || ceremonies.ceremony.AccountID != "account-1" || ceremonies.ceremony.Name != "Phone" || ceremonies.ceremony.Type != CeremonyAdditionalRegistration {
+		t.Fatalf("ceremony = %+v", ceremonies.ceremony)
+	}
+	if err := service.FinishAdditionalRegistration(context.Background(), "account-2", options.CeremonyID, nil); !errors.Is(err, ErrCeremonyNotFound) {
+		t.Fatalf("cross-account finish error = %v", err)
 	}
 }
 

@@ -72,4 +72,13 @@ describe("SettingsPage destructive actions", () => {
         expect(screen.getByText(/受信/)).toBeInTheDocument();
         expect(screen.getByText("停止中")).toBeInTheDocument();
     });
+
+    it("opens passkey management in the Security tab", async () => {
+        vi.spyOn(api, "actorSettings").mockResolvedValue({ actor_id: actor.id, default_visibility: "public", show_content_warning: false, display_order: 0, pinned: false });
+        vi.spyOn(api, "passkeys").mockResolvedValue([{ id: "key-1", name: "Phone", created_at: "2026-09-01T00:00:00Z" }]);
+        const user = userEvent.setup();
+        render(<SettingsPage accountSettings={accountSettings} actors={[actor]} csrf="csrf" onActorsChanged={vi.fn()} onSettingsChanged={vi.fn()} selectedActor={actor} />);
+        await user.click(screen.getByRole("tab", { name: "Security" }));
+        expect(await screen.findByRole("textbox", { name: "Phoneの名前" })).toBeInTheDocument();
+    });
 });

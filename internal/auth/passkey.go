@@ -17,13 +17,18 @@ import (
 type CeremonyType string
 
 const (
-	CeremonyInitialRegistration CeremonyType = "initial_registration"
-	CeremonyLogin               CeremonyType = "login"
+	CeremonyInitialRegistration    CeremonyType = "initial_registration"
+	CeremonyAdditionalRegistration CeremonyType = "additional_registration"
+	CeremonyLogin                  CeremonyType = "login"
 )
 
 var (
-	ErrRegistrationClosed = errors.New("initial registration is closed")
-	ErrCeremonyNotFound   = errors.New("WebAuthn ceremony not found or expired")
+	ErrRegistrationClosed  = errors.New("initial registration is closed")
+	ErrCeremonyNotFound    = errors.New("WebAuthn ceremony not found or expired")
+	ErrPasskeyNotFound     = errors.New("passkey not found")
+	ErrLastPasskey         = errors.New("cannot delete the last passkey")
+	ErrPasskeyExists       = errors.New("passkey already registered")
+	ErrPasskeyVerification = errors.New("passkey verification failed")
 )
 
 type User struct {
@@ -45,12 +50,24 @@ type AccountStore interface {
 	DeletePending(context.Context, string) error
 	FindActiveByUserHandle(context.Context, []byte) (*User, error)
 	UpdateCredential(context.Context, string, webauthn.Credential, webauthn.Credential, time.Time) error
+	FindActiveByID(context.Context, string) (*User, error)
+	ListPasskeys(context.Context, string) ([]PasskeyInfo, error)
+	AddPasskey(context.Context, string, string, webauthn.Credential, time.Time) error
+	RenamePasskey(context.Context, string, string, string, time.Time) error
+	DeletePasskey(context.Context, string, string, time.Time) error
+}
+
+type PasskeyInfo struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 type Ceremony struct {
 	ID        string
 	Type      CeremonyType
 	AccountID string
+	Name      string
 	Session   webauthn.SessionData
 	CreatedAt time.Time
 	ExpiresAt time.Time
@@ -163,6 +180,81 @@ func (s *PasskeyService) FinishInitialRegistration(ctx context.Context, ceremony
 		return SessionCredentials{}, fmt.Errorf("activate initial account: %w", err)
 	}
 	return s.sessions.Create(ctx, ceremony.AccountID)
+}
+
+func (s *PasskeyService) ListPasskeys(ctx context.Context, accountID string) ([]PasskeyInfo, error) {
+	return s.accounts.ListPasskeys(ctx, accountID)
+}
+
+func (s *PasskeyService) BeginAdditionalRegistration(ctx context.Context, accountID, name string) (CeremonyOptions, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 64 {
+		return CeremonyOptions{}, fmt.Errorf("passkey name must contain 1 to 64 characters")
+	}
+	user, err := s.accounts.FindActiveByID(ctx, accountID)
+	if err != nil {
+		return CeremonyOptions{}, err
+	}
+	if user == nil {
+		return CeremonyOptions{}, ErrUnauthenticated
+	}
+	creation, session, err := s.webauthn.BeginMediatedRegistration(user, protocol.MediationDefault,
+		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
+		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+	)
+	if err != nil {
+		return CeremonyOptions{}, fmt.Errorf("begin additional passkey registration: %w", err)
+	}
+	ceremonyID, err := s.random(18)
+	if err != nil {
+		return CeremonyOptions{}, err
+	}
+	now := s.now()
+	ceremony, err := s.ceremonies.Create(ctx, Ceremony{
+		ID: ceremonyID, Type: CeremonyAdditionalRegistration, AccountID: accountID, Name: name,
+		Session: *session, CreatedAt: now, ExpiresAt: now.Add(s.ceremonyTTL),
+	})
+	if err != nil {
+		return CeremonyOptions{}, fmt.Errorf("store additional registration ceremony: %w", err)
+	}
+	return CeremonyOptions{CeremonyID: ceremony.ID, PublicKey: creation}, nil
+}
+
+func (s *PasskeyService) FinishAdditionalRegistration(ctx context.Context, accountID, ceremonyID string, response *http.Request) error {
+	ceremony, err := s.consume(ctx, ceremonyID, CeremonyAdditionalRegistration)
+	if err != nil {
+		return err
+	}
+	if ceremony.AccountID != accountID {
+		return ErrCeremonyNotFound
+	}
+	user, err := s.accounts.FindActiveByID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return ErrUnauthenticated
+	}
+	credential, err := s.webauthn.FinishRegistration(user, ceremony.Session, response)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPasskeyVerification, err)
+	}
+	if err := s.accounts.AddPasskey(ctx, accountID, ceremony.Name, *credential, s.now()); err != nil {
+		return fmt.Errorf("add passkey: %w", err)
+	}
+	return nil
+}
+
+func (s *PasskeyService) RenamePasskey(ctx context.Context, accountID, passkeyID, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 64 {
+		return fmt.Errorf("passkey name must contain 1 to 64 characters")
+	}
+	return s.accounts.RenamePasskey(ctx, accountID, passkeyID, name, s.now())
+}
+
+func (s *PasskeyService) DeletePasskey(ctx context.Context, accountID, passkeyID string) error {
+	return s.accounts.DeletePasskey(ctx, accountID, passkeyID, s.now())
 }
 
 func (s *PasskeyService) BeginLogin(ctx context.Context) (CeremonyOptions, error) {
