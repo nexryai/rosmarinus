@@ -37,9 +37,6 @@ const styles = {
         marginLeft: "auto",
         color: "var(--accent-hover)",
     },
-    stack: {
-        background: "var(--page)",
-    },
     success: {
         margin: "1rem",
         padding: "0.75rem 1rem",
@@ -319,7 +316,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     return (
         <>
             <PageHeader title="設定" trailing={<IconPalette style={styles.headerIcon} />} />
-            <div className={rules.stack} style={styles.stack}>
+            <div className={rules.stack}>
                 <div style={styles.tabsScroller}>
                     <Tabs ariaLabel="設定カテゴリー" items={settingsTabs} onChange={setTab} style={{ minWidth: "max-content" }} value={tab} variant="underline" />
                 </div>
