@@ -17,6 +17,7 @@ import (
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	domainmedia "github.com/nexryai/rosmarinus/internal/domain/media"
 	"github.com/nexryai/rosmarinus/internal/idempotency"
+	"github.com/nexryai/rosmarinus/internal/mediaproxy"
 	"github.com/nexryai/rosmarinus/internal/objectstorage"
 )
 
@@ -582,6 +583,40 @@ func TestHandlerPreparesDirectObjectStorageUpload(t *testing.T) {
 	if !bytes.Contains(recorder.Body.Bytes(), []byte(`"upload_url":"https://s3.test/upload"`)) {
 		t.Fatalf("response = %s", recorder.Body.String())
 	}
+}
+
+func TestCompletedProfileUploadSeparatesSourceAndDisplayURLs(t *testing.T) {
+	_, executor, actorsStore := testHandler()
+	proxy, err := mediaproxy.New("https://media-proxy.example/function")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "https://objects.test/image.webp"
+	uploads := &fakeMediaUploadStore{items: []*domainmedia.Media{{ID: "media-1", OwnerActorID: "actor-1", PublicURL: source, ContentType: "image/webp"}}}
+	handler := NewHandlerCompleteWithMediaProxy(
+		fakeAuthenticator{session: &Session{AccountID: "account-1", CSRFToken: "csrf-token"}},
+		actorsStore, executor, &fakeReceiptStore{}, nil, nil,
+		NewInstanceInfo("Rosmarinus", "https://example.test", "test"), nil, nil,
+		uploads, nil, nil, proxy, 1<<20, nil, nil, time.Hour,
+	)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, jsonRequest(http.MethodPost, "/api/v1/actors/actor-1/media/media-1/complete", ""))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Data struct {
+			URL       string `json:"url"`
+			SourceURL string `json:"source_url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Data.SourceURL != source {
+		t.Fatalf("source_url=%q", response.Data.SourceURL)
+	}
+	assertMediaProxyURL(t, response.Data.URL, source, "")
 }
 
 func testHandler() (http.Handler, *fakeExecutor, *fakeActorStore) {

@@ -478,7 +478,7 @@ func (h *Handler) completeMediaUpload(w http.ResponseWriter, r *http.Request, ac
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{
-		"id": record.ID, "url": h.mediaProxy.URL(record.PublicURL, mediaproxy.VariantDefault), "name": record.Name, "media_type": record.ContentType,
+		"id": record.ID, "url": h.mediaProxy.URL(record.PublicURL, mediaproxy.VariantDefault), "source_url": record.PublicURL, "name": record.Name, "media_type": record.ContentType,
 		"size": record.Size, "width": record.Width, "height": record.Height,
 	}})
 }

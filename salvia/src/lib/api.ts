@@ -157,8 +157,8 @@ export const api = {
         );
         return result.data;
     },
-    completeMediaUpload: async (csrf: string, actorID: string, mediaID: string): Promise<{ id: string; url: string }> => {
-        const result = await request(`/actors/${encodeURIComponent(actorID)}/media/${encodeURIComponent(mediaID)}/complete`, envelope(z.object({ id: z.string(), url: z.string() }).passthrough()), { method: "POST", csrf });
+    completeMediaUpload: async (csrf: string, actorID: string, mediaID: string): Promise<{ id: string; url: string; source_url?: string }> => {
+        const result = await request(`/actors/${encodeURIComponent(actorID)}/media/${encodeURIComponent(mediaID)}/complete`, envelope(z.object({ id: z.string(), url: z.string(), source_url: z.string().optional() }).passthrough()), { method: "POST", csrf });
         return result.data;
     },
     deleteMedia: async (csrf: string, actorID: string, mediaID: string): Promise<void> => {

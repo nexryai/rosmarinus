@@ -72,7 +72,14 @@ keys, WebAuthn server verification, or authorization policy.
 
 Rosmarinus does not process images or generate thumbnails. Do not introduce a
 backend image-transformation assumption into API clients; Canvas output is a
-browser-owned presentation or upload artifact.
+browser-owned presentation or upload artifact. Profile image preview, decoding,
+and cropping run in a module Web Worker using OffscreenCanvas. Encode derived
+images as WebP; only Safari may fall back to JPEG. Ask whether to crop before
+changing the original, preserve original bytes when declined, and upload avatar
+and banner files via Rosmarinus-issued signed PUT URLs before saving their
+completed source URLs in the Actor PATCH. Keep previews as local blob URLs and
+release them and abort worker jobs when leaving the editor. The CSP permits PUT
+connections only to the configured storage signer origin.
 
 All API image projections are external Misskey-compatible MediaProxy URLs.
 Render only those projected URLs; never reconstruct or directly load an

@@ -102,6 +102,9 @@ func TestHandlerSecurityHeadersAndMethods(t *testing.T) {
 		}
 	}
 	csp := recorder.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "connect-src 'self' https://uploads.example;") || !strings.Contains(csp, "worker-src 'self';") {
+		t.Fatalf("unexpected upload CSP: %q", csp)
+	}
 	if !strings.Contains(csp, "img-src 'self' data: blob: https://media-proxy.example;") || strings.Contains(csp, "img-src 'self' data: blob: https:;") {
 		t.Fatalf("unexpected CSP: %q", csp)
 	}
@@ -113,7 +116,7 @@ func testHandler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(proxy)
+	return NewHandler(proxy, "https://uploads.example")
 }
 
 func assetPath(t *testing.T) string {

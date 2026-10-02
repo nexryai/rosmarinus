@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -77,6 +78,20 @@ func New(ctx context.Context, cfg Config) (*S3, error) {
 		bucket: cfg.Bucket, publicURL: strings.TrimRight(cfg.PublicURL, "/"), presignTTL: cfg.PresignTTL,
 		client: client, presigner: s3.NewPresignClient(client),
 	}, nil
+}
+
+// UploadOrigin resolves the actual signing endpoint, including virtual-hosted buckets.
+// Presigning is local and does not upload an object.
+func (s *S3) UploadOrigin(ctx context.Context) (string, error) {
+	signed, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String("csp-origin")})
+	if err != nil {
+		return "", fmt.Errorf("resolve browser upload origin: %w", err)
+	}
+	parsed, err := url.Parse(signed.URL)
+	if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return "", fmt.Errorf("invalid browser upload origin")
+	}
+	return parsed.Scheme + "://" + parsed.Host, nil
 }
 
 func (s *S3) Check(ctx context.Context) error {

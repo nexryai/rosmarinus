@@ -244,7 +244,7 @@ remote Actor cache, and returns the same safe, viewer-specific profile projectio
 as `GET /api/v1/profiles/{actorId}`. The authenticated POST requires CSRF.
 
 Image upload is a three-step direct-to-object-storage flow. Salvia hashes the
-unmodified image with SHA-256 and sends its name, media type, byte size, and
+upload bytes with SHA-256 and sends its name, media type, byte size, and
 Canvas-observed dimensions to the reservation endpoint with an idempotency
 key. Rosmarinus returns a short-lived signed `PUT` URL and required headers;
 no storage credentials are exposed. After the browser uploads the bytes, the
@@ -255,6 +255,29 @@ source URLs point at object storage, while every image URL returned for browser
 display points at the required external Misskey-compatible MediaProxy. Existing
 GridFS images are intentionally not migrated or served. Note creation accepts
 at most four `media_ids` and rejects IDs not owned by the posting Actor.
+
+Profile settings use this same reservation / signed PUT / completion flow for
+both avatars and banners. The completion response additionally supplies
+`source_url`, which is copied into the Actor PATCH as `avatar_url` / `banner_url`
+and must never be used as a browser image source; `url` remains the MediaProxy
+display URL. Name and MFM biography edits appear immediately in
+the profile preview. Selecting an image asks whether to crop; declining preserves
+the original file, including animation. Cropping offers position and zoom
+controls (1:1 avatar, 3:1 banner) and produces a still WebP image. Only Safari may
+fall back to JPEG when WebP encoding is unavailable. Decoding, preview generation,
+and crop encoding use a module Web Worker with OffscreenCanvas; React displays
+bounded preview images without drawing the original on the main thread. Preview
+edges are limited to 1024 pixels, cropped outputs to 2048 pixels. Unsupported
+browsers show an error rather than processing large images on the main thread.
+Uploads happen on save, and completed uploads are reused for profile-save retries.
+Switching Actors or closing settings aborts worker jobs and releases preview URLs.
+
+The SPA CSP permits workers from the same origin and direct uploads only to the
+actual S3 signing origin (including virtual-hosted bucket names). Configure the
+bucket's CORS policy to permit same-site Salvia's origin, PUT, and the headers
+returned by Rosmarinus. This changes no federation rendering or Actor ownership
+policy; the real-Misskey fixture cannot exercise the browser crop / worker flow.
+
 
 `POST /api/v1/actors/{actorId}/posts` does not accept `note_id`. Rosmarinus
 allocates the Note ID, checks it against the Note collection, derives the local

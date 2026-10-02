@@ -28,6 +28,13 @@ describe("object-storage uploader", () => {
         expect(result).toEqual({ id: "media-1", url: "https://objects.test/object-1", preview_url: "https://objects.test/object-1" });
     });
 
+    it("returns source URLs for profile mutation without replacing the display URL", async () => {
+        vi.spyOn(api, "prepareMediaUpload").mockResolvedValue({ id: "media-1", url: "https://proxy.test/image", state: "ready", upload_url: "", upload_headers: {}, expires_at: "" });
+        vi.spyOn(api, "completeMediaUpload").mockResolvedValue({ id: "media-1", url: "https://proxy.test/image", source_url: "https://objects.test/image" });
+        const result = await uploadImage("csrf", "actor-1", new File(["image"], "image.webp", { type: "image/webp" }), { width: 10, height: 10 });
+        expect(result).toEqual({ id: "media-1", url: "https://proxy.test/image", preview_url: "https://proxy.test/image", source_url: "https://objects.test/image" });
+    });
+
     it("deletes reserved media when direct upload fails", async () => {
         vi.spyOn(api, "prepareMediaUpload").mockResolvedValue({ id: "media-1", url: "https://objects.test/object-1", state: "pending", upload_url: "https://s3.test/object-1", upload_headers: {}, expires_at: "2026-09-14T00:00:00Z" });
         const cleanup = vi.spyOn(api, "deleteMedia").mockResolvedValue();

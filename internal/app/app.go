@@ -245,6 +245,11 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		api.HandlerExtras{QueueStatus: queueStatus, Passkeys: passkeys},
 	)
 
+	uploadOrigin, err := mediaStorage.UploadOrigin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return &App{
 		cfg:                cfg,
 		logger:             logger,
@@ -283,7 +288,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		queueServer:        queueServer,
 		httpServer: &http.Server{
 			Addr:              cfg.HTTPAddr,
-			Handler:           httpserver.NewHandlerWithAllStoresAndAPI(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo, applicationAPI, salvia.NewHandler(mediaProxy)),
+			Handler:           httpserver.NewHandlerWithAllStoresAndAPI(cfg, logger, cachedActorRepo, noteRepo, followRepo, reactionRepo, queueClient, pollRepo, mediaRepo, emojiRepo, applicationAPI, salvia.NewHandler(mediaProxy, uploadOrigin)),
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}, nil

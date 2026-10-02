@@ -1,7 +1,7 @@
 import { api } from "@/lib/api";
 
 export type UploadDimensions = { width: number; height: number };
-export type UploadedImage = { id: string; url: string; preview_url: string };
+export type UploadedImage = { id: string; url: string; preview_url: string; source_url?: string };
 
 export async function uploadImage(csrf: string, actorID: string, file: File, dimensions: UploadDimensions, intentKey: string = crypto.randomUUID()): Promise<UploadedImage> {
     const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
@@ -31,7 +31,7 @@ export async function uploadImage(csrf: string, actorID: string, file: File, dim
     }
     try {
         const uploaded = await api.completeMediaUpload(csrf, actorID, pending.id);
-        return { id: uploaded.id, url: uploaded.url, preview_url: uploaded.url };
+        return { id: uploaded.id, url: uploaded.url, preview_url: uploaded.url, ...(uploaded.source_url ? { source_url: uploaded.source_url } : {}) };
     } catch (reason) {
         await api.deleteMedia(csrf, actorID, pending.id).catch(() => undefined);
         throw reason;

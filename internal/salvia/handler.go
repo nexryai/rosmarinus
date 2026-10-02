@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ type handler struct {
 }
 
 // NewHandler returns an HTTP handler backed only by files embedded at build time.
-func NewHandler(mediaProxy *mediaproxy.Proxy) http.Handler {
+func NewHandler(mediaProxy *mediaproxy.Proxy, uploadOrigin string) http.Handler {
 	if mediaProxy == nil {
 		panic("Salvia requires a media proxy")
 	}
@@ -36,7 +37,12 @@ func NewHandler(mediaProxy *mediaproxy.Proxy) http.Handler {
 	if err != nil {
 		panic("read embedded Salvia index: " + err.Error())
 	}
-	csp := "default-src 'self'; connect-src 'self'; img-src 'self' data: blob: " + mediaProxy.Origin() + "; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	parsed, err := url.Parse(uploadOrigin)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		panic("Salvia requires a valid object storage upload origin")
+	}
+	// Allow only the configured signer endpoint, never arbitrary HTTPS destinations.
+	csp := "default-src 'self'; connect-src 'self' " + parsed.Scheme + "://" + parsed.Host + "; worker-src 'self'; img-src 'self' data: blob: " + mediaProxy.Origin() + "; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 	return &handler{assets: assets, index: index, csp: csp}
 }
 

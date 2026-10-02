@@ -2,6 +2,7 @@ import { type CSSProperties, type FormEvent, type ReactElement, useEffect, useSt
 
 import { IconPlus, IconServer, IconSettings, IconShieldLock, IconTrash, IconUserCircle, IconUsers } from "@tabler/icons-react";
 
+import { ProfileSettings } from "@/components/settings/ProfileSettings";
 import { SecuritySettings } from "@/components/settings/SecuritySettings";
 import { Button, ErrorBanner, PageHeader, Tabs } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -211,9 +212,6 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     const [queueStatus, setQueueStatus] = useState<QueueStatus>();
     const [queueError, setQueueError] = useState("");
     const [actorSettings, setActorSettings] = useState<ActorSettings>();
-    const [name, setName] = useState(selectedActor.name);
-    const [summary, setSummary] = useState(selectedActor.summary);
-    const [avatarURL, setAvatarURL] = useState(selectedActor.avatar_url);
     const [newUsername, setNewUsername] = useState("");
     const [newName, setNewName] = useState("");
     const [error, setError] = useState("");
@@ -222,13 +220,10 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
     const [deleting, setDeleting] = useState(false);
     useEffect(() => {
         setDeleteDialogOpen(false);
-        setName(selectedActor.name);
-        setSummary(selectedActor.summary);
-        setAvatarURL(selectedActor.avatar_url);
         api.actorSettings(selectedActor.id)
             .then(setActorSettings)
             .catch((reason) => setError(reason instanceof Error ? reason.message : "Actor設定を読み込めませんでした"));
-    }, [selectedActor.avatar_url, selectedActor.id, selectedActor.name, selectedActor.summary]);
+    }, [selectedActor.id]);
     useEffect(() => {
         if (tab !== "system") return;
         const controller = new AbortController();
@@ -276,17 +271,6 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
             onSettingsChanged(value);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : "設定を保存できませんでした");
-        }
-    };
-    const saveProfile = async (event: FormEvent) => {
-        event.preventDefault();
-        setError("");
-        try {
-            await api.updateActor(csrf, selectedActor.id, { name, summary, avatar_url: avatarURL });
-            await onActorsChanged();
-            setMessage("プロフィールを保存しました");
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "プロフィールを保存できませんでした");
         }
     };
     const saveActorSettings = async (patch: Partial<ActorSettings>) => {
@@ -345,32 +329,7 @@ export function SettingsPage({ accountSettings, actors, csrf, onActorsChanged, o
                         <Switch checked={accountSettings.compact_mode} label="コンパクト表示" onChange={(compact_mode) => void updateAccount({ compact_mode })} style={styles.toggle} />
                     </section>
                 )}
-                {tab === "profile" && (
-                    <section className={rules.card} style={styles.card}>
-                        <div style={styles.settingsTitle}>
-                            <IconUserCircle style={styles.settingsIcon} />
-                            <div>
-                                <h2 style={{ ...styles.cardTitle, marginBottom: 0 }}>@{selectedActor.username}</h2>
-                                <p style={styles.settingsSubtitle}>公開プロフィール</p>
-                            </div>
-                        </div>
-                        <form className={rules.grid} onSubmit={saveProfile} style={styles.grid}>
-                            <label style={styles.field}>
-                                <span style={styles.fieldLabel}>表示名</span>
-                                <input className={rules.input} maxLength={128} onChange={(event) => setName(event.target.value)} style={styles.input} value={name} />
-                            </label>
-                            <label style={styles.field}>
-                                <span style={styles.fieldLabel}>アバターURL</span>
-                                <input className={rules.input} inputMode="url" onChange={(event) => setAvatarURL(event.target.value)} placeholder="https://…" style={styles.input} value={avatarURL} />
-                            </label>
-                            <label className={rules.fullField} style={styles.field}>
-                                <span style={styles.fieldLabel}>自己紹介</span>
-                                <textarea className={rules.input} maxLength={1500} onChange={(event) => setSummary(event.target.value)} rows={4} style={styles.input} value={summary} />
-                            </label>
-                            <Button type="submit">プロフィールを保存</Button>
-                        </form>
-                    </section>
-                )}
+                {tab === "profile" && <ProfileSettings key={selectedActor.id} actor={selectedActor} csrf={csrf} onActorsChanged={onActorsChanged} />}
                 {tab === "actor" && (
                     <>
                         <section className={rules.card} style={styles.card}>

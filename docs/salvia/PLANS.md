@@ -26,6 +26,14 @@ part of the target architecture.
 
 ## Fixed Product And Architecture Decisions
 
+- Completed: edit profile name, biography, avatar, and banner with a live preview.
+  Ask whether to crop selected images, provide position/zoom controls, and run
+  decoding and OffscreenCanvas encoding in a Web Worker. Derived images use
+  WebP with JPEG fallback only on Safari; declining cropping keeps original
+  bytes. Save avatar/banner through Rosmarinus-issued signed PUT URLs and reuse
+  completed uploads on profile-save retries. Allow the configured signing origin
+  in the SPA CSP and same-origin workers.
+
 - Completed: normalize legacy Actor profile field keys at the API boundary
   and verify home timeline rendering with nonempty remote profile fields.
   The backend now emits lowercase `name`/`value` keys consistently.
