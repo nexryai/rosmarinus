@@ -1,3 +1,4 @@
+import { encodeCanvas } from "@/lib/canvasEncoding";
 import { cropRectangle, type ImageJob, type ImageResult } from "@/lib/profileImage";
 
 const scope = globalThis as unknown as { onmessage: (event: MessageEvent<ImageJob>) => void; postMessage: (result: ImageResult | { error: string }) => void };
@@ -15,9 +16,7 @@ scope.onmessage = async ({ data }) => {
             const context = canvas.getContext("2d");
             if (!context) throw new Error("Canvasを初期化できませんでした");
             context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height, 0, 0, width, height);
-            let blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.9 });
-            if (blob.type !== "image/webp" && data.allowJPEG) blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
-            if (blob.type !== "image/webp" && !(data.allowJPEG && blob.type === "image/jpeg")) throw new Error("このブラウザーはWebPエンコードに対応していません");
+            const blob = await encodeCanvas(canvas, data.allowJPEG ?? false, 0.9);
             scope.postMessage({ blob, width: data.crop ? width : bitmap.width, height: data.crop ? height : bitmap.height });
         } finally {
             bitmap.close();

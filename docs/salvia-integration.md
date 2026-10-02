@@ -256,6 +256,22 @@ display points at the required external Misskey-compatible MediaProxy. Existing
 GridFS images are intentionally not migrated or served. Note creation accepts
 at most four `media_ids` and rejects IDs not owned by the posting Actor.
 
+Post image uploads always re-encode pixels in an OffscreenCanvas inside a module
+Web Worker before reservation or PUT. The full image preserves aspect ratio,
+limits its longest edge to 4096 pixels without upscaling, and encodes as WebP at
+quality 0.85. A separate local preview is limited to 512 pixels at quality 0.86.
+Only Safari may fall back to JPEG when WebP encoding is unavailable. Every input,
+including an already-WebP file, is redrawn to remove source EXIF/GPS metadata;
+only encoded bytes, output dimensions, and a generic filename are uploaded.
+Original files are never uploaded, and encoder errors block the image upload
+instead of falling back to the original. Posting images needs no crop confirmation;
+animated images become still images. The composer processes images sequentially,
+blocks posting while processing, and aborts workers and revokes preview URLs on
+close or Actor switch. Thumbnails remain local; the existing MediaProxy handles
+Note-card projections after upload. This is a browser upload policy and leaves
+REST/SSE fields, federation processing, and backend image handling unchanged.
+The real-Misskey fixture cannot exercise this client-side encoding boundary.
+
 Profile settings use this same reservation / signed PUT / completion flow for
 both avatars and banners. The completion response additionally supplies
 `source_url`, which is copied into the Actor PATCH as `avatar_url` / `banner_url`

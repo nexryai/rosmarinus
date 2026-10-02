@@ -405,6 +405,7 @@ function App() {
             )}
             {composerIntent && (
                 <Composer
+                    key={selectedActor.id}
                     actor={selectedActor}
                     actorSettings={composerSettings}
                     csrf={session.csrf_token}

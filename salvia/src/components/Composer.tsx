@@ -11,13 +11,13 @@ import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { Switch } from "@/components/ui/Switch";
 import { api, type CreatePostInput } from "@/lib/api";
 import { css } from "@/lib/css";
-import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "@/lib/image";
+import { type PreparedPostImage, preparePostImage } from "@/lib/postImage";
 import type { Actor, ActorSettings, Emoji, Note } from "@/lib/schema";
 import { uploadImage } from "@/lib/uploader";
 
 export type ComposerIntent = { kind: "post" } | { kind: "reply" | "quote"; target: Note };
 
-type PendingImage = { file: File; id: string; intentKey: string; thumbnail: CanvasThumbnail };
+type PendingImage = PreparedPostImage & { id: string; intentKey: string };
 
 const styles = {
     eyebrow: {
@@ -339,6 +339,10 @@ export function Composer({
     const [sensitive, setSensitive] = useState(false);
     const [emojis, setEmojis] = useState<Emoji[]>([]);
     const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+    const [processing, setProcessing] = useState(false);
+    const processingRef = useRef(false);
+    const imageController = useRef<AbortController | null>(null);
+    const submittingRef = useRef(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const postIntentKey = useRef<string>(crypto.randomUUID());
@@ -350,32 +354,53 @@ export function Composer({
             .then(setEmojis)
             .catch(() => setEmojis([]));
     }, []);
-    useEffect(
-        () => () =>
-            imagesRef.current.forEach((image) => {
-                revokeCanvasThumbnail(image.thumbnail);
-            }),
-        [],
-    );
+    useEffect(() => {
+        const controller = new AbortController();
+        imageController.current = controller;
+        return () => {
+            controller.abort();
+            for (const image of imagesRef.current) URL.revokeObjectURL(image.thumbnailURL);
+        };
+    }, []);
     const validChoices = choices.map((choice) => choice.text.trim()).filter(Boolean);
     const canSubmit = text.trim().length > 0 || images.length > 0 || (usePoll && validChoices.length >= 2);
     const selectImages = async (files: File[]) => {
+        if (processingRef.current || submittingRef.current || !imageController.current) return;
+        const controller = imageController.current;
+        processingRef.current = true;
+        setProcessing(true);
+        setError("");
+        const pending: PendingImage[] = [];
         try {
-            const pending = await Promise.all(files.map(async (file) => ({ file, id: crypto.randomUUID(), intentKey: crypto.randomUUID(), thumbnail: await createCanvasThumbnail(file) })));
-            setImages((current) => [...current, ...pending]);
+            // Process sequentially so four large originals do not decode into memory at once.
+            for (const file of files.slice(0, 4 - imagesRef.current.length)) {
+                const prepared = await preparePostImage(file, controller.signal);
+                if (controller.signal.aborted) {
+                    URL.revokeObjectURL(prepared.thumbnailURL);
+                    throw new DOMException("Aborted", "AbortError");
+                }
+                pending.push({ ...prepared, id: crypto.randomUUID(), intentKey: crypto.randomUUID() });
+            }
+            imagesRef.current = [...imagesRef.current, ...pending];
+            setImages(imagesRef.current);
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : "画像のプレビューを作成できませんでした");
+            for (const image of pending) URL.revokeObjectURL(image.thumbnailURL);
+            if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "画像を処理できませんでした");
+        } finally {
+            processingRef.current = false;
+            if (!controller.signal.aborted) setProcessing(false);
         }
     };
     const submit = async (event: FormEvent) => {
         event.preventDefault();
-        if (!canSubmit) return;
+        if (!canSubmit || processingRef.current || submittingRef.current) return;
+        submittingRef.current = true;
         setBusy(true);
         setError("");
         let uploaded: Awaited<ReturnType<typeof uploadImage>>[] = [];
         let committed = false;
         try {
-            const results = await Promise.allSettled(images.map((image) => uploadImage(csrf, actor.id, image.file, { width: image.thumbnail.originalWidth, height: image.thumbnail.originalHeight }, image.intentKey)));
+            const results = await Promise.allSettled(images.map((image) => uploadImage(csrf, actor.id, image.file, { width: image.width, height: image.height }, image.intentKey)));
             uploaded = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
             const failed = results.find((result) => result.status === "rejected");
             if (failed?.status === "rejected") throw failed.reason;
@@ -398,6 +423,7 @@ export function Composer({
             if (!committed) await Promise.all(uploaded.map((item) => api.deleteMedia(csrf, actor.id, item.id).catch(() => undefined)));
             setError(reason instanceof Error ? reason.message : "投稿できませんでした");
         } finally {
+            submittingRef.current = false;
             setBusy(false);
         }
     };
@@ -417,16 +443,19 @@ export function Composer({
                         </p>
                     )}
                     {error && <ErrorBanner message={error} />}
+                    {processing && <p role="status">画像を圧縮しています…</p>}
+                    <p style={styles.optionLabel}>投稿画像は位置情報などを除去して再エンコードします。アニメーションは静止画になります。</p>
                     <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} style={styles.textarea} value={text} />
                     {images.length > 0 && (
                         <div style={styles.previews}>
                             {images.map((image) => (
                                 <figure key={image.id} style={styles.preview}>
-                                    <img alt={image.file.name} src={image.thumbnail.url} style={styles.previewImage} />
+                                    <img alt={image.file.name} src={image.thumbnailURL} style={styles.previewImage} />
                                     <button
                                         aria-label={`${image.file.name}を削除`}
+                                        disabled={busy || processing}
                                         onClick={() => {
-                                            revokeCanvasThumbnail(image.thumbnail);
+                                            URL.revokeObjectURL(image.thumbnailURL);
                                             setImages((current) => current.filter((item) => item.id !== image.id));
                                         }}
                                         className={rules.previewRemove}
@@ -436,7 +465,7 @@ export function Composer({
                                         <IconX />
                                     </button>
                                     <figcaption style={styles.previewCaption}>
-                                        {image.thumbnail.originalWidth} × {image.thumbnail.originalHeight}
+                                        {image.width} × {image.height}
                                     </figcaption>
                                 </figure>
                             ))}
@@ -487,14 +516,14 @@ export function Composer({
                             <label className={`${rules.iconToggle} ${rules.upload}`} data-label="画像" style={{ ...styles.iconToggle, ...styles.upload }}>
                                 <IconPhoto />
                                 <span style={styles.srOnly}>画像</span>
-                                <ImageFileInput disabled={images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
+                                <ImageFileInput disabled={busy || processing || images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
                             </label>
                             <button aria-label="絵文字" className={rules.iconToggle} data-label="絵文字" onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
                                 <IconMoodSmile />
                             </button>
                         </div>
                         {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
-                        <Button disabled={busy || !canSubmit} size="medium" type="submit">
+                        <Button disabled={busy || processing || !canSubmit} size="medium" type="submit">
                             <IconSend />
                             投稿する
                         </Button>

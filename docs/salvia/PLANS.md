@@ -26,6 +26,13 @@ part of the target architecture.
 
 ## Fixed Product And Architecture Decisions
 
+- Completed: re-encode every post image to WebP for privacy before direct signed
+  uploads (JPEG fallback only on Safari). OffscreenCanvas workers generate
+  compressed images with a maximum 4096px edge and local 512px previews without
+  cropping or upscaling. Original metadata, filenames, and bytes are not uploaded;
+  encoder failures block upload. Processing is sequential and canceled on close
+  or Actor switch. Animated input becomes a still image.
+
 - Completed: edit profile name, biography, avatar, and banner with a live preview.
   Ask whether to crop selected images, provide position/zoom controls, and run
   decoding and OffscreenCanvas encoding in a Web Worker. Derived images use
@@ -233,7 +240,8 @@ Pub/Sub message arriving.
 - [x] Add local custom-emoji create/edit/delete management plus searchable
       observed-remote browsing and server-side media import.
 - [x] Generate image previews with Canvas, test orientation and size handling,
-      and upload originals through the shared signed-URL object-storage flow.
+      and upload only re-encoded post images through the signed-URL flow;
+      original bytes remain allowed for emoji and uncropped profile images.
 - [x] Add focused accessibility and interaction tests for every mutation and
       its loading, retry, empty, and error states.
 

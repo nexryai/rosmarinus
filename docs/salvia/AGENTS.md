@@ -21,7 +21,10 @@ edit it or carry its Next.js and Ably architecture into the current app.
   security-sensitive browser flows whenever practical.
 - Keep LF line endings and avoid comments that narrate self-evident code.
 - Generate image upload previews, thumbnails, cropping results, and other
-  required derivatives in the browser with Canvas APIs. Preserve the original
+  required derivatives in the browser with Canvas APIs. For post attachments,
+  always redraw and encode to WebP in a Web Worker with OffscreenCanvas (JPEG
+  fallback only on Safari), upload only those bytes and output dimensions, and
+  never upload the original or ask whether to crop. Preserve the original
   upload separately when the product flow requires it.
 
 ## Product Direction
