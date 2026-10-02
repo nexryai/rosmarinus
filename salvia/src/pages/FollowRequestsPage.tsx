@@ -68,11 +68,16 @@ const styles = {
         height: "1.125rem",
         flexShrink: 0,
     },
-    tabs: { padding: "0.75rem 1.25rem" },
     sentSearch: { borderBottom: "1px solid var(--border)" },
 } satisfies Record<string, CSSProperties>;
 
 const rules = {
+    tabs: css({
+        paddingInline: "1.25rem",
+        "@media (width >= 40rem)": {
+            paddingInline: "1.75rem",
+        },
+    }),
     request: css({
         paddingInline: "1.25rem",
         "@media (width >= 40rem)": {
@@ -190,12 +195,13 @@ export function FollowRequestsPage({ actorID, csrf, onOpenProfile, refreshKey }:
             <div style={{ overflowX: "auto" }}>
                 <Tabs
                     ariaLabel="フォローリクエスト"
+                    className={rules.tabs}
                     items={[
                         { value: "received", label: "受け取ったリクエスト", icon: <IconInbox /> },
                         { value: "sent", label: "送信したリクエスト", icon: <IconSend /> },
                     ]}
                     onChange={setTab}
-                    style={{ ...styles.tabs, minWidth: "max-content" }}
+                    style={{ minWidth: "max-content" }}
                     value={tab}
                     variant="underline"
                 />
