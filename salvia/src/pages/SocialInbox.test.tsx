@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -108,6 +108,68 @@ describe("social inbox mutations", () => {
         expect(api.markAllNotificationsRead).toHaveBeenCalledWith("csrf", "alice");
         expect(onUnreadCountChange).toHaveBeenCalledWith(0);
         expect(screen.queryByRole("button", { name: "既読" })).not.toBeInTheDocument();
+    });
+
+    it("preserves notification rows while refreshing after a read event", async () => {
+        const item = { id: "notification-refresh", actor_id: "alice", kind: "reply", created_at: "2026-01-01T00:00:00Z", is_read: false, source: remote } as Notification;
+        const notifications = vi.spyOn(api, "notifications").mockResolvedValue([item]);
+        const props = { actorID: "alice", csrf: "csrf", onActorChange: vi.fn(), onOpenNote: vi.fn(), onOpenProfile: vi.fn() };
+        const { rerender } = render(<NotificationsPage {...props} refreshKey={0} />);
+        const avatar = await screen.findByRole("button", { name: "Bobのプロフィールを開く" });
+        let finishRefresh!: (items: Notification[]) => void;
+        notifications.mockReturnValueOnce(
+            new Promise((resolve) => {
+                finishRefresh = resolve;
+            }),
+        );
+
+        rerender(<NotificationsPage {...props} refreshKey={1} />);
+
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Bobのプロフィールを開く" })).toBe(avatar);
+        await act(async () => finishRefresh([{ ...item, is_read: true }]));
+        expect(screen.queryByRole("button", { name: "既読" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Bobのプロフィールを開く" })).toBe(avatar);
+        expect(notifications).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the current notifications visible if a background refresh fails", async () => {
+        const item = { id: "notification-refresh-error", actor_id: "alice", kind: "reply", created_at: "2026-01-01T00:00:00Z", is_read: true, source: remote } as Notification;
+        const notifications = vi.spyOn(api, "notifications").mockResolvedValue([item]);
+        const props = { actorID: "alice", csrf: "csrf", onActorChange: vi.fn(), onOpenNote: vi.fn(), onOpenProfile: vi.fn() };
+        const { rerender } = render(<NotificationsPage {...props} refreshKey={0} />);
+        const avatar = await screen.findByRole("button", { name: "Bobのプロフィールを開く" });
+        notifications.mockRejectedValueOnce(new Error("offline"));
+
+        rerender(<NotificationsPage {...props} refreshKey={1} />);
+
+        expect(screen.queryByRole("status")).not.toBeInTheDocument();
+        expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+        expect(screen.getByRole("button", { name: "Bobのプロフィールを開く" })).toBe(avatar);
+    });
+
+    it("loads a new notification list when switching Actors or scope", async () => {
+        const item = { id: "notification-actor", actor_id: "alice", kind: "reply", created_at: "2026-01-01T00:00:00Z", is_read: true, source: remote } as Notification;
+        const notifications = vi.spyOn(api, "notifications").mockResolvedValue([item]);
+        vi.spyOn(api, "accountNotifications").mockReturnValue(new Promise(() => {}));
+        const props = { csrf: "csrf", onActorChange: vi.fn(), onOpenNote: vi.fn(), onOpenProfile: vi.fn() };
+        const { rerender } = render(<NotificationsPage {...props} actorID="alice" refreshKey={0} />);
+        await screen.findByRole("button", { name: "Bobのプロフィールを開く" });
+        let finishLoad!: (items: Notification[]) => void;
+        notifications.mockReturnValueOnce(
+            new Promise((resolve) => {
+                finishLoad = resolve;
+            }),
+        );
+
+        rerender(<NotificationsPage {...props} actorID="carol" refreshKey={0} />);
+
+        expect(screen.getByRole("status")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Bobのプロフィールを開く" })).not.toBeInTheDocument();
+        await act(async () => finishLoad([]));
+        expect(screen.getByText("新しい通知はありません。")).toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole("tab", { name: "すべてのActor" }));
+        expect(screen.getByRole("status")).toBeInTheDocument();
     });
 
     it("shows Misskey-style notification context and opens its note", async () => {

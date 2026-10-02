@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserCircle, IconUserPlus, IconUsers } from "@tabler/icons-react";
 
@@ -180,9 +180,12 @@ export function NotificationsPage({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [busyID, setBusyID] = useState("");
+    const loadedContext = useRef("");
     const load = useCallback(
         async (signal?: AbortSignal) => {
-            setLoading(true);
+            const context = `${scope}:${actorID}`;
+            // SSE refreshes should preserve the list, including its DOM and scroll position.
+            if (loadedContext.current !== context) setLoading(true);
             try {
                 if (scope === "actor") {
                     const [notifications, unreadCount] = await Promise.all([api.notifications(actorID, signal), api.notificationUnreadCount(actorID, signal)]);
@@ -195,8 +198,11 @@ export function NotificationsPage({
                         onUnreadCountChange?.(0);
                     }
                 } else {
-                    setItems(await api.accountNotifications(signal));
+                    const notifications = await api.accountNotifications(signal);
+                    if (signal?.aborted) return;
+                    setItems(notifications);
                 }
+                loadedContext.current = context;
             } catch (reason) {
                 if (!signal?.aborted) setError(reason instanceof Error ? reason.message : "通知を読み込めませんでした");
             } finally {
