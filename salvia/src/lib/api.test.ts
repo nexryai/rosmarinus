@@ -106,4 +106,20 @@ describe("Rosmarinus API client", () => {
         expect(new Headers(init.headers).get("X-CSRF-Token")).toBe("csrf");
         expect(JSON.parse(String(init.body))).toEqual({ actor_id: "actor-1", source_id: "remote-1", name: "party_here" });
     });
+
+    it("loads reaction identities with the viewer, encoded reaction, and pagination cursor", async () => {
+        const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({ version: 1, data: [{ id: "bob", username: "bob" }], next: "next-page" }));
+        vi.stubGlobal("fetch", fetchMock);
+        const controller = new AbortController();
+
+        const page = await api.noteReactionsPage("viewer", "note/1", ":party@remote.test:", { after: "opaque+cursor", signal: controller.signal });
+
+        const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const parsed = new URL(url, "https://example.test");
+        expect(parsed.pathname).toBe("/api/v1/notes/note%2F1/reactions");
+        expect(Object.fromEntries(parsed.searchParams)).toEqual({ actor_id: "viewer", reaction: ":party@remote.test:", limit: "10", after: "opaque+cursor" });
+        expect(init.signal).toBe(controller.signal);
+        expect(page).toMatchObject({ data: [{ id: "bob", username: "bob" }], next: "next-page" });
+        expect(await api.noteReactions("viewer", "note/1", "👍")).toMatchObject([{ id: "bob" }]);
+    });
 });

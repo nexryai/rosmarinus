@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api";
@@ -50,7 +51,8 @@ describe("NotePage conversation", () => {
             return [];
         });
 
-        render(<NotePage actorID="alice" csrf="csrf" emojis={[]} noteID={root.id} onBack={vi.fn()} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} refreshKey={0} />);
+        const onOpenNote = vi.fn();
+        render(<NotePage actorID="alice" csrf="csrf" emojis={[]} noteID={root.id} onBack={vi.fn()} onCompose={vi.fn()} onOpenNote={onOpenNote} onOpenProfile={vi.fn()} refreshKey={0} />);
 
         expect(await screen.findByText("最初のノート")).toBeInTheDocument();
         const ancestors = screen.getAllByRole("article", { name: "会話の前のノート" });
@@ -58,7 +60,31 @@ describe("NotePage conversation", () => {
         expect(ancestors[0]).toHaveTextContent("最初のノート");
         expect(ancestors[1]).toHaveTextContent("ひとつ前のノート");
         expect(screen.getByText("表示中のノート")).toBeInTheDocument();
+        const reactionSection = screen.getByRole("region", { name: "リアクション" });
+        expect(screen.getByText("表示中のノート").compareDocumentPosition(reactionSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(reactionSection.compareDocumentPosition(screen.getByRole("heading", { name: "返信" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(await screen.findByText("返信への返信")).toBeInTheDocument();
         await waitFor(() => expect(thread).toHaveBeenCalledWith("alice", "child", expect.any(AbortSignal), 5));
+        for (const reply of screen.getAllByRole("article", { name: "返信ノート" })) {
+            expect(reply.querySelector("i")).toBeNull();
+            expect(reply.children[1]).toHaveStyle({ background: "var(--panel-muted)", "border-radius": "0px 10px 10px 10px", "margin-left": "6px" });
+        }
+        await userEvent.setup().click(screen.getByText("返信への返信"));
+        expect(onOpenNote).toHaveBeenCalledWith("grandchild");
+    });
+
+    it("shows the original Note's reaction identities when viewing a renote", async () => {
+        const original = makeNote("original", "リノート元の本文");
+        original.reactions = [{ reaction: "👍", count: 1, reacted: false }];
+        const root = { ...makeNote("renote", ""), renote_id: original.id, renote: original };
+        vi.spyOn(api, "note").mockResolvedValue(root);
+        vi.spyOn(api, "thread").mockResolvedValue([]);
+        const reactions = vi.spyOn(api, "noteReactionsPage").mockResolvedValue({ data: [{ id: "bob", username: "bob", name: "Bob", avatar_url: "", uri: "https://remote.test/users/bob", emojis: [] }], next: "" });
+
+        render(<NotePage actorID="alice" csrf="csrf" emojis={[]} noteID={root.id} onBack={vi.fn()} onCompose={vi.fn()} onOpenNote={vi.fn()} onOpenProfile={vi.fn()} refreshKey={0} />);
+
+        expect(await screen.findByText("Bob")).toBeInTheDocument();
+        expect(reactions).toHaveBeenCalledWith("alice", "original", "👍", { signal: expect.any(AbortSignal) });
+        expect(screen.getByRole("region", { name: "リアクション" })).toBeInTheDocument();
     });
 });

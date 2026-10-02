@@ -44,6 +44,12 @@ const styles = {
         minWidth: 0,
         color: "var(--text)",
     },
+    bubble: {
+        marginLeft: "0.375rem",
+        padding: "0.75rem",
+        background: "var(--panel-muted)",
+        borderRadius: "0px 10px 10px 10px",
+    },
     content: {
         width: "100%",
         minWidth: 0,
@@ -137,6 +143,7 @@ const noteDate = (value: string) =>
     }).format(new Date(value));
 
 export function ThreadNote({
+    bubble = false,
     className = "",
     label,
     lineAfter = false,
@@ -146,6 +153,7 @@ export function ThreadNote({
     onOpenProfile,
     style,
 }: {
+    bubble?: boolean;
     className?: string;
     label: string;
     lineAfter?: boolean;
@@ -182,11 +190,11 @@ export function ThreadNote({
     return (
         <article aria-label={label} className={className} style={{ ...styles.root, ...style }}>
             <div style={styles.rail}>
-                {lineBefore && <i aria-hidden="true" style={styles.lineBefore} />}
-                {lineAfter && <i aria-hidden="true" style={styles.lineAfter} />}
+                {!bubble && lineBefore && <i aria-hidden="true" style={styles.lineBefore} />}
+                {!bubble && lineAfter && <i aria-hidden="true" style={styles.lineAfter} />}
                 <Avatar actor={author} onOpenProfile={onOpenProfile} size="small" />
             </div>
-            <div style={styles.body}>
+            <div style={{ ...styles.body, ...(bubble ? styles.bubble : {}) }}>
                 {onOpenNote ? (
                     <button aria-label={`${label}を開く: ${authorName}`} className={rules.content} onClick={() => onOpenNote(note.id)} style={styles.content} type="button">
                         {content}

@@ -231,8 +231,12 @@ export const api = {
     note: async (actorID: string, noteID: string, signal?: AbortSignal): Promise<Note> => (await request(`/notes/${encodeURIComponent(noteID)}${query({ actor_id: actorID })}`, envelope(noteSchema), { signal })).data,
     thread: async (actorID: string, noteID: string, signal?: AbortSignal, limit = 100): Promise<Note[]> => (await request(`/notes/${encodeURIComponent(noteID)}/thread${query({ actor_id: actorID, limit: String(limit) })}`, pageEnvelope(noteSchema), { signal })).data,
     noteReactions: async (actorID: string, noteID: string, reaction: string, signal?: AbortSignal): Promise<ReactionActor[]> => {
-        const result = await request(`/notes/${encodeURIComponent(noteID)}/reactions${query({ actor_id: actorID, reaction, limit: "10" })}`, pageEnvelope(reactionActorSchema), { signal });
+        const result = await api.noteReactionsPage(actorID, noteID, reaction, { signal });
         return result.data;
+    },
+    noteReactionsPage: async (actorID: string, noteID: string, reaction: string, options: { after?: string; signal?: AbortSignal } = {}): Promise<{ data: ReactionActor[]; next: string }> => {
+        const result = await request(`/notes/${encodeURIComponent(noteID)}/reactions${query({ actor_id: actorID, reaction, limit: "10", after: options.after })}`, pageEnvelope(reactionActorSchema), { signal: options.signal });
+        return { data: result.data, next: result.next };
     },
     emojiCatalog: async (scope: "local" | "remote", filters: { after?: string; query?: string; host?: string } = {}): Promise<{ data: ManagedEmoji[]; next: string }> => {
         const result = await request(`/emojis${query({ scope, after: filters.after, query: filters.query, host: filters.host, limit: "30" })}`, pageEnvelope(managedEmojiSchema));

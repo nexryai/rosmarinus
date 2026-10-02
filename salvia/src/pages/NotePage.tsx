@@ -4,6 +4,7 @@ import { IconArrowLeft } from "@tabler/icons-react";
 
 import { NoteCard } from "@/components/NoteCard";
 import { NoteList, NoteListItem } from "@/components/NoteList";
+import { NoteReactions } from "@/components/NoteReactions";
 import { ThreadNote } from "@/components/ThreadNote";
 import { ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -21,7 +22,6 @@ const styles = {
     },
     nestedBranch: {
         marginLeft: "0.75rem",
-        borderLeft: "1px solid var(--border)",
     },
     continue: {
         margin: "0.25rem 1.25rem 0.75rem 4.25rem",
@@ -64,7 +64,7 @@ function ThreadBranch({ actorID, depth, note, onOpenNote, onOpenProfile, refresh
 
     return (
         <div style={{ ...styles.branch, ...(depth > 1 ? styles.nestedBranch : {}) }}>
-            <ThreadNote label="返信ノート" lineAfter={children.length > 0} lineBefore note={note} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} />
+            <ThreadNote bubble label="返信ノート" note={note} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} />
             {depth < 5 ? (
                 children.map((child) => <ThreadBranch actorID={actorID} depth={depth + 1} key={child.id} note={child} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} refreshKey={refreshKey} />)
             ) : (
@@ -184,6 +184,7 @@ export function NotePage({
                                 showReplyContext={false}
                             />
                         </NoteListItem>
+                        <NoteReactions actorID={actorID} note={note.renote || note} onOpenProfile={onOpenProfile} />
                         {thread.length > 0 && <h2>返信</h2>}
                         {thread.map((reply) => (
                             <ThreadBranch actorID={actorID} depth={1} key={reply.id} note={reply} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} refreshKey={refreshKey} />
