@@ -37,7 +37,6 @@ const rules = {
             padding: "0.75rem 1.25rem",
             fontSize: "0.875rem",
             fontWeight: 900,
-            background: "var(--panel-muted)",
         },
         "@media (width >= 40rem)": {
             "& > h2": {
