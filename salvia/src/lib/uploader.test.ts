@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "./api";
-import { uploadImage } from "./uploader";
+import { api } from "@/lib/api";
+import { uploadImage } from "@/lib/uploader";
 
 describe("object-storage uploader", () => {
     afterEach(() => vi.restoreAllMocks());

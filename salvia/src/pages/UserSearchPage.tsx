@@ -2,8 +2,8 @@ import type { CSSProperties } from "react";
 
 import { IconUserSearch } from "@tabler/icons-react";
 
-import { RemoteUserSearch } from "../components/RemoteUserSearch";
-import { PageHeader } from "../components/ui";
+import { RemoteUserSearch } from "@/components/RemoteUserSearch";
+import { PageHeader } from "@/components/ui";
 
 const styles = {
     headerIcon: {

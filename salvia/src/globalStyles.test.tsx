@@ -1,8 +1,8 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { GlobalStyles } from "./globalStyles";
-import { __resetCssForTests } from "./lib/css";
+import { GlobalStyles } from "@/globalStyles";
+import { __resetCssForTests } from "@/lib/css";
 
 afterEach(() => {
     cleanup();

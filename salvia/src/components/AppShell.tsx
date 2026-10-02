@@ -2,13 +2,13 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { IconAntenna, IconBell, IconHome, IconLogout, IconMoodSmile, IconPlus, IconSettings, IconUsersPlus } from "@tabler/icons-react";
 
-import type { Page } from "../lib/api";
-import { css } from "../lib/css";
-import type { Actor, Session } from "../lib/schema";
-import { BrandMark } from "./BrandMark";
-import { EmojiText } from "./EmojiText";
-import { Avatar, Button } from "./ui";
-import { Dropdown } from "./ui/Dropdown";
+import { BrandMark } from "@/components/BrandMark";
+import { EmojiText } from "@/components/EmojiText";
+import { Avatar, Button } from "@/components/ui";
+import { Dropdown } from "@/components/ui/Dropdown";
+import type { Page } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { Actor, Session } from "@/lib/schema";
 
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [
     { icon: IconHome, label: "ホーム", page: "home", path: "/" },
@@ -227,9 +227,9 @@ const styles = {
         fontSize: "10px",
     },
     mobileCompose: {
-        width: "2.75rem",
-        height: "2.75rem",
-        minWidth: "2.75rem",
+        width: "3rem",
+        height: "3rem",
+        minWidth: "3rem",
         display: "grid",
         placeItems: "center",
         borderRadius: "9999px",
@@ -404,7 +404,7 @@ export function AppShell({
                         </button>
                     ))}
                 </nav>
-                <Button onClick={onCompose} style={styles.compose}>
+                <Button onClick={onCompose} size="large" style={styles.compose}>
                     <IconPlus />
                     ノート
                 </Button>

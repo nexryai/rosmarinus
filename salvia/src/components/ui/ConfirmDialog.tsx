@@ -2,7 +2,7 @@ import type { CSSProperties, PropsWithChildren } from "react";
 
 import { IconAlertTriangle } from "@tabler/icons-react";
 
-import { Button, Modal } from "../ui";
+import { Button, Modal } from "@/components/ui";
 
 const styles = {
     content: {

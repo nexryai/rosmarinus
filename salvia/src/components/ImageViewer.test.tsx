@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Note } from "../lib/schema";
-import { ImageViewer } from "./ImageViewer";
+import { ImageViewer } from "@/components/ImageViewer";
+import type { Note } from "@/lib/schema";
 
 const images = [
     {

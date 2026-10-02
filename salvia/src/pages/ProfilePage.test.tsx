@@ -2,9 +2,9 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Actor, Note, Profile } from "../lib/schema";
-import { ProfilePage } from "./ProfilePage";
+import { api } from "@/lib/api";
+import type { Actor, Note, Profile } from "@/lib/schema";
+import { ProfilePage } from "@/pages/ProfilePage";
 
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob", profile_fields: [], tags: [] } as unknown as Actor;
 const profile = { actor: remote, followers_count: 2, following_count: 3, follow_status: "", blocked_by_viewer: false, muted_by_viewer: false, pinned_notes: [] } as Profile;

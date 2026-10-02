@@ -2,12 +2,12 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from "re
 
 import { IconRefresh } from "@tabler/icons-react";
 
-import { NoteCard } from "../components/NoteCard";
-import { NoteList, NoteListItem } from "../components/NoteList";
-import { Button, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
-import { api } from "../lib/api";
-import { css, keyframes } from "../lib/css";
-import type { Emoji, Note } from "../lib/schema";
+import { NoteCard } from "@/components/NoteCard";
+import { NoteList, NoteListItem } from "@/components/NoteList";
+import { Button, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
+import { api } from "@/lib/api";
+import { css, keyframes } from "@/lib/css";
+import type { Emoji, Note } from "@/lib/schema";
 
 const noteArrival = keyframes({
     from: {

@@ -1,7 +1,7 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { ImageFileInput } from "./ImageFileInput";
+import { ImageFileInput } from "@/components/ImageFileInput";
 
 describe("ImageFileInput", () => {
     it("accepts only the configured number of raster images and resets itself", () => {

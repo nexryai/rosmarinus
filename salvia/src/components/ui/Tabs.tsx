@@ -1,6 +1,6 @@
 import { type CSSProperties, type KeyboardEvent, type ReactElement, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
-import { css } from "../../lib/css";
+import { css } from "@/lib/css";
 
 type TabOption<T extends string> = {
     value: T;

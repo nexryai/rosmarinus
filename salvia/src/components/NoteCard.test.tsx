@@ -2,8 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Actor, Note } from "../lib/schema";
-import { NoteCard } from "./NoteCard";
+import { NoteCard } from "@/components/NoteCard";
+import type { Actor, Note } from "@/lib/schema";
 
 const author = { id: "bob", username: "bob", name: "Bob" } as Actor;
 const note = { id: "note-1", uri: "https://example.test/notes/1", text: "hello", visibility: "public", created_at: new Date().toISOString(), replies_count: 0, author, attachments: [], emojis: [], reactions: [] } as unknown as Note;

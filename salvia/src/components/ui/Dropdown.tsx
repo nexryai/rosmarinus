@@ -2,9 +2,9 @@ import { type CSSProperties, type KeyboardEvent, type ReactNode, useCallback, us
 
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 
-import { css, keyframes } from "../../lib/css";
-import { useIsMobile } from "../../lib/responsive";
-import { DrawerFrame } from "./Drawer";
+import { DrawerFrame } from "@/components/ui/Drawer";
+import { css, keyframes } from "@/lib/css";
+import { useIsMobile } from "@/lib/responsive";
 
 const openAnimation = keyframes({
     from: {

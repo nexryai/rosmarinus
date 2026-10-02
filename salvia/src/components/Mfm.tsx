@@ -2,11 +2,11 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { type MfmNode, parse } from "mfm-js";
 
-import { emojiFontFamily } from "../globalStyles";
-import { css, keyframes } from "../lib/css";
-import { nyaize as transformNyaize } from "../lib/nyaize";
-import type { Emoji, MentionActor } from "../lib/schema";
-import { CustomEmoji } from "./EmojiText";
+import { CustomEmoji } from "@/components/EmojiText";
+import { emojiFontFamily } from "@/globalStyles";
+import { css, keyframes } from "@/lib/css";
+import { nyaize as transformNyaize } from "@/lib/nyaize";
+import type { Emoji, MentionActor } from "@/lib/schema";
 
 const monospaceFontFamily = `SFMono-Regular, Consolas, "Liberation Mono", "DejaVu Sans Mono", ${emojiFontFamily}, ui-monospace, monospace`;
 

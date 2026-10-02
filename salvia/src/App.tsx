@@ -2,22 +2,22 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "r
 
 import { IconPlus } from "@tabler/icons-react";
 
-import { AppShell } from "./components/AppShell";
-import { AuthScreen } from "./components/AuthScreen";
-import { BrandMark } from "./components/BrandMark";
-import { Composer, type ComposerIntent } from "./components/Composer";
-import { Button, ErrorBanner, Loading } from "./components/ui";
-import { ApiError, api, type Page } from "./lib/api";
-import { css } from "./lib/css";
-import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "./lib/schema";
-import { AntennaPage } from "./pages/AntennaPage";
-import { EmojiManagerPage } from "./pages/EmojiManagerPage";
-import { FollowRequestsPage } from "./pages/FollowRequestsPage";
-import { NotePage } from "./pages/NotePage";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { TimelinePage } from "./pages/TimelinePage";
+import { AppShell } from "@/components/AppShell";
+import { AuthScreen } from "@/components/AuthScreen";
+import { BrandMark } from "@/components/BrandMark";
+import { Composer, type ComposerIntent } from "@/components/Composer";
+import { Button, ErrorBanner, Loading } from "@/components/ui";
+import { ApiError, api, type Page } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "@/lib/schema";
+import { AntennaPage } from "@/pages/AntennaPage";
+import { EmojiManagerPage } from "@/pages/EmojiManagerPage";
+import { FollowRequestsPage } from "@/pages/FollowRequestsPage";
+import { NotePage } from "@/pages/NotePage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
+import { ProfilePage } from "@/pages/ProfilePage";
+import { SettingsPage } from "@/pages/SettingsPage";
+import { TimelinePage } from "@/pages/TimelinePage";
 
 type AuthState = "loading" | "setup" | "login" | "authenticated";
 const defaultSettings: AccountSettings = { theme: "yellow", reduce_motion: false, compact_mode: false };

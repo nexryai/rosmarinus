@@ -2,15 +2,15 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } 
 
 import { IconBan, IconInbox, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
-import { EmojiText } from "../components/EmojiText";
-import { RemoteUserSearch } from "../components/RemoteUserSearch";
-import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "../components/ui";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
-import { api } from "../lib/api";
-import { css } from "../lib/css";
-import { useIsMobile } from "../lib/responsive";
-import type { Connection } from "../lib/schema";
+import { EmojiText } from "@/components/EmojiText";
+import { RemoteUserSearch } from "@/components/RemoteUserSearch";
+import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { api } from "@/lib/api";
+import { css } from "@/lib/css";
+import { useIsMobile } from "@/lib/responsive";
+import type { Connection } from "@/lib/schema";
 
 type FollowRequestAction = "accept" | "accept_and_follow" | "reject" | "reject_and_block";
 type MobileAction = "" | FollowRequestAction;

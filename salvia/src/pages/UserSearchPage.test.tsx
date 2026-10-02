@@ -2,9 +2,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Profile } from "../lib/schema";
-import { UserSearchPage } from "./UserSearchPage";
+import { api } from "@/lib/api";
+import type { Profile } from "@/lib/schema";
+import { UserSearchPage } from "@/pages/UserSearchPage";
 
 describe("UserSearchPage", () => {
     afterEach(() => {

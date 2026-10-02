@@ -2,9 +2,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { AccountSettings, Actor } from "../lib/schema";
-import { SettingsPage } from "./SettingsPage";
+import { api } from "@/lib/api";
+import type { AccountSettings, Actor } from "@/lib/schema";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 const actor = {
     id: "alice",

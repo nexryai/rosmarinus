@@ -20,6 +20,19 @@
         "enabled": true,
         "rules": {
             "preset": "recommended",
+            "style": {
+                "noRestrictedImports": {
+                    "level": "error",
+                    "options": {
+                        "patterns": [
+                            {
+                                "group": ["./**", "../**"],
+                                "message": "Relative imports are prohibited. Use the @/ alias instead."
+                            }
+                        ]
+                    }
+                }
+            },
             "performance": {
                 "noImgElement": "off"
             },

@@ -1,9 +1,9 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Note } from "../lib/schema";
-import { TimelinePage } from "./TimelinePage";
+import { api } from "@/lib/api";
+import type { Note } from "@/lib/schema";
+import { TimelinePage } from "@/pages/TimelinePage";
 
 describe("TimelinePage remote notes", () => {
     afterEach(() => {

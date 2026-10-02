@@ -2,12 +2,12 @@ import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInf
 
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 
-import { css, keyframes } from "../lib/css";
-import { useIsMobile } from "../lib/responsive";
-import { DrawerFrame } from "./ui/Drawer";
+import { DrawerFrame } from "@/components/ui/Drawer";
+import { css, keyframes } from "@/lib/css";
+import { useIsMobile } from "@/lib/responsive";
 
-export { Avatar } from "./ui/Avatar";
-export { Tabs } from "./ui/Tabs";
+export { Avatar } from "@/components/ui/Avatar";
+export { Tabs } from "@/components/ui/Tabs";
 
 const spin = keyframes({
     to: {

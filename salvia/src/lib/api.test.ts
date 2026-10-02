@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, api } from "./api";
+import { ApiError, api } from "@/lib/api";
 
 const jsonResponse = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {

@@ -2,8 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Actor } from "../lib/schema";
-import { Avatar } from "./ui";
+import { Avatar } from "@/components/ui";
+import type { Actor } from "@/lib/schema";
 
 const actor = { id: "remote-bob", username: "bob", name: "Bob", avatar_url: "https://remote.example/avatar.png" } as Actor;
 

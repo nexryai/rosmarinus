@@ -1,7 +1,7 @@
 import { type CSSProperties, type PropsWithChildren, useEffect } from "react";
 import { createPortal } from "react-dom";
 
-import { css, keyframes } from "../../lib/css";
+import { css, keyframes } from "@/lib/css";
 
 const backdropOpen = keyframes({
     from: {

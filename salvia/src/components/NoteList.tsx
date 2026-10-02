@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 
-import { css } from "../lib/css";
+import { css } from "@/lib/css";
 
 const rules = {
     list: css({

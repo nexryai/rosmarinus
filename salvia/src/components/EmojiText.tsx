@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { parseSimple } from "mfm-js";
 
-import type { Emoji } from "../lib/schema";
+import type { Emoji } from "@/lib/schema";
 
 const styles = {
     emoji: {

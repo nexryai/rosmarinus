@@ -2,11 +2,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../../lib/api";
-import { createPasskey } from "../../lib/webauthn";
-import { SecuritySettings } from "./SecuritySettings";
+import { SecuritySettings } from "@/components/settings/SecuritySettings";
+import { api } from "@/lib/api";
+import { createPasskey } from "@/lib/webauthn";
 
-vi.mock("../../lib/webauthn", () => ({ createPasskey: vi.fn() }));
+vi.mock("@/lib/webauthn", () => ({ createPasskey: vi.fn() }));
 
 const phone = { id: "phone-key", name: "Phone", created_at: "2026-09-01T00:00:00Z" };
 const laptop = { id: "laptop-key", name: "Laptop", created_at: "2026-10-01T00:00:00Z" };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { __resetCssForTests, css, globalCss, keyframes } from "./css";
+import { __resetCssForTests, css, globalCss, keyframes } from "@/lib/css";
 
 afterEach(__resetCssForTests);
 

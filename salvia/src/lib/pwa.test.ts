@@ -1,7 +1,7 @@
 import { fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { registerServiceWorker } from "./pwa";
+import { registerServiceWorker } from "@/lib/pwa";
 
 describe("PWA registration", () => {
     const originalServiceWorker = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");

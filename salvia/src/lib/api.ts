@@ -31,7 +31,7 @@ import {
     reactionActorSchema,
     type Session,
     sessionSchema,
-} from "./schema";
+} from "@/lib/schema";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
 const pendingMutationIntents = new Map<string, string>();

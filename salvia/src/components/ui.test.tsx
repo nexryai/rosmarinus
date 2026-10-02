@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { Button, Modal } from "./ui";
-import { ConfirmDialog } from "./ui/ConfirmDialog";
-import { Dropdown } from "./ui/Dropdown";
+import { Button, Modal } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
 
 const useMobileViewport = () => {
     vi.stubGlobal(

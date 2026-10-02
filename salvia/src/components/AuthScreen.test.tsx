@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AuthScreen } from "./AuthScreen";
+import { AuthScreen } from "@/components/AuthScreen";
 
 describe("AuthScreen", () => {
     afterEach(cleanup);

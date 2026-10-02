@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createCanvasThumbnail, revokeCanvasThumbnail } from "./image";
+import { createCanvasThumbnail, revokeCanvasThumbnail } from "@/lib/image";
 
 describe("Canvas image processing", () => {
     afterEach(() => vi.restoreAllMocks());

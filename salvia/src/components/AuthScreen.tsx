@@ -2,11 +2,11 @@ import { type CSSProperties, type FormEvent, useState } from "react";
 
 import { IconArrowRight, IconKey, IconShieldCheck } from "@tabler/icons-react";
 
-import { ApiError, api } from "../lib/api";
-import { css } from "../lib/css";
-import { createPasskey, getPasskey } from "../lib/webauthn";
-import { BrandMark } from "./BrandMark";
-import { Button, ErrorBanner } from "./ui";
+import { BrandMark } from "@/components/BrandMark";
+import { Button, ErrorBanner } from "@/components/ui";
+import { ApiError, api } from "@/lib/api";
+import { css } from "@/lib/css";
+import { createPasskey, getPasskey } from "@/lib/webauthn";
 
 const styles = {
     page: {

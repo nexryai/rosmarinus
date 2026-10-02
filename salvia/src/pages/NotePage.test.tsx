@@ -1,9 +1,9 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Actor, Note } from "../lib/schema";
-import { NotePage } from "./NotePage";
+import { api } from "@/lib/api";
+import type { Actor, Note } from "@/lib/schema";
+import { NotePage } from "@/pages/NotePage";
 
 const author = { id: "alice", name: "Alice", username: "alice", uri: "https://example.test/users/alice" } as Actor;
 

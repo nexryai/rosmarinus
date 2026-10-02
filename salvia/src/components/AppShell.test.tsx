@@ -2,9 +2,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Actor, Session } from "../lib/schema";
-import { AppShell } from "./AppShell";
-import { PageHeader } from "./ui";
+import { AppShell } from "@/components/AppShell";
+import { PageHeader } from "@/components/ui";
+import type { Actor, Session } from "@/lib/schema";
 
 const actors = [
     { id: "alice", username: "alice", name: "Alice" },

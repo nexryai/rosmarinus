@@ -2,13 +2,13 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconArrowLeft } from "@tabler/icons-react";
 
-import { NoteCard } from "../components/NoteCard";
-import { NoteList, NoteListItem } from "../components/NoteList";
-import { ThreadNote } from "../components/ThreadNote";
-import { ErrorBanner, Loading, PageHeader, RoundButton } from "../components/ui";
-import { api } from "../lib/api";
-import { css } from "../lib/css";
-import type { Emoji, Note } from "../lib/schema";
+import { NoteCard } from "@/components/NoteCard";
+import { NoteList, NoteListItem } from "@/components/NoteList";
+import { ThreadNote } from "@/components/ThreadNote";
+import { ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
+import { api } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { Emoji, Note } from "@/lib/schema";
 
 const styles = {
     back: {

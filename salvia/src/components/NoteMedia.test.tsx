@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Note } from "../lib/schema";
-import { NoteMedia } from "./NoteMedia";
+import { NoteMedia } from "@/components/NoteMedia";
+import type { Note } from "@/lib/schema";
 
 const image = (index: number) =>
     ({

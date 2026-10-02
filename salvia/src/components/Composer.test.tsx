@@ -2,9 +2,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Actor, Note } from "../lib/schema";
-import { Composer } from "./Composer";
+import { Composer } from "@/components/Composer";
+import { api } from "@/lib/api";
+import type { Actor, Note } from "@/lib/schema";
 
 const actor = { id: "alice", username: "alice", name: "Alice", uri: "https://example.test/users/alice" } as Actor;
 const target = { id: "note-1", uri: "https://example.test/notes/1", text: "hello", visibility: "public", author: actor } as Note;

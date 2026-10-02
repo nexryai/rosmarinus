@@ -2,18 +2,18 @@ import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from 
 
 import { IconAlertTriangle, IconChartBar, IconMoodSmile, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
 
-import { api, type CreatePostInput } from "../lib/api";
-import { css } from "../lib/css";
-import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "../lib/image";
-import type { Actor, ActorSettings, Emoji, Note } from "../lib/schema";
-import { uploadImage } from "../lib/uploader";
-import { EmojiPickerDialog } from "./EmojiPickerDialog";
-import { EmojiText } from "./EmojiText";
-import { ImageFileInput } from "./ImageFileInput";
-import { Mfm } from "./Mfm";
-import { Button, ErrorBanner, Modal } from "./ui";
-import { Dropdown, type DropdownOption } from "./ui/Dropdown";
-import { Switch } from "./ui/Switch";
+import { EmojiPickerDialog } from "@/components/EmojiPickerDialog";
+import { EmojiText } from "@/components/EmojiText";
+import { ImageFileInput } from "@/components/ImageFileInput";
+import { Mfm } from "@/components/Mfm";
+import { Button, ErrorBanner, Modal } from "@/components/ui";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Switch } from "@/components/ui/Switch";
+import { api, type CreatePostInput } from "@/lib/api";
+import { css } from "@/lib/css";
+import { type CanvasThumbnail, createCanvasThumbnail, revokeCanvasThumbnail } from "@/lib/image";
+import type { Actor, ActorSettings, Emoji, Note } from "@/lib/schema";
+import { uploadImage } from "@/lib/uploader";
 
 export type ComposerIntent = { kind: "post" } | { kind: "reply" | "quote"; target: Note };
 

@@ -2,16 +2,16 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconDots, IconEye, IconEyeOff, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
 
-import { EmojiText } from "../components/EmojiText";
-import { Mfm } from "../components/Mfm";
-import { NoteCard } from "../components/NoteCard";
-import { NoteList, NoteListItem } from "../components/NoteList";
-import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "../components/ui";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { Dropdown } from "../components/ui/Dropdown";
-import { api } from "../lib/api";
-import { css } from "../lib/css";
-import type { Connection, Emoji, Note, Profile } from "../lib/schema";
+import { EmojiText } from "@/components/EmojiText";
+import { Mfm } from "@/components/Mfm";
+import { NoteCard } from "@/components/NoteCard";
+import { NoteList, NoteListItem } from "@/components/NoteList";
+import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
+import { api } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { Connection, Emoji, Note, Profile } from "@/lib/schema";
 
 const styles = {
     hero: {

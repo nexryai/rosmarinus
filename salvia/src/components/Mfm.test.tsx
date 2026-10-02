@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { EmojiText } from "./EmojiText";
-import { Mfm } from "./Mfm";
+import { EmojiText } from "@/components/EmojiText";
+import { Mfm } from "@/components/Mfm";
 
 const emojis = [{ name: "party", url: "https://remote.test/party.webp", media_type: "image/webp" }];
 

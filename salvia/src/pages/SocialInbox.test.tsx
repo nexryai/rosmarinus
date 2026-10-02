@@ -2,10 +2,10 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { Actor, Connection, Notification } from "../lib/schema";
-import { FollowRequestsPage } from "./FollowRequestsPage";
-import { NotificationsPage } from "./NotificationsPage";
+import { api } from "@/lib/api";
+import type { Actor, Connection, Notification } from "@/lib/schema";
+import { FollowRequestsPage } from "@/pages/FollowRequestsPage";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 
 const remote = { id: "bob", username: "bob", name: "Bob", uri: "https://remote.test/users/bob" } as Actor;
 

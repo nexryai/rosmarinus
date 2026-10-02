@@ -2,14 +2,14 @@ import { type CSSProperties, type FormEvent, type ReactElement, useEffect, useSt
 
 import { IconPlus, IconServer, IconSettings, IconShieldLock, IconTrash, IconUserCircle, IconUsers } from "@tabler/icons-react";
 
-import { SecuritySettings } from "../components/settings/SecuritySettings";
-import { Button, ErrorBanner, PageHeader, Tabs } from "../components/ui";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { Dropdown, type DropdownOption } from "../components/ui/Dropdown";
-import { Switch } from "../components/ui/Switch";
-import { api } from "../lib/api";
-import { css } from "../lib/css";
-import type { AccountSettings, Actor, ActorSettings, QueueStatus } from "../lib/schema";
+import { SecuritySettings } from "@/components/settings/SecuritySettings";
+import { Button, ErrorBanner, PageHeader, Tabs } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Switch } from "@/components/ui/Switch";
+import { api } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { AccountSettings, Actor, ActorSettings, QueueStatus } from "@/lib/schema";
 
 type SettingsTab = "general" | "profile" | "actor" | "security" | "system";
 const settingsTabs = [

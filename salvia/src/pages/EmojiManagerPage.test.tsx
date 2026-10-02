@@ -2,9 +2,9 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import type { ManagedEmoji } from "../lib/schema";
-import { EmojiManagerPage } from "./EmojiManagerPage";
+import { api } from "@/lib/api";
+import type { ManagedEmoji } from "@/lib/schema";
+import { EmojiManagerPage } from "@/pages/EmojiManagerPage";
 
 const localEmoji = { id: "local-1", host: "", name: "rosemary", uri: "https://local.test/emojis/rosemary", url: "https://local.test/media/1", original_url: "https://local.test/media/1" } as ManagedEmoji;
 const remoteEmoji = { id: "remote-1", host: "remote.test", name: "party", uri: "https://remote.test/emojis/party", url: "https://remote.test/party.webp", original_url: "https://remote.test/party.webp" } as ManagedEmoji;

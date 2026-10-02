@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 
 import { IconChevronLeft, IconChevronRight, IconExternalLink, IconMinus, IconPlus, IconX } from "@tabler/icons-react";
 
-import { css, keyframes } from "../lib/css";
-import type { Note } from "../lib/schema";
+import { css, keyframes } from "@/lib/css";
+import type { Note } from "@/lib/schema";
 
 type ImageAttachment = Note["attachments"][number];
 type Point = {

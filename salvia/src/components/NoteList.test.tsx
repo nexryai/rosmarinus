@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { NoteList, NoteListItem } from "./NoteList";
+import { NoteList, NoteListItem } from "@/components/NoteList";
 
 describe("NoteList", () => {
     afterEach(cleanup);

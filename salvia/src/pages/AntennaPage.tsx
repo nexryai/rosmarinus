@@ -2,15 +2,15 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconAntenna, IconEdit, IconPlus, IconTrash } from "@tabler/icons-react";
 
-import { NoteCard } from "../components/NoteCard";
-import { NoteList, NoteListItem } from "../components/NoteList";
-import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader } from "../components/ui";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { Dropdown } from "../components/ui/Dropdown";
-import { Switch } from "../components/ui/Switch";
-import { type AntennaInput, api } from "../lib/api";
-import { css } from "../lib/css";
-import type { Antenna, Emoji, Note } from "../lib/schema";
+import { NoteCard } from "@/components/NoteCard";
+import { NoteList, NoteListItem } from "@/components/NoteList";
+import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Dropdown } from "@/components/ui/Dropdown";
+import { Switch } from "@/components/ui/Switch";
+import { type AntennaInput, api } from "@/lib/api";
+import { css } from "@/lib/css";
+import type { Antenna, Emoji, Note } from "@/lib/schema";
 
 const emptyInput: AntennaInput = { name: "", source: "all", users: [], keywords: [], exclude_keywords: [], case_sensitive: false, local_only: false, exclude_bots: false, with_replies: true, with_file: false };
 

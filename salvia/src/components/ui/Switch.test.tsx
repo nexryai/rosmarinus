@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { Switch } from "./Switch";
+import { Switch } from "@/components/ui/Switch";
 
 function SwitchHarness({ disabled = false }: { disabled?: boolean }) {
     const [checked, setChecked] = useState(false);

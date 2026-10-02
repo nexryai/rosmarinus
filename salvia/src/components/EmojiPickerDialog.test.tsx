@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { EmojiPickerDialog } from "./EmojiPickerDialog";
+import { EmojiPickerDialog } from "@/components/EmojiPickerDialog";
 
 const customEmojis = [
     { name: "salvia", url: "/media/salvia", media_type: "image/webp" },

@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api } from "@/lib/api";
 
 export type UploadDimensions = { width: number; height: number };
 export type UploadedImage = { id: string; url: string; preview_url: string };

@@ -1,6 +1,6 @@
 import type { CSSProperties, HTMLAttributes } from "react";
 
-import { css } from "../lib/css";
+import { css } from "@/lib/css";
 
 const styles = {
     surface: {

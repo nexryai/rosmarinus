@@ -2,8 +2,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../lib/api";
-import { AntennaPage } from "./AntennaPage";
+import { api } from "@/lib/api";
+import { AntennaPage } from "@/pages/AntennaPage";
 
 describe("AntennaPage", () => {
     afterEach(() => {

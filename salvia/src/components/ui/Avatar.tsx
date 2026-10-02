@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
-import { css } from "../../lib/css";
-import type { Actor } from "../../lib/schema";
+import { css } from "@/lib/css";
+import type { Actor } from "@/lib/schema";
 
 const styles = {
     avatar: {
