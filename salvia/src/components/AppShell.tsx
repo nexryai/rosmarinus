@@ -227,9 +227,9 @@ const styles = {
         fontSize: "10px",
     },
     mobileCompose: {
-        width: "3rem",
-        height: "3rem",
-        minWidth: "3rem",
+        width: "2.75rem",
+        height: "2.75rem",
+        minWidth: "2.75rem",
         display: "grid",
         placeItems: "center",
         borderRadius: "9999px",
