@@ -444,7 +444,6 @@ export function Composer({
                     )}
                     {error && <ErrorBanner message={error} />}
                     {processing && <p role="status">画像を圧縮しています…</p>}
-                    <p style={styles.optionLabel}>投稿画像は位置情報などを除去して再エンコードします。アニメーションは静止画になります。</p>
                     <textarea aria-label="ノート本文" autoFocus maxLength={3000} onChange={(event) => setText(event.target.value)} placeholder="いまどうしてる？" rows={7} style={styles.textarea} value={text} />
                     {images.length > 0 && (
                         <div style={styles.previews}>
