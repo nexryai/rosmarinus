@@ -293,3 +293,33 @@ func TestLoadRejectsInvalidLocalActorUsername(t *testing.T) {
 		t.Fatalf("expected invalid LOCAL_ACTOR_USERNAME to fail")
 	}
 }
+
+func TestTimelineCacheConfiguration(t *testing.T) {
+	defaults, err := loadTest(func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.TimelineCacheTTL != time.Minute || defaults.TimelineCacheSize != 128 || defaults.TimelineCacheTimeout != 50*time.Millisecond {
+		t.Fatal("unexpected timeline cache defaults")
+	}
+	for _, test := range []struct {
+		key, value string
+		valid      bool
+	}{
+		{"TIMELINE_CACHE_TTL", "0s", true}, {"TIMELINE_CACHE_TTL", "-1s", false},
+		{"TIMELINE_CACHE_SIZE", "1", true}, {"TIMELINE_CACHE_SIZE", "1025", false}, {"TIMELINE_CACHE_SIZE", "0", false},
+		{"TIMELINE_CACHE_TIMEOUT", "10ms", true}, {"TIMELINE_CACHE_TIMEOUT", "0s", false},
+	} {
+		t.Run(test.key+"="+test.value, func(t *testing.T) {
+			_, err := loadTest(func(key string) (string, bool) {
+				if key == test.key {
+					return test.value, true
+				}
+				return "", false
+			})
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%v err=%v", test.valid, err)
+			}
+		})
+	}
+}

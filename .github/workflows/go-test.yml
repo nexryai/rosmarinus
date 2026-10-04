@@ -13,6 +13,19 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mongo:
+        image: mongo:8.2
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v6
 
@@ -38,4 +51,7 @@ jobs:
         run: go mod download
 
       - name: Run tests
+        env:
+          TIMELINE_TEST_MONGO_URI: mongodb://127.0.0.1:27017
+          TIMELINE_TEST_REDIS_ADDR: 127.0.0.1:6379
         run: go test -count=1 ./...

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	apclient "github.com/nexryai/rosmarinus/internal/activitypub/client"
 	apworker "github.com/nexryai/rosmarinus/internal/activitypub/worker"
+	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/config"
 	"github.com/nexryai/rosmarinus/internal/connector"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
@@ -262,6 +264,53 @@ func TestLatestMisskeyFederationWorkflows(t *testing.T) {
 	if !foundRemoteNote {
 		t.Fatal("home timeline omitted the followed Misskey user's note")
 	}
+	// Phase 5a: cache the received Misskey Note's timeline candidates in real
+	// Redis, verifying warm public/home reads, eviction and Redis failure preserve
+	// the MongoDB-backed projections and followed-author profile fields.
+	waitFor(t, ctx, "timeline Note outside recent insertion overlap", func() bool {
+		return time.Since(remoteNote.CreatedAt) > 6*time.Second
+	})
+	timelineRedis := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr, ContextTimeoutEnabled: true, MaxRetries: -1, ReadTimeout: 250 * time.Millisecond, WriteTimeout: 250 * time.Millisecond})
+	t.Cleanup(func() { _ = timelineRedis.Close() })
+	timelinePrefix := "rosmarinus:test:timeline:" + remoteNote.ID
+	timelineStore := cache.NewRedisValueStore(timelineRedis, timelinePrefix)
+	cachedReader := mongostore.NewSalviaReader(db).WithTimelineCache(timelineStore, time.Minute, 128, 250*time.Millisecond)
+	durableReader := mongostore.NewSalviaReader(db)
+	for _, kind := range []string{"home", "public"} {
+		var readCached, readDurable func(context.Context, string, readmodel.Cursor, int) ([]readmodel.Note, error)
+		if kind == "home" {
+			readCached, readDurable = cachedReader.ListHomeTimeline, durableReader.ListHomeTimeline
+		} else {
+			readCached, readDurable = cachedReader.ListPublicTimeline, durableReader.ListPublicTimeline
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			got, cacheErr := readCached(ctx, localActor.ID, readmodel.Cursor{}, 30)
+			want, dbErr := readDurable(ctx, localActor.ID, readmodel.Cursor{}, 30)
+			if cacheErr != nil || dbErr != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s cached timeline differs from MongoDB: cache=%v db=%v", kind, cacheErr, dbErr)
+			}
+		}
+	}
+	timelineKeys, err := timelineRedis.Keys(ctx, timelinePrefix+":*").Result()
+	if err != nil || len(timelineKeys) != 2 {
+		t.Fatalf("expected public/home candidate caches: keys=%v err=%v", timelineKeys, err)
+	}
+	if err := timelineRedis.Del(ctx, timelineKeys...).Err(); err != nil {
+		t.Fatalf("evict test timeline caches: %v", err)
+	}
+	recovered, err := cachedReader.ListHomeTimeline(ctx, localActor.ID, readmodel.Cursor{}, 30)
+	if err != nil || !reflect.DeepEqual(recovered, home) {
+		t.Fatalf("timeline did not recover from eviction: %v", err)
+	}
+	if err := timelineRedis.Del(ctx, timelineKeys...).Err(); err != nil {
+		t.Fatalf("clean test timeline caches: %v", err)
+	}
+	_ = timelineRedis.Close()
+	recovered, err = cachedReader.ListHomeTimeline(ctx, localActor.ID, readmodel.Cursor{}, 30)
+	if err != nil || !reflect.DeepEqual(recovered, home) {
+		t.Fatalf("timeline did not fall back after Redis failure: %v", err)
+	}
+
 	profileNotes, err := mongostore.NewSalviaReader(db).ListProfileNotes(ctx, localActor.ID, remoteActor.ID, readmodel.Cursor{}, 30)
 	if err != nil {
 		t.Fatalf("read remote Actor profile notes: %v", err)

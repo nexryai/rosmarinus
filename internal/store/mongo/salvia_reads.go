@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/nexryai/rosmarinus/internal/cache"
 	"github.com/nexryai/rosmarinus/internal/domain/actors"
 	"github.com/nexryai/rosmarinus/internal/domain/antennas"
 	"github.com/nexryai/rosmarinus/internal/domain/emojis"
@@ -24,8 +25,12 @@ import (
 )
 
 type SalviaReader struct {
-	db    *mongo.Database
-	mutes mutes.Repository
+	db                   *mongo.Database
+	mutes                mutes.Repository
+	timelineCache        cache.ValueStore
+	timelineCacheTTL     time.Duration
+	timelineCacheSize    int
+	timelineCacheTimeout time.Duration
 }
 
 func NewSalviaReader(db *mongo.Database) *SalviaReader {
@@ -47,8 +52,7 @@ func (r *SalviaReader) ListPublicTimeline(ctx context.Context, viewerActorID str
 	}
 	filter := bson.M{"deletedAt": nil, "visibility": string(notes.VisibilityPublic)}
 	filter = withExcludedAuthors(filter, append(blocked, muted...))
-	filter = withCreatedCursor(filter, after)
-	return r.listNotesWithTimelineMutes(ctx, viewerActorID, filter, limit, -1, muted)
+	return r.listTimeline(ctx, "public", viewerActorID, filter, after, limit, muted)
 }
 
 func (r *SalviaReader) ListHomeTimeline(ctx context.Context, viewerActorID string, after readmodel.Cursor, limit int) ([]readmodel.Note, error) {
@@ -77,8 +81,7 @@ func (r *SalviaReader) ListHomeTimeline(ctx context.Context, viewerActorID strin
 	}
 	filter := bson.M{"deletedAt": nil, "$or": feed}
 	filter = withExcludedAuthors(filter, append(blocked, muted...))
-	filter = withCreatedCursor(filter, after)
-	return r.listNotesWithTimelineMutes(ctx, viewerActorID, filter, limit, -1, muted)
+	return r.listTimeline(ctx, "home", viewerActorID, filter, after, limit, muted)
 }
 
 func (r *SalviaReader) FindVisibleNote(ctx context.Context, viewerActorID, noteID string) (*readmodel.Note, error) {

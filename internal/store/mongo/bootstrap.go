@@ -146,6 +146,10 @@ func BootstrapIndexes(ctx context.Context, db *mongo.Database) error {
 			Options: options.Index().SetName("idx_notes_quote_active_created_at"),
 		},
 		{
+			Keys:    bson.D{{Key: "authorId", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
+			Options: options.Index().SetName("idx_notes_author_active_cursor"),
+		},
+		{
 			Keys:    bson.D{{Key: "visibility", Value: 1}, {Key: "deletedAt", Value: 1}, {Key: "createdAt", Value: -1}, {Key: "_id", Value: -1}},
 			Options: options.Index().SetName("idx_notes_visibility_active_cursor"),
 		},

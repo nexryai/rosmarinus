@@ -20,7 +20,9 @@ The Go integration test performs this real federation sequence:
 7. create a public Misskey note;
 8. wait for the delivered `Create(Note)` to be verified and stored by
    Rosmarinus, then verify the home timeline includes the Note and its followed
-   remote author's nonempty profile fields;
+   remote author's nonempty profile fields; Phase 5a also verifies real Redis
+   candidate-cache warm reads for public/home timelines, isolated cache eviction,
+   and MongoDB fallback when the cache client becomes unavailable;
 9. pin and unpin that Misskey note and verify Rosmarinus applies the delivered
    `Add`/`Remove` activities to the remote Actor's `featuredNoteIds`;
 10. renote that public Misskey note and verify Rosmarinus stores the delivered

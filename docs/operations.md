@@ -173,3 +173,55 @@ rosmarinus queue promote inbox TASK_ID
 Promotion preserves the existing task payload. Only the `inbox` and `deliver`
 queues are accepted by this command. Inspect the failure first and avoid
 re-running a task whose target or authorization boundary is no longer valid.
+
+## Timeline candidate cache
+
+Public and home timelines cache a bounded recent window of Note IDs in Redis,
+scoped to the selected Actor and the current follow/block/mute filter. Defaults
+are `TIMELINE_CACHE_TTL=1m`, `TIMELINE_CACHE_SIZE=128` (range 1–1024), and
+`TIMELINE_CACHE_TIMEOUT=50ms`. Set `TIMELINE_CACHE_TTL=0s` to disable it.
+The application uses a separate Redis connection pool with deadline enforcement
+and no retries for this optional cache, so cache failure cannot consume queue or
+SSE connections or delay a read by the normal Redis retry budget.
+
+The cache stores neither rendered responses nor authorization evidence. Every
+read obtains current follow/block/mute state from MongoDB; cached IDs are fetched
+with the current visibility/deletion filter and active-author/muted-renote checks,
+and reactions, polls and profiles are enriched from MongoDB as before. Cold reads
+prefetch at most the configured window, enriching only the requested page. Warm
+reads query the indexed recent tail (overlapping the snapshot by five seconds),
+and cached candidates by ID in one query, then query only the older cursor range
+if needed. Pages outside the window use ordinary indexed cursor queries. Candidate expiration
+is never extended on a hit. Redis loss, invalid values and errors fall back to
+MongoDB and missing recent windows are rebuilt on first-page reads.
+
+As with any membership cache, an insertion backdated into the cached interval,
+or an old candidate becoming newly eligible through a visibility change or Actor
+unsuspension, can take up to the configured TTL to appear. Removal, deletion,
+suspension, blocks, mutes and loss of access are rechecked immediately. Rosmarinus
+assigns federated Notes their local ingestion `createdAt` and keeps the remote
+publication date separately, so ordinary delayed federation arrives in the fresh
+tail. Offline imports should run with this cache disabled or let its TTL expire.
+The reference Misskey checkout (`04600982f03a370c8d64228c3336e8a85c3542c5`)
+uses the remote publication date as `createdAt` in `ApNoteService`. Its
+`FanoutTimelineService`, `FanoutTimelineEndpointService` and timeline e2e tests
+were reviewed for ID ordering, current filtering and DB fallback. Rosmarinus
+uses on-demand MongoDB candidate windows rather than write-time Redis fan-out;
+that intentional implementation difference keeps Redis disposable without
+changing federation activity handling. No federation activity, REST/SSE shape or Salvia ownership
+contract changes. Phase 5a of the real-Misskey fixture checks warm reads, eviction
+and failure recovery; focused tests cover boundaries, filtering and paging.
+
+For an isolated MongoDB/Redis regression and diagnostic timing sample, run:
+
+```sh
+TIMELINE_TEST_MONGO_URI=mongodb://127.0.0.1:27017 \
+TIMELINE_TEST_REDIS_ADDR=127.0.0.1:6379 \
+go test -count=1 -v ./internal/store/mongo -run TestTimelineCacheMongoRedis
+```
+
+This test creates and drops its own unique test database and uses an isolated
+Redis key prefix. Its timing sample includes 2,000 suspended-author Notes to
+exercise expensive candidate rejection; it measures candidate selection only,
+not full response latency. The Go CI workflow runs this fixture with service
+containers.

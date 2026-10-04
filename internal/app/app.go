@@ -47,6 +47,7 @@ type App struct {
 	mongoClient        *mongo.Client
 	mongoDB            *mongo.Database
 	redisClient        *redis.Client
+	timelineRedis      *redis.Client
 	apLocker           *cache.Locker
 	actors             *cache.CachedActorRepository
 	notes              *mongostore.NoteRepository
@@ -182,6 +183,13 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		return nil, fmt.Errorf("ping redis: %w", err)
 	}
 	valueCache := cache.NewRedisValueStore(redisClient, "rosmarinus:cache")
+	timelineRedisClient := redis.NewClient(&redis.Options{
+		Addr: cfg.RedisAddr, Password: cfg.RedisPassword, DB: cfg.RedisDB,
+		DialTimeout: cfg.TimelineCacheTimeout, ReadTimeout: cfg.TimelineCacheTimeout, WriteTimeout: cfg.TimelineCacheTimeout, PoolTimeout: cfg.TimelineCacheTimeout,
+		ContextTimeoutEnabled: true, MaxRetries: -1,
+	})
+	salviaReader.WithTimelineCache(cache.NewRedisValueStore(timelineRedisClient, "rosmarinus:cache"), cfg.TimelineCacheTTL, cfg.TimelineCacheSize, cfg.TimelineCacheTimeout)
+	logger.Printf("timeline: candidate cache ttl=%s size=%d timeout=%s", cfg.TimelineCacheTTL, cfg.TimelineCacheSize, cfg.TimelineCacheTimeout)
 	realtimeBroker := realtime.NewRedisBroker(redisClient)
 	cachedActorRepo := cache.NewCachedActorRepository(actorRepo, valueCache)
 	cachedInstanceRepo := cache.NewCachedInstanceRepository(instanceRepo, valueCache)
@@ -231,6 +239,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 	if err != nil {
 		_ = mongoClient.Disconnect(context.Background())
 		_ = redisClient.Close()
+		_ = timelineRedisClient.Close()
 		_ = queueClient.Close()
 		_ = queueStatus.Close()
 		return nil, err
@@ -256,6 +265,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*App, erro
 		mongoClient:        mongoClient,
 		mongoDB:            mongoDB,
 		redisClient:        redisClient,
+		timelineRedis:      timelineRedisClient,
 		apLocker:           apLocker,
 		actors:             cachedActorRepo,
 		notes:              noteRepo,
@@ -331,6 +341,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.queueStatus != nil {
 		if err := a.queueStatus.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if a.timelineRedis != nil {
+		if err := a.timelineRedis.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

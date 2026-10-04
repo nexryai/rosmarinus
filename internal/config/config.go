@@ -32,18 +32,21 @@ type Config struct {
 	MongoURI      string
 	MongoDatabase string
 
-	RedisAddr           string
-	RedisPassword       string
-	RedisDB             int
-	SessionCookieName   string
-	SessionTTL          time.Duration
-	SessionSecure       bool
-	WebAuthnRPID        string
-	WebAuthnRPName      string
-	WebAuthnOrigins     []string
-	WebAuthnCeremonyTTL time.Duration
-	AuthRateLimit       int
-	AuthRateWindow      time.Duration
+	RedisAddr            string
+	RedisPassword        string
+	RedisDB              int
+	TimelineCacheTTL     time.Duration
+	TimelineCacheSize    int
+	TimelineCacheTimeout time.Duration
+	SessionCookieName    string
+	SessionTTL           time.Duration
+	SessionSecure        bool
+	WebAuthnRPID         string
+	WebAuthnRPName       string
+	WebAuthnOrigins      []string
+	WebAuthnCeremonyTTL  time.Duration
+	AuthRateLimit        int
+	AuthRateWindow       time.Duration
 
 	APIIdempotencyTTL       time.Duration
 	InboxActivityReceiptTTL time.Duration
@@ -97,6 +100,9 @@ func Load(lookup LookupFunc) (Config, error) {
 		MongoDatabase:           get(lookup, "MONGO_DATABASE", "rosmarinus"),
 		RedisAddr:               get(lookup, "REDIS_ADDR", "localhost:6379"),
 		RedisPassword:           get(lookup, "REDIS_PASSWORD", ""),
+		TimelineCacheTTL:        getDuration(lookup, "TIMELINE_CACHE_TTL", time.Minute),
+		TimelineCacheSize:       getInt(lookup, "TIMELINE_CACHE_SIZE", 128),
+		TimelineCacheTimeout:    getDuration(lookup, "TIMELINE_CACHE_TIMEOUT", 50*time.Millisecond),
 		SessionCookieName:       get(lookup, "SESSION_COOKIE_NAME", "rosmarinus_session"),
 		SessionTTL:              getDuration(lookup, "SESSION_TTL", 30*24*time.Hour),
 		WebAuthnRPID:            get(lookup, "WEBAUTHN_RP_ID", ""),
@@ -218,6 +224,9 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.MongoDatabase) == "" {
 		return fmt.Errorf("MONGO_DATABASE must not be empty")
+	}
+	if c.TimelineCacheTTL < 0 || c.TimelineCacheSize < 1 || c.TimelineCacheSize > 1024 || c.TimelineCacheTimeout <= 0 {
+		return fmt.Errorf("TIMELINE_CACHE_TTL must be nonnegative, TIMELINE_CACHE_SIZE must be 1..1024, and TIMELINE_CACHE_TIMEOUT must be positive")
 	}
 	if strings.TrimSpace(c.RedisAddr) == "" {
 		return fmt.Errorf("REDIS_ADDR must not be empty")
