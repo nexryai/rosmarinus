@@ -1,9 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import { css } from "mintcss";
+
 import { EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
 import { Avatar } from "@/components/ui";
-import { css } from "@/lib/css";
 import type { Actor, Note } from "@/lib/schema";
 
 type Quote = NonNullable<Note["quote"]>;

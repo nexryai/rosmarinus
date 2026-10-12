@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { IconHome, IconLock, IconMail, IconMessageCircle, IconPinFilled, IconQuote, IconRepeat, IconTrash, IconWorld } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { EmojiPickerDialog } from "@/components/EmojiPickerDialog";
 import { CustomEmoji, EmojiText } from "@/components/EmojiText";
@@ -12,7 +13,6 @@ import { QuotedNoteCard } from "@/components/QuotedNoteCard";
 import { ThreadNote } from "@/components/ThreadNote";
 import { Avatar, Button } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { css } from "@/lib/css";
 import type { Emoji, Note, ReactionActor } from "@/lib/schema";
 
 const styles = {

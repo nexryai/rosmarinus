@@ -1,12 +1,12 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconRefresh } from "@tabler/icons-react";
+import { css, keyframes } from "mintcss";
 
 import { NoteCard } from "@/components/NoteCard";
 import { NoteList, NoteListItem } from "@/components/NoteList";
 import { Button, Empty, ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css, keyframes } from "@/lib/css";
 import type { Emoji, Note } from "@/lib/schema";
 
 const noteArrival = keyframes({

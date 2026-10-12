@@ -1,9 +1,9 @@
 import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type HTMLAttributes, type MouseEvent, type PropsWithChildren, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
+import { css, keyframes } from "mintcss";
 
 import { DrawerFrame } from "@/components/ui/Drawer";
-import { css, keyframes } from "@/lib/css";
 import { useIsMobile } from "@/lib/responsive";
 
 export { Avatar } from "@/components/ui/Avatar";

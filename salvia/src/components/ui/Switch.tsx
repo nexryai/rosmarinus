@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { css } from "@/lib/css";
+import { css } from "mintcss";
 
 const styles = {
     root: {

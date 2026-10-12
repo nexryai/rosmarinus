@@ -1,7 +1,6 @@
 import twemojiColorFontURL from "@exis9/jdecked-twemoji/JdeckedTwemoji-COLRv1.woff2?url";
 import twemojiFallbackFontURL from "@exis9/jdecked-twemoji/JdeckedTwemoji-SVG.woff2?url";
-
-import { globalCss } from "@/lib/css";
+import { globalCss } from "mintcss";
 
 export const emojiFontFamily = '"Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"';
 const textFontFamily = 'Inter, "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans"';

@@ -74,7 +74,7 @@ describe("NoteCard social actions", () => {
         expect(card.style.border).toBe("");
         expect(card.style.borderRadius).toBe("");
 
-        const css = document.head.querySelector("style[data-salvia-css]")?.textContent ?? "";
+        const css = document.head.querySelector("style[data-mintcss]")?.textContent ?? "";
         expect(css).toContain(`@media (width >= 40rem){.${card.className}{`);
         expect(css).toContain("max-width:64rem;");
         expect(css).toContain("border-radius:1.25rem;");

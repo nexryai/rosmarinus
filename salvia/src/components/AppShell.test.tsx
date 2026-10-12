@@ -57,7 +57,7 @@ describe("AppShell navigation and mobile account controls", () => {
         const navigation = screen.getByRole("navigation", { name: "モバイルナビゲーション" });
         expect(navigation.getAttribute("style")).toContain("height: calc(4.25rem + env(safe-area-inset-bottom))");
         expect(navigation).toHaveStyle({ boxSizing: "border-box" });
-        expect(document.head.querySelector("style[data-salvia-css]")?.textContent).toContain("padding-bottom:env(safe-area-inset-bottom)");
+        expect(document.head.querySelector("style[data-mintcss]")?.textContent).toContain("padding-bottom:env(safe-area-inset-bottom)");
     });
 
     it("replaces the discovery timeline with custom emoji management", async () => {

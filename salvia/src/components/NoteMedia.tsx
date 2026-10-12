@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
-import { css } from "@/lib/css";
+import { css } from "mintcss";
+
 import type { Note } from "@/lib/schema";
 
 type Attachment = Note["attachments"][number];

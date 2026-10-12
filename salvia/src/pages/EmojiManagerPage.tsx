@@ -1,13 +1,13 @@
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconDownload, IconMoodSmile, IconPencil, IconPlus, IconSearch, IconTrash, IconWorld } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { CustomEmoji } from "@/components/EmojiText";
 import { ImageFileInput } from "@/components/ImageFileInput";
 import { Button, Empty, ErrorBanner, Loading, Modal, PageHeader, Tabs } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import { createCanvasThumbnail, revokeCanvasThumbnail } from "@/lib/image";
 import type { ManagedEmoji } from "@/lib/schema";
 import { uploadImage } from "@/lib/uploader";

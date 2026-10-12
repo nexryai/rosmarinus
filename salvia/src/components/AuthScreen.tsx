@@ -1,11 +1,11 @@
 import { type CSSProperties, type FormEvent, useState } from "react";
 
 import { IconArrowRight, IconKey, IconShieldCheck } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { BrandMark } from "@/components/BrandMark";
 import { Button, ErrorBanner } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
-import { css } from "@/lib/css";
 import { createPasskey, getPasskey } from "@/lib/webauthn";
 
 const styles = {

@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconInbox, IconSend, IconUserCheck, IconUserPlus, IconUserX } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { EmojiText } from "@/components/EmojiText";
 import { RemoteUserSearch } from "@/components/RemoteUserSearch";
@@ -8,7 +9,6 @@ import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, T
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import { useIsMobile } from "@/lib/responsive";
 import type { Connection } from "@/lib/schema";
 

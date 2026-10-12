@@ -1,10 +1,10 @@
+import { css, globalCss, keyframes } from "mintcss";
+import { __resetCssForTests } from "mintcss/testing";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { __resetCssForTests, css, globalCss, keyframes } from "@/lib/css";
 
 afterEach(__resetCssForTests);
 
-const output = () => document.head.querySelector("style[data-salvia-css]")?.textContent ?? "";
+const output = () => document.head.querySelector("style[data-mintcss]")?.textContent ?? "";
 
 describe("css", () => {
     it("generates deterministic class names and deduplicates rules", () => {
@@ -20,14 +20,14 @@ describe("css", () => {
 
     it("uses the DOM registry to avoid duplicates after a module reload", () => {
         const className = css({ color: "red" });
-        const registry = document.head.querySelector("style[data-salvia-css]");
+        const registry = document.head.querySelector("style[data-mintcss]");
         const before = output();
 
         __resetCssForTests();
         document.head.append(registry as HTMLStyleElement);
         css({ color: "red" });
 
-        expect(className).toMatch(/^s-/);
+        expect(className).toMatch(/^mint-/);
         expect(output()).toBe(before);
     });
 

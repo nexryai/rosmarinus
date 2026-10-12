@@ -15,7 +15,7 @@ describe("NoteList", () => {
         );
 
         const list = container.querySelector("section") as HTMLElement;
-        const css = document.head.querySelector("style[data-salvia-css]")?.textContent ?? "";
+        const css = document.head.querySelector("style[data-mintcss]")?.textContent ?? "";
         expect(css).toContain(`.${list.className} > [data-note-list-item]:not(:last-child){border-bottom:1px solid var(--border);}`);
         expect(css).toContain(`@media (width >= 40rem){.${list.className} > [data-note-list-item]:not(:last-child){border-bottom:0;}}`);
     });

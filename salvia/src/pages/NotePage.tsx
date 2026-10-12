@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconArrowLeft } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { NoteCard } from "@/components/NoteCard";
 import { NoteList, NoteListItem } from "@/components/NoteList";
@@ -8,7 +9,6 @@ import { NoteReactions } from "@/components/NoteReactions";
 import { ThreadNote } from "@/components/ThreadNote";
 import { ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Emoji, Note } from "@/lib/schema";
 
 const styles = {

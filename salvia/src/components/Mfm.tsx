@@ -1,10 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { type MfmNode, parse } from "mfm-js";
+import { css, keyframes } from "mintcss";
 
 import { CustomEmoji } from "@/components/EmojiText";
 import { emojiFontFamily } from "@/globalStyles";
-import { css, keyframes } from "@/lib/css";
 import { nyaize as transformNyaize } from "@/lib/nyaize";
 import type { Emoji, MentionActor } from "@/lib/schema";
 

@@ -1,9 +1,10 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
+import { css } from "mintcss";
+
 import { CustomEmoji, EmojiText } from "@/components/EmojiText";
 import { Avatar, Button } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Note, ReactionActor } from "@/lib/schema";
 
 const styles = {

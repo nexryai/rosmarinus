@@ -1,9 +1,9 @@
 import { type CSSProperties, type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
+import { css, keyframes } from "mintcss";
 
 import { DrawerFrame } from "@/components/ui/Drawer";
-import { css, keyframes } from "@/lib/css";
 import { useIsMobile } from "@/lib/responsive";
 
 const openAnimation = keyframes({

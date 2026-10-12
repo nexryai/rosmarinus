@@ -1,10 +1,10 @@
 import { type CSSProperties, useState } from "react";
 
 import { IconSearch } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { Button, ErrorBanner } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 
 const styles = {
     form: { padding: "1.5rem", display: "grid", gap: "1rem" },

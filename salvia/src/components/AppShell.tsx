@@ -1,13 +1,13 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import { IconAntenna, IconBell, IconHome, IconLogout, IconMoodSmile, IconPlus, IconSettings, IconUsersPlus } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { BrandMark } from "@/components/BrandMark";
 import { EmojiText } from "@/components/EmojiText";
 import { Avatar, Button } from "@/components/ui";
 import { Dropdown } from "@/components/ui/Dropdown";
 import type { Page } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Actor, Session } from "@/lib/schema";
 
 const navigation: { icon: typeof IconHome; label: string; page: Page; path: string }[] = [

@@ -1,6 +1,7 @@
 import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
 
 import { IconAlertTriangle, IconChartBar, IconMoodSmile, IconPhoto, IconPlus, IconSend, IconX } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { EmojiPickerDialog } from "@/components/EmojiPickerDialog";
 import { EmojiText } from "@/components/EmojiText";
@@ -10,7 +11,6 @@ import { Button, ErrorBanner, Modal } from "@/components/ui";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { Switch } from "@/components/ui/Switch";
 import { api, type CreatePostInput } from "@/lib/api";
-import { css } from "@/lib/css";
 import { type PreparedPostImage, preparePostImage } from "@/lib/postImage";
 import type { Actor, ActorSettings, Emoji, Note } from "@/lib/schema";
 import { uploadImage } from "@/lib/uploader";

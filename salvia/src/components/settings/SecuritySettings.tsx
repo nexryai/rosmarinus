@@ -1,11 +1,11 @@
 import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 
 import { IconKey, IconPlus, IconTrash } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { Button, ErrorBanner } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Passkey } from "@/lib/schema";
 import { createPasskey } from "@/lib/webauthn";
 

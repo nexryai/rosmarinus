@@ -62,11 +62,13 @@ Rosmarinus executable into the runtime image.
 
 The design is embedded in TSX through CSS-in-JSX. Normal declarations use React
 style objects; generated CSS is reserved for selectors and rules that inline
-styles cannot express. The SPA has no CSS files or CSS framework dependency.
+styles cannot express and use the `css`, `globalCss`, and `keyframes` APIs from
+[mintcss](https://github.com/nexryai/mintcss). The SPA has no CSS files or CSS
+framework dependency.
 Tabler Icons remains the icon set, and shared buttons use the pointer-position
 ripple interaction from the read-only `salvia-old` product reference.
 
-The component-local styling rules, internal `css()` API, safety
+The component-local styling rules, mintcss `css()` API, safety
 boundaries, tests, and migration order are documented in
 [`docs/styling.md`](docs/styling.md).
 

@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { IconBan, IconDots, IconEye, IconEyeOff, IconLink, IconMapPin, IconUserPlus, IconUserX } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
@@ -10,7 +11,6 @@ import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "@/components
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Connection, Emoji, Note, Profile } from "@/lib/schema";
 
 const styles = {

@@ -2,11 +2,11 @@
 
 ## 目的
 
-Salvia のスタイルは、外部の CSS-in-JS ライブラリや CSS ファイルを追加せず、
-原則としてスタイルを使うコンポーネントの TSX 内で完結させる。
+Salvia のスタイルは、CSS ファイルを追加せず、原則としてスタイルを使う
+コンポーネントの TSX 内で完結させる。
 通常の宣言は React の `style` オブジェクトを優先し、疑似クラス、疑似要素、
 子孫セレクター、メディアクエリなど `style` 属性では表現できない規則だけを、
-小さな独自 CSS-in-JS ランタイムで扱う。
+Salvia から切り出した npm パッケージ `mintcss` で扱う。
 
 ## コンポーネントでの書き方
 
@@ -34,10 +34,12 @@ const styles = {
 </button>;
 ```
 
-`buttonClass` のようなクラス名が必要な場合だけ、同じ TSX 内に独自 `css()` 用の
+`buttonClass` のようなクラス名が必要な場合だけ、同じ TSX 内に `mintcss` の `css()` 用の
 オブジェクトを置く。
 
 ```tsx
+import { css } from "mintcss";
+
 const buttonClass = css({
 	transition: 'transform 160ms ease',
 	'&:hover': {
@@ -62,16 +64,18 @@ const buttonClass = css({
 アニメーションはコンポーネント内のオブジェクトと `keyframes()` で定義し、
 Salviaの「動きを減らす」設定とOSのreduced-motion設定の両方を尊重する。
 
-## 独自ランタイム
+## mintcss ランタイム
 
-`src/lib/css.tsx` に依存関係を持たない最小限の仕組みを実装する。
+npm の `mintcss` に依存し、`css`、`globalCss`、`keyframes` を直接 import する。
+`src/lib/css.tsx` の独自実装は保持しない。バージョンは `package.json` と
+`pnpm-lock.yaml` で固定する。
 
 - `css(object)` は正規化したオブジェクトから決定的なクラス名を生成する。
 - 同じ規則はハッシュとレジストリで重複排除し、単一の `style` 要素へ一度だけ注入する。
 - camelCase のプロパティ、CSS カスタムプロパティ、`&` を含むセレクター、
   `@media`、`@supports`、`@keyframes` を必要な範囲で扱う。
 - 規則の直列化と挿入順を決定的にし、開発時の再描画や HMR で規則を増殖させない。
-- Salvia はクライアント専用 SPA のため、SSR や hydration 用の収集 API は設けない。
+- Salvia はクライアント専用 SPA のため、`mintcss/next` や SSR 用 API は使わない。
 - ベンダープレフィックスの網羅的な自動付与など、現在の対象ブラウザーに不要な
   CSS プリプロセッサ機能は持たせない。
 
@@ -95,9 +99,11 @@ Salviaの「動きを減らす」設定とOSのreduced-motion設定の両方を�
 
 ## 検証
 
-ランタイムには、クラス名の決定性、重複排除、camelCase の変換、ネストした
-セレクター、メディアクエリ、keyframes、危険な入力の拒否を対象とする単体テストを
-用意する。各コンポーネントでは、見た目の実装詳細ではなく状態と操作に応じて適切な
+Salvia の統合テストでは、npm パッケージを直接読み込み、クラス名の決定性、
+重複排除、camelCase の変換、ネストしたセレクター、メディアクエリ、keyframes、
+危険な入力の拒否を確認する。テストのリセットには `mintcss/testing` の
+`__resetCssForTests` を使い、生成スタイルは `style[data-mintcss]` で検査する。
+各コンポーネントでは、見た目の実装詳細ではなく状態と操作に応じて適切な
 スタイルまたはクラスが選ばれることを確認する。既存の lint、Vitest、production
 build に加え、生成物へ `.css` ファイルが混入していないことも CI で検査する。
 
@@ -107,8 +113,8 @@ build に加え、生成物へ `.css` ファイルが混入していないこと
 2. テーマトークンと真にグローバルな規則だけをルートの TSX へ移す。
 3. コンポーネント単位で通常宣言をローカルな `style` オブジェクトへ、残りをローカルな
    `css()` 定義へ移し、各段階で挙動とレスポンシブ表示を確認する。
-4. 集約されたコンポーネント用 CSS 文字列を削除し、CSS ファイルとスタイル用依存が
-   ないことを確認する。
+4. 集約されたコンポーネント用 CSS 文字列を削除し、CSS ファイルがないことを確認する。
+   CSS 生成は `mintcss` に統一し、別のランタイムや CSS フレームワークは追加しない。
 5. `internal/salvia/dist` を Git の追跡対象から外す。Go の `embed` はビルド時に
    `dist` を必要とするため、CI、Docker、ローカルのリリース手順は必ず
    `pnpm --dir salvia build` を `go build` より前に実行する形へ同時に更新する。

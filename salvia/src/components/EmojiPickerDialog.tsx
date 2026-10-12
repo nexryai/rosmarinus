@@ -1,10 +1,10 @@
 import { type CSSProperties, useMemo, useState } from "react";
 
 import { IconSearch } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { CustomEmoji } from "@/components/EmojiText";
 import { Modal } from "@/components/ui";
-import { css } from "@/lib/css";
 import { defaultUnicodeEmojis, searchUnicodeEmojis, type UnicodeEmoji } from "@/lib/emojiData";
 import type { Emoji } from "@/lib/schema";
 

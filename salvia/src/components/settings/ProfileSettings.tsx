@@ -1,13 +1,13 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { IconCamera, IconUserCircle } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { EmojiText } from "@/components/EmojiText";
 import { ImageFileInput } from "@/components/ImageFileInput";
 import { Mfm } from "@/components/Mfm";
 import { Button, ErrorBanner, Modal } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import { type CropOptions, processProfileImage } from "@/lib/profileImage";
 import type { Actor } from "@/lib/schema";
 import { type UploadedImage, uploadImage } from "@/lib/uploader";

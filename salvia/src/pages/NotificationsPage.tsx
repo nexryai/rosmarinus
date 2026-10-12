@@ -1,12 +1,12 @@
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconAt, IconBell, IconBellCheck, IconChartBar, IconMessageReply, IconRepeat, IconUserCircle, IconUserPlus, IconUsers } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { CustomEmoji, EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { Notification } from "@/lib/schema";
 
 const notificationKinds = {

@@ -1,6 +1,7 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 
 import { IconPlus } from "@tabler/icons-react";
+import { css } from "mintcss";
 
 import { AppShell } from "@/components/AppShell";
 import { AuthScreen } from "@/components/AuthScreen";
@@ -8,7 +9,6 @@ import { BrandMark } from "@/components/BrandMark";
 import { Composer, type ComposerIntent } from "@/components/Composer";
 import { Button, ErrorBanner, Loading } from "@/components/ui";
 import { ApiError, api, type Page } from "@/lib/api";
-import { css } from "@/lib/css";
 import type { AccountSettings, Actor, ActorSettings, Emoji, Session } from "@/lib/schema";
 import { AntennaPage } from "@/pages/AntennaPage";
 import { EmojiManagerPage } from "@/pages/EmojiManagerPage";
