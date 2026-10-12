@@ -57,7 +57,6 @@ const styles = {
         border: "1px solid var(--border)",
         borderRadius: "1.5rem",
         background: "var(--panel)",
-        boxShadow: "0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a",
     },
     heading: {
         marginBottom: "1.5rem",
@@ -208,7 +207,7 @@ export function AuthScreen({ mode, onAuthenticated }: { mode: "login" | "setup";
                         )}
                         <IconArrowRight />
                     </Button>
-                    <p style={styles.hint}>パスワードは使用しません。端末の画面ロックを使って認証します。</p>
+                    <p style={styles.hint}>©2026 nexryai All rights reserved.</p>
                 </form>
             </div>
         </main>
