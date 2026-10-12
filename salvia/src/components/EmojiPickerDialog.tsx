@@ -5,6 +5,7 @@ import { css } from "mintcss";
 
 import { CustomEmoji } from "@/components/EmojiText";
 import { Modal } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { defaultUnicodeEmojis, searchUnicodeEmojis, type UnicodeEmoji } from "@/lib/emojiData";
 import type { Emoji } from "@/lib/schema";
 
@@ -130,9 +131,9 @@ export function EmojiPickerDialog({ emojis, label = "絵文字を選択", onClos
                             <h3 style={styles.sectionTitle}>カスタム絵文字</h3>
                             <div style={styles.grid}>
                                 {customMatches.map((emoji) => (
-                                    <button aria-label={`:${emoji.name}:`} className={rules.cell} key={emoji.name} onClick={() => pick(`:${emoji.name}:`)} style={styles.cell} title={`:${emoji.name}:`} type="button">
+                                    <RippleButton aria-label={`:${emoji.name}:`} className={rules.cell} key={emoji.name} onClick={() => pick(`:${emoji.name}:`)} style={styles.cell} title={`:${emoji.name}:`} type="button">
                                         <CustomEmoji emoji={emoji} label="" style={styles.customImage} />
-                                    </button>
+                                    </RippleButton>
                                 ))}
                             </div>
                         </section>
@@ -142,9 +143,9 @@ export function EmojiPickerDialog({ emojis, label = "絵文字を選択", onClos
                             <h3 style={styles.sectionTitle}>Unicode絵文字</h3>
                             <div style={styles.grid}>
                                 {unicodeMatches.map((emoji) => (
-                                    <button aria-label={emoji.value} className={rules.cell} key={emoji.value} onClick={() => pick(emoji.value)} style={styles.cell} title={emoji.label} type="button">
+                                    <RippleButton aria-label={emoji.value} className={rules.cell} key={emoji.value} onClick={() => pick(emoji.value)} style={styles.cell} title={emoji.label} type="button">
                                         {emoji.value}
-                                    </button>
+                                    </RippleButton>
                                 ))}
                             </div>
                         </section>

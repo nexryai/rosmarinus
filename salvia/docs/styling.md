@@ -84,6 +84,16 @@ npm の `mintcss` に依存し、`css`、`globalCss`、`keyframes` を直接 imp
 色や座標などの動的な値は React の `style` 属性または検証済み CSS カスタム
 プロパティとして渡す。
 
+## ボタンの操作フィードバック
+
+すべてのボタンは `src/components/ui/RippleButton.tsx` の共通 ripple を使う。
+通常の `Button` と `RoundButton` もこの仕組みに委譲する。個別のボタンを追加する
+場合はネイティブの `button` を直接使わず、`RippleButton` で既存の見た目を指定する。
+hover や active によるボタンや内部画像の拡大・縮小、移動は追加しない。
+マウス・タッチ・ペンの操作位置から ripple を広げ、Enter / Space では中心から表示する。
+無効なボタン、Salvia の「動きを減らす」設定、OS の reduced-motion 設定では
+ripple を表示しない。操作ハンドラーや ref はネイティブのボタンへ渡す。
+
 ## グローバル規則の例外
 
 全体で一度だけ必要な次の規則は、ルートの TSX から注入する最小のグローバル定義に

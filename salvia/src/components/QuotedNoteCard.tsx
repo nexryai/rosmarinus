@@ -5,6 +5,7 @@ import { css } from "mintcss";
 import { EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
 import { Avatar } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Actor, Note } from "@/lib/schema";
 
 type Quote = NonNullable<Note["quote"]>;
@@ -23,7 +24,7 @@ const styles = {
         color: "var(--text)",
         background: "var(--panel)",
         textAlign: "left",
-        transition: "border-color 140ms ease, background-color 140ms ease, transform 140ms ease",
+        transition: "border-color 140ms ease, background-color 140ms ease",
     },
     content: {
         minWidth: 0,
@@ -90,10 +91,6 @@ const rules = {
         "&:hover": {
             borderColor: "var(--accent-hover)",
             background: "var(--panel-muted)",
-            transform: "translateY(-0.0625rem)",
-        },
-        "&:active": {
-            transform: "translateY(0) scale(0.995)",
         },
         "@media (prefers-reduced-motion: reduce)": {
             transitionDuration: "0.01ms",
@@ -142,9 +139,9 @@ export function QuotedNoteCard({ onOpen, onOpenProfile, quote }: { onOpen?: (not
         <div className={rules.card} style={styles.card}>
             <Avatar actor={author} onOpenProfile={onOpenProfile} size="small" />
             {onOpen ? (
-                <button aria-label={`引用ノートを開く: ${authorName}`} onClick={() => onOpen(quote.id)} style={styles.content} type="button">
+                <RippleButton aria-label={`引用ノートを開く: ${authorName}`} onClick={() => onOpen(quote.id)} style={styles.content} type="button">
                     {content}
-                </button>
+                </RippleButton>
             ) : (
                 <div style={styles.content}>{content}</div>
             )}

@@ -6,6 +6,7 @@ import { css } from "mintcss";
 import { EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
 import { Avatar } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Actor, Note } from "@/lib/schema";
 
 export type ThreadNoteData = Note | NonNullable<Note["reply"]>;
@@ -196,9 +197,9 @@ export function ThreadNote({
             </div>
             <div style={{ ...styles.body, ...(bubble ? styles.bubble : {}) }}>
                 {onOpenNote ? (
-                    <button aria-label={`${label}を開く: ${authorName}`} className={rules.content} onClick={() => onOpenNote(note.id)} style={styles.content} type="button">
+                    <RippleButton aria-label={`${label}を開く: ${authorName}`} className={rules.content} onClick={() => onOpenNote(note.id)} style={styles.content} type="button">
                         {content}
-                    </button>
+                    </RippleButton>
                 ) : (
                     <div style={styles.content}>{content}</div>
                 )}

@@ -8,6 +8,7 @@ import { NoteList, NoteListItem } from "@/components/NoteList";
 import { NoteReactions } from "@/components/NoteReactions";
 import { ThreadNote } from "@/components/ThreadNote";
 import { ErrorBanner, Loading, PageHeader, RoundButton } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { api } from "@/lib/api";
 import type { Emoji, Note } from "@/lib/schema";
 
@@ -67,9 +68,9 @@ function ThreadBranch({ actorID, depth, note, onOpenNote, onOpenProfile, refresh
             {depth < 5 ? (
                 children.map((child) => <ThreadBranch actorID={actorID} depth={depth + 1} key={child.id} note={child} onOpenNote={onOpenNote} onOpenProfile={onOpenProfile} refreshKey={refreshKey} />)
             ) : (
-                <button onClick={() => onOpenNote(note.id)} style={styles.continue} type="button">
+                <RippleButton onClick={() => onOpenNote(note.id)} style={styles.continue} type="button">
                     この先のスレッドを表示
-                </button>
+                </RippleButton>
             )}
         </div>
     );

@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { EmojiText } from "@/components/EmojiText";
 import { Avatar, Button } from "@/components/ui";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Page } from "@/lib/api";
 import type { Actor, Session } from "@/lib/schema";
 
@@ -375,15 +376,15 @@ export function AppShell({
     return (
         <div className={rules.layout} style={styles.layout}>
             <aside className={rules.sidebar} style={styles.sidebar}>
-                <button className={rules.wordmark} onClick={() => onNavigate("/")} style={styles.wordmark} type="button">
+                <RippleButton className={rules.wordmark} onClick={() => onNavigate("/")} style={styles.wordmark} type="button">
                     <span style={styles.mark}>
                         <BrandMark />
                     </span>
                     Rosemary
-                </button>
+                </RippleButton>
                 <nav aria-label="メインナビゲーション" className={rules.nav}>
                     {navigation.map((item) => (
-                        <button
+                        <RippleButton
                             aria-current={page === item.page ? "page" : undefined}
                             aria-label={item.page === "notifications" && unreadNotificationCount > 0 ? `通知（未読${unreadNotificationCount}件）` : undefined}
                             className={rules.navItem}
@@ -401,7 +402,7 @@ export function AppShell({
                                 )}
                             </span>
                             {item.label}
-                        </button>
+                        </RippleButton>
                     ))}
                 </nav>
                 <Button onClick={onCompose} size="large" style={styles.compose}>
@@ -423,15 +424,15 @@ export function AppShell({
                         />
                     </div>
                 </div>
-                <button className={rules.logout} onClick={onLogout} style={styles.logout} type="button">
+                <RippleButton className={rules.logout} onClick={onLogout} style={styles.logout} type="button">
                     <IconLogout />
                     ログアウト
-                </button>
+                </RippleButton>
             </aside>
             <header aria-label="モバイルアカウント操作" className={rules.mobileHeader} style={styles.mobileHeader}>
-                <button aria-label="ホームへ移動" className={rules.mobileBrand} onClick={() => onNavigate("/")} style={styles.mobileBrand} type="button">
+                <RippleButton aria-label="ホームへ移動" className={rules.mobileBrand} onClick={() => onNavigate("/")} style={styles.mobileBrand} type="button">
                     <BrandMark />
-                </button>
+                </RippleButton>
                 <Avatar actor={selectedActor} onOpenProfile={(id) => onNavigate(`/profiles/${encodeURIComponent(id)}`)} size="xsmall" />
                 <Dropdown
                     label="モバイルで操作するActor"
@@ -446,9 +447,9 @@ export function AppShell({
                     triggerStyle={styles.mobileActorTrigger}
                     value={selectedActor.id}
                 />
-                <button aria-current={page === "settings" ? "page" : undefined} aria-label="設定を開く" className={rules.mobileSettings} onClick={() => onNavigate("/settings")} style={styles.mobileSettings} type="button">
+                <RippleButton aria-current={page === "settings" ? "page" : undefined} aria-label="設定を開く" className={rules.mobileSettings} onClick={() => onNavigate("/settings")} style={styles.mobileSettings} type="button">
                     <IconSettings />
-                </button>
+                </RippleButton>
             </header>
             <main className={rules.main} style={styles.main}>
                 {children}
@@ -457,7 +458,7 @@ export function AppShell({
                 {navigation
                     .filter((item) => item.page !== "settings")
                     .map((item) => (
-                        <button
+                        <RippleButton
                             aria-current={page === item.page ? "page" : undefined}
                             aria-label={item.page === "notifications" && unreadNotificationCount > 0 ? `通知（未読${unreadNotificationCount}件）` : undefined}
                             key={item.page}
@@ -474,11 +475,11 @@ export function AppShell({
                                 )}
                             </span>
                             <span>{item.label}</span>
-                        </button>
+                        </RippleButton>
                     ))}
-                <button aria-label="ノートを作成" onClick={onCompose} style={styles.mobileCompose} type="button">
+                <RippleButton aria-label="ノートを作成" onClick={onCompose} style={styles.mobileCompose} type="button">
                     <IconPlus />
-                </button>
+                </RippleButton>
             </nav>
         </div>
     );

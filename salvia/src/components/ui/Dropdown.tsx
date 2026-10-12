@@ -4,6 +4,7 @@ import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { css, keyframes } from "mintcss";
 
 import { DrawerFrame } from "@/components/ui/Drawer";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { useIsMobile } from "@/lib/responsive";
 
 const openAnimation = keyframes({
@@ -102,7 +103,7 @@ const styles = {
         gap: "0.625rem",
         borderRadius: "0.75rem",
         textAlign: "left",
-        transition: "color 120ms ease, background-color 120ms ease, transform 120ms ease",
+        transition: "color 120ms ease, background-color 120ms ease",
     },
     optionText: {
         minWidth: 0,
@@ -167,7 +168,6 @@ const rules = {
         '&[data-active="true"]': {
             background: "var(--accent-soft)",
             color: "var(--accent-ink)",
-            transform: "translateX(0.125rem)",
         },
         "&:disabled": {
             opacity: 0.45,
@@ -342,7 +342,7 @@ export function Dropdown<Value extends string>({ align = "stretch", className = 
             tabIndex={-1}
         >
             {options.map((option, index) => (
-                <button
+                <RippleButton
                     aria-selected={selectionMode ? option.value === value : undefined}
                     className={rules.option}
                     data-active={isOpen && index === activeIndex}
@@ -363,14 +363,14 @@ export function Dropdown<Value extends string>({ align = "stretch", className = 
                         {option.description && <span style={styles.description}>{option.description}</span>}
                     </span>
                     {selectionMode && option.value === value && <IconCheck aria-hidden="true" style={styles.check} />}
-                </button>
+                </RippleButton>
             ))}
         </div>
     );
 
     return (
         <div className={className} ref={rootRef} style={{ ...styles.root, ...style }}>
-            <button
+            <RippleButton
                 aria-controls={phase === "closed" ? undefined : listboxID}
                 aria-expanded={isOpen}
                 aria-haspopup={selectionMode ? "listbox" : "menu"}
@@ -385,7 +385,7 @@ export function Dropdown<Value extends string>({ align = "stretch", className = 
             >
                 <span style={styles.value}>{trigger ?? (selected && (renderValue ? renderValue(selected) : selected.label))}</span>
                 {!trigger && <IconChevronDown aria-hidden="true" style={{ ...styles.chevron, transform: isOpen ? "rotate(180deg)" : "rotate(0)" }} />}
-            </button>
+            </RippleButton>
             {phase !== "closed" &&
                 (isMobile ? (
                     <DrawerFrame label={`${label}の選択`} onDismiss={dismissDrawer} phase={phase}>

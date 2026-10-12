@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { IconChevronLeft, IconChevronRight, IconExternalLink, IconMinus, IconPlus, IconX } from "@tabler/icons-react";
 import { css, keyframes } from "mintcss";
 
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Note } from "@/lib/schema";
 
 type ImageAttachment = Note["attachments"][number];
@@ -108,7 +109,7 @@ const styles = {
         borderRadius: "9999px",
         color: "#fff",
         background: "rgb(255 255 255 / 10%)",
-        transition: "background-color 120ms ease, transform 120ms ease, opacity 120ms ease",
+        transition: "background-color 120ms ease, opacity 120ms ease",
     },
     viewport: {
         position: "relative",
@@ -178,7 +179,7 @@ const styles = {
         border: "2px solid transparent",
         borderRadius: "0.5rem",
         opacity: 0.55,
-        transition: "border-color 120ms ease, opacity 120ms ease, transform 120ms ease",
+        transition: "border-color 120ms ease, opacity 120ms ease",
     },
     thumbnailActive: {
         borderColor: "var(--accent)",
@@ -201,9 +202,6 @@ const rules = {
         "&:hover": {
             background: "rgb(255 255 255 / 20%)",
         },
-        "&:active": {
-            transform: "scale(0.94)",
-        },
         "&:disabled": {
             opacity: 0.25,
         },
@@ -215,7 +213,6 @@ const rules = {
     thumbnailButton: css({
         "&:hover": {
             opacity: 1,
-            transform: "translateY(-0.125rem)",
         },
     }),
 };
@@ -366,18 +363,18 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ImageAt
                 <span aria-live="polite" style={styles.counter}>
                     {index + 1} / {images.length}
                 </span>
-                <button aria-label="縮小" className={rules.iconButton} disabled={scale === 1} onClick={() => zoom(-0.5)} style={styles.iconButton} type="button">
+                <RippleButton aria-label="縮小" className={rules.iconButton} disabled={scale === 1} onClick={() => zoom(-0.5)} style={styles.iconButton} type="button">
                     <IconMinus />
-                </button>
-                <button aria-label="拡大" className={rules.iconButton} disabled={scale === 4} onClick={() => zoom(0.5)} style={styles.iconButton} type="button">
+                </RippleButton>
+                <RippleButton aria-label="拡大" className={rules.iconButton} disabled={scale === 4} onClick={() => zoom(0.5)} style={styles.iconButton} type="button">
                     <IconPlus />
-                </button>
+                </RippleButton>
                 <a aria-label="元の画像を開く" className={rules.iconButton} href={image.url} rel="noreferrer" style={styles.iconButton} target="_blank">
                     <IconExternalLink />
                 </a>
-                <button aria-label="閉じる" className={rules.iconButton} onClick={requestClose} style={styles.iconButton} type="button">
+                <RippleButton aria-label="閉じる" className={rules.iconButton} onClick={requestClose} style={styles.iconButton} type="button">
                     <IconX />
-                </button>
+                </RippleButton>
             </header>
             <div
                 aria-label="画像ビューアー"
@@ -428,12 +425,12 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ImageAt
                 )}
                 {images.length > 1 && (
                     <>
-                        <button aria-label="前の画像" className={`${rules.iconButton}`} disabled={index === 0} onClick={() => goTo(index - 1)} style={{ ...styles.iconButton, ...styles.navigation, ...styles.previous }} type="button">
+                        <RippleButton aria-label="前の画像" className={`${rules.iconButton}`} disabled={index === 0} onClick={() => goTo(index - 1)} style={{ ...styles.iconButton, ...styles.navigation, ...styles.previous }} type="button">
                             <IconChevronLeft />
-                        </button>
-                        <button aria-label="次の画像" className={`${rules.iconButton}`} disabled={index === images.length - 1} onClick={() => goTo(index + 1)} style={{ ...styles.iconButton, ...styles.navigation, ...styles.next }} type="button">
+                        </RippleButton>
+                        <RippleButton aria-label="次の画像" className={`${rules.iconButton}`} disabled={index === images.length - 1} onClick={() => goTo(index + 1)} style={{ ...styles.iconButton, ...styles.navigation, ...styles.next }} type="button">
                             <IconChevronRight />
-                        </button>
+                        </RippleButton>
                     </>
                 )}
             </div>
@@ -442,7 +439,7 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ImageAt
                 {images.length > 1 && (
                     <div aria-label="画像一覧" role="group" style={styles.thumbnails}>
                         {images.map((thumbnail, thumbnailIndex) => (
-                            <button
+                            <RippleButton
                                 aria-label={`${thumbnailIndex + 1}枚目の画像を表示`}
                                 aria-pressed={thumbnailIndex === index}
                                 className={rules.thumbnailButton}
@@ -455,7 +452,7 @@ export function ImageViewer({ images, initialIndex, onClose }: { images: ImageAt
                                 type="button"
                             >
                                 <img alt="" loading="lazy" referrerPolicy="no-referrer" src={thumbnail.thumbnail_url ?? thumbnail.url} style={styles.thumbnail} />
-                            </button>
+                            </RippleButton>
                         ))}
                     </div>
                 )}

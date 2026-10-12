@@ -13,6 +13,7 @@ import { QuotedNoteCard } from "@/components/QuotedNoteCard";
 import { ThreadNote } from "@/components/ThreadNote";
 import { Avatar, Button } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Emoji, Note, ReactionActor } from "@/lib/schema";
 
 const styles = {
@@ -510,10 +511,10 @@ export function NoteCard({
                 <div className={rules.renoteAttribution} style={styles.renoteAttribution}>
                     <Avatar actor={renoter} onOpenProfile={onOpenProfile} size="xsmall" />
                     <IconRepeat />
-                    <button disabled={!renoter} onClick={() => renoter && onOpenProfile(renoter.id)} style={styles.renoteActor} type="button">
+                    <RippleButton disabled={!renoter} onClick={() => renoter && onOpenProfile(renoter.id)} style={styles.renoteActor} type="button">
                         <EmojiText emojis={renoter?.emojis} text={renoter?.name || renoter?.username || "Unknown"} />
                         さんがリノート
-                    </button>
+                    </RippleButton>
                     <time dateTime={note.created_at} style={styles.renoteTime}>
                         {relativeTime(note.created_at)}
                     </time>
@@ -526,16 +527,16 @@ export function NoteCard({
                     <Avatar actor={author} onOpenProfile={onOpenProfile} />
                     <div style={styles.body}>
                         <header style={styles.header}>
-                            <button disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
+                            <RippleButton disabled={!author} onClick={() => author && onOpenProfile(author.id)} style={styles.actorLink} type="button">
                                 <strong style={styles.actorName}>
                                     <EmojiText emojis={author?.emojis} text={author?.name || author?.username || "Unknown"} />
                                 </strong>
                                 <span>{isRenote ? actorHandle(author) : `@${author?.username || "unknown"}`}</span>
-                            </button>
+                            </RippleButton>
                             {onOpenNote ? (
-                                <button aria-label={`ノートの詳細を開く: ${relativeTime(displayedNote.created_at)}`} className={rules.timestamp} onClick={() => onOpenNote(displayedNote.id)} style={styles.timestamp} title={new Date(displayedNote.created_at).toLocaleString("ja")} type="button">
+                                <RippleButton aria-label={`ノートの詳細を開く: ${relativeTime(displayedNote.created_at)}`} className={rules.timestamp} onClick={() => onOpenNote(displayedNote.id)} style={styles.timestamp} title={new Date(displayedNote.created_at).toLocaleString("ja")} type="button">
                                     <time dateTime={displayedNote.created_at}>{relativeTime(displayedNote.created_at)}</time>
-                                </button>
+                                </RippleButton>
                             ) : (
                                 <time dateTime={displayedNote.created_at} style={styles.timestamp} title={new Date(displayedNote.created_at).toLocaleString("ja")}>
                                     {relativeTime(displayedNote.created_at)}
@@ -559,11 +560,11 @@ export function NoteCard({
                         {displayedNote.poll && (
                             <div style={styles.poll}>
                                 {displayedNote.poll.choices.map((choice) => (
-                                    <button aria-pressed={choice.voted} className={rules.pollButton} disabled={busy || displayedNote.poll?.expired} key={choice.index} onClick={() => act(() => onVote(displayedNote.id, choice.index))} style={styles.pollButton} type="button">
+                                    <RippleButton aria-pressed={choice.voted} className={rules.pollButton} disabled={busy || displayedNote.poll?.expired} key={choice.index} onClick={() => act(() => onVote(displayedNote.id, choice.index))} style={styles.pollButton} type="button">
                                         <span style={styles.pollText}>{choice.text}</span>
                                         <span style={styles.pollVotes}>{choice.votes}票</span>
                                         <i style={{ ...styles.pollBar, width: `${Math.max(3, choice.votes ? (choice.votes / maxPollVotes) * 100 : 3)}%` }} />
-                                    </button>
+                                    </RippleButton>
                                 ))}
                             </div>
                         )}
@@ -574,7 +575,7 @@ export function NoteCard({
                                     const item = reactors?.reaction === reaction.reaction ? reactors : null;
                                     return (
                                         <span key={reaction.reaction} style={styles.reactionWrap}>
-                                            <button
+                                            <RippleButton
                                                 aria-describedby={tooltipOpen ? "reaction-tooltip" : undefined}
                                                 aria-pressed={reaction.reacted}
                                                 className={rules.action}
@@ -589,7 +590,7 @@ export function NoteCard({
                                             >
                                                 {reaction.emoji ? <CustomEmoji emoji={reaction.emoji} label={reaction.reaction} normal /> : <span>{reaction.reaction}</span>}
                                                 <b style={styles.reactionCount}>{reaction.count}</b>
-                                            </button>
+                                            </RippleButton>
                                             {tooltipOpen && (
                                                 <div
                                                     id="reaction-tooltip"
@@ -607,7 +608,7 @@ export function NoteCard({
                                                         <div style={styles.reactionTooltipStatus}>表示できるユーザーはいません</div>
                                                     ) : (
                                                         item.actors.map((actor) => (
-                                                            <button
+                                                            <RippleButton
                                                                 className={rules.reactionActor}
                                                                 key={actor.id}
                                                                 onClick={() => {
@@ -622,7 +623,7 @@ export function NoteCard({
                                                                     <EmojiText emojis={actor.emojis} text={actor.name || actor.username} />
                                                                 </span>
                                                                 <span style={styles.reactionActorHandle}>@{actor.username}</span>
-                                                            </button>
+                                                            </RippleButton>
                                                         ))
                                                     )}
                                                     {item !== null && !item.loading && !item.failed && reaction.count > item.actors.length && <div style={styles.reactionActorMore}>他 {reaction.count - item.actors.length} 人</div>}
@@ -634,23 +635,23 @@ export function NoteCard({
                             </div>
                         )}
                         <footer style={styles.actions}>
-                            <button aria-label={displayedNote.replies_count > 0 ? `返信（${displayedNote.replies_count}件）` : "返信"} className={rules.action} onClick={() => onReply(displayedNote)} style={{ ...styles.action, ...styles.replyAction }} type="button">
+                            <RippleButton aria-label={displayedNote.replies_count > 0 ? `返信（${displayedNote.replies_count}件）` : "返信"} className={rules.action} onClick={() => onReply(displayedNote)} style={{ ...styles.action, ...styles.replyAction }} type="button">
                                 <IconMessageCircle />
                                 {displayedNote.replies_count > 0 && <b style={styles.reactionCount}>{displayedNote.replies_count}</b>}
-                            </button>
-                            <button aria-label="リノート" className={rules.action} disabled={busy} onClick={() => void act(() => onRenote(displayedNote))} style={styles.action} type="button">
+                            </RippleButton>
+                            <RippleButton aria-label="リノート" className={rules.action} disabled={busy} onClick={() => void act(() => onRenote(displayedNote))} style={styles.action} type="button">
                                 <IconRepeat />
-                            </button>
-                            <button aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
+                            </RippleButton>
+                            <RippleButton aria-label="引用" className={rules.action} onClick={() => onQuote(displayedNote)} style={styles.action} type="button">
                                 <IconQuote />
-                            </button>
-                            <button aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setEmojiPickerOpen(true)} style={styles.action} type="button">
+                            </RippleButton>
+                            <RippleButton aria-label="リアクションを追加" className={rules.action} disabled={busy} onClick={() => setEmojiPickerOpen(true)} style={styles.action} type="button">
                                 ＋
-                            </button>
+                            </RippleButton>
                             {note.author?.id === ownActorID && (
-                                <button aria-label="削除" className={`${rules.action} ${rules.deleteAction}`} disabled={busy} onClick={() => setDeleteDialogOpen(true)} style={{ ...styles.action, ...styles.deleteAction }} type="button">
+                                <RippleButton aria-label="削除" className={`${rules.action} ${rules.deleteAction}`} disabled={busy} onClick={() => setDeleteDialogOpen(true)} style={{ ...styles.action, ...styles.deleteAction }} type="button">
                                     <IconTrash />
-                                </button>
+                                </RippleButton>
                             )}
                         </footer>
                     </div>

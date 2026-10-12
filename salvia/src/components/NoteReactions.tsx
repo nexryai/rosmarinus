@@ -4,6 +4,7 @@ import { css } from "mintcss";
 
 import { CustomEmoji, EmojiText } from "@/components/EmojiText";
 import { Avatar, Button } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { api } from "@/lib/api";
 import type { Note, ReactionActor } from "@/lib/schema";
 
@@ -90,7 +91,7 @@ function ReactionGroup({ actorID, noteID, summary, onOpenProfile }: { actorID: s
             <ul style={styles.actors}>
                 {actors.map((actor) => (
                     <li key={actor.id} style={styles.actorItem}>
-                        <button aria-label={`${actor.name || actor.username}のプロフィールを開く`} className={rules.actor} onClick={() => onOpenProfile(actor.id)} style={styles.actor} type="button">
+                        <RippleButton aria-label={`${actor.name || actor.username}のプロフィールを開く`} className={rules.actor} onClick={() => onOpenProfile(actor.id)} style={styles.actor} type="button">
                             <Avatar actor={actor} size="small" />
                             <span style={styles.identity}>
                                 <span style={styles.name}>
@@ -98,7 +99,7 @@ function ReactionGroup({ actorID, noteID, summary, onOpenProfile }: { actorID: s
                                 </span>
                                 <span style={styles.handle}>@{actor.username}</span>
                             </span>
-                        </button>
+                        </RippleButton>
                     </li>
                 ))}
             </ul>

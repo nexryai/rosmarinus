@@ -1,9 +1,10 @@
-import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type HTMLAttributes, type MouseEvent, type PropsWithChildren, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ButtonHTMLAttributes, Component, type CSSProperties, type ErrorInfo, type HTMLAttributes, type PropsWithChildren, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { IconAlertCircle, IconLoader2, IconX } from "@tabler/icons-react";
 import { css, keyframes } from "mintcss";
 
 import { DrawerFrame } from "@/components/ui/Drawer";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { useIsMobile } from "@/lib/responsive";
 
 export { Avatar } from "@/components/ui/Avatar";
@@ -12,11 +13,6 @@ export { Tabs } from "@/components/ui/Tabs";
 const spin = keyframes({
     to: {
         transform: "rotate(360deg)",
-    },
-});
-const rippleAnimation = keyframes({
-    to: {
-        boxShadow: "0 0 0 var(--ripple-radius) transparent",
     },
 });
 const modalBackdropOpen = keyframes({
@@ -88,7 +84,7 @@ const styles = {
         border: 0,
         borderRadius: "9999px",
         fontWeight: 700,
-        transition: "all 150ms cubic-bezier(.4, 0, .2, 1)",
+        transition: "color 150ms, background-color 150ms",
         userSelect: "none",
     },
     buttonContent: {
@@ -100,17 +96,6 @@ const styles = {
         justifyContent: "center",
         gap: "0.5rem",
         whiteSpace: "nowrap",
-    },
-    ripple: {
-        position: "absolute",
-        zIndex: 0,
-        width: 2,
-        height: 2,
-        borderRadius: "9999px",
-        pointerEvents: "none",
-        background: "transparent",
-        boxShadow: "0 0 0 0 rgb(0 0 0 / 10%)",
-        animation: `${rippleAnimation} 500ms cubic-bezier(0,.5,0,1) forwards`,
     },
     stateMessage: {
         minHeight: "13rem",
@@ -205,9 +190,6 @@ const styles = {
 
 const rules = {
     button: css({
-        "&:active": {
-            scale: 0.98,
-        },
         "& > svg": {
             width: "1.25rem",
             height: "1.25rem",
@@ -355,7 +337,7 @@ export function PageHeader({ leading, title, trailing }: { leading?: ReactNode; 
 }
 
 export function RoundButton({ style, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-    return <button className={rules.roundButton} style={{ ...styles.roundButton, ...style }} type="button" {...props} />;
+    return <RippleButton className={rules.roundButton} style={{ ...styles.roundButton, ...style }} type="button" {...props} />;
 }
 
 export function DividedList({ children, className = "", ...props }: HTMLAttributes<HTMLElement>) {
@@ -389,44 +371,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     }
 }
 
-type Ripple = { id: number; x: number; y: number; radius: number };
-
-export function Button({ children, className = "", disableRipple = false, onMouseDown, size = "small", style, type = "button", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { disableRipple?: boolean; size?: ButtonSize; variant?: "primary" | "secondary" | "ghost" | "danger" }) {
-    const [ripples, setRipples] = useState<Ripple[]>([]);
-    const nextRippleID = useRef(0);
-    const timers = useRef<number[]>([]);
-
-    useEffect(
-        () => () => {
-            for (const timer of timers.current) window.clearTimeout(timer);
-        },
-        [],
-    );
-
-    const handleMouseDown = (event: MouseEvent<HTMLButtonElement>) => {
-        if (!disableRipple && document.documentElement.dataset.reduceMotion !== "true") {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            const radius = Math.max(Math.hypot(x, y), Math.hypot(rect.width - x, y), Math.hypot(x, rect.height - y), Math.hypot(rect.width - x, rect.height - y));
-            const id = nextRippleID.current++;
-            setRipples((current) => [...current, { id, x, y, radius }]);
-            timers.current.push(
-                window.setTimeout(() => {
-                    setRipples((current) => current.filter((ripple) => ripple.id !== id));
-                }, 500),
-            );
-        }
-        onMouseDown?.(event);
-    };
-
+export function Button({ children, className = "", size = "small", style, type = "button", variant = "primary", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { disableRipple?: boolean; size?: ButtonSize; variant?: "primary" | "secondary" | "ghost" | "danger" }) {
     return (
-        <button className={`${rules.button} ${rules[variant]} ${className}`} onMouseDown={handleMouseDown} style={{ ...styles.button, ...buttonSizes[size], ...style }} type={type} {...props}>
-            {ripples.map((ripple) => (
-                <span aria-hidden="true" data-testid="button-ripple" key={ripple.id} style={{ ...styles.ripple, left: ripple.x - 1, top: ripple.y - 1, "--ripple-radius": `${ripple.radius}px` } as CSSProperties} />
-            ))}
+        <RippleButton className={`${rules.button} ${rules[variant]} ${className}`} style={{ ...styles.button, ...buttonSizes[size], ...style }} type={type} {...props}>
             <span style={styles.buttonContent}>{children}</span>
-        </button>
+        </RippleButton>
     );
 }
 
@@ -449,9 +398,9 @@ export function ErrorBanner({ message, onDismiss }: { message: string; onDismiss
             <IconAlertCircle />
             <span>{message}</span>
             {onDismiss && (
-                <button aria-label="閉じる" onClick={onDismiss} type="button">
+                <RippleButton aria-label="閉じる" onClick={onDismiss} type="button">
                     <IconX />
-                </button>
+                </RippleButton>
             )}
         </div>
     );
@@ -492,9 +441,9 @@ export function Modal({ children, dismissible = true, label, onClose }: PropsWit
 
     const content = (
         <>
-            <button aria-label="閉じる" className={rules.modalClose} onClick={requestClose} style={styles.modalClose} type="button">
+            <RippleButton aria-label="閉じる" className={rules.modalClose} onClick={requestClose} style={styles.modalClose} type="button">
                 <IconX />
-            </button>
+            </RippleButton>
             {children}
         </>
     );

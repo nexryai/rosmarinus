@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { css } from "mintcss";
-
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Actor } from "@/lib/schema";
 
 const styles = {
@@ -26,7 +25,6 @@ const styles = {
         overflow: "hidden",
         flexShrink: 0,
         borderRadius: "9999px",
-        transition: "transform 140ms ease, box-shadow 140ms ease",
     },
 } satisfies Record<string, CSSProperties>;
 
@@ -58,20 +56,6 @@ const sizes = {
     },
 } satisfies Record<string, CSSProperties>;
 
-const rules = {
-    button: css({
-        "&:hover": {
-            transform: "scale(1.04)",
-        },
-        "&:active": {
-            transform: "scale(0.96)",
-        },
-        "@media (prefers-reduced-motion: reduce)": {
-            transitionDuration: "0.01ms",
-        },
-    }),
-};
-
 type AvatarActor = Pick<Actor, "id" | "avatar_url" | "name" | "username">;
 type AvatarSize = "xsmall" | "small" | "medium" | "large";
 
@@ -86,8 +70,8 @@ export function Avatar({ actor, onOpenProfile, size = "medium" }: { actor?: Avat
     );
     if (!actor || !onOpenProfile) return content;
     return (
-        <button aria-label={`${label}のプロフィールを開く`} className={rules.button} onClick={() => onOpenProfile(actor.id)} style={{ ...styles.button, ...sizes[size] }} type="button">
+        <RippleButton aria-label={`${label}のプロフィールを開く`} onClick={() => onOpenProfile(actor.id)} style={{ ...styles.button, ...sizes[size] }} type="button">
             {content}
-        </button>
+        </RippleButton>
     );
 }

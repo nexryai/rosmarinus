@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { css } from "mintcss";
-
+import { RippleButton } from "@/components/ui/RippleButton";
 import type { Note } from "@/lib/schema";
 
 type Attachment = Note["attachments"][number];
@@ -58,17 +57,6 @@ const styles = {
     },
 } satisfies Record<string, CSSProperties>;
 
-const rules = {
-    imageButton: css({
-        "&:hover img": {
-            transform: "scale(1.015)",
-        },
-        "& img": {
-            transition: "transform 160ms cubic-bezier(.2,.8,.2,1)",
-        },
-    }),
-};
-
 const galleryLayout = (count: number): CSSProperties => {
     if (count === 1) return styles.singleGallery;
     if (count === 2) return { ...styles.multipleGallery, gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr" };
@@ -92,9 +80,9 @@ export function NoteMedia({ attachments, onOpenImage }: { attachments: Attachmen
             {images.length > 0 && (
                 <div data-image-count={images.length} style={{ ...styles.gallery, ...galleryLayout(images.length) }}>
                     {images.map((attachment, index) => (
-                        <button aria-label={`画像を表示: ${attachment.name || "添付画像"}`} className={rules.imageButton} key={attachment.url} onClick={() => onOpenImage(index)} style={{ ...styles.imageButton, ...imageLayout(images.length, index) }} type="button">
+                        <RippleButton aria-label={`画像を表示: ${attachment.name || "添付画像"}`} key={attachment.url} onClick={() => onOpenImage(index)} style={{ ...styles.imageButton, ...imageLayout(images.length, index) }} type="button">
                             <img alt={attachment.name || "添付画像"} loading="lazy" referrerPolicy="no-referrer" src={attachment.thumbnail_url ?? attachment.url} style={images.length === 1 ? styles.singleImage : styles.tiledImage} />
-                        </button>
+                        </RippleButton>
                     ))}
                 </div>
             )}

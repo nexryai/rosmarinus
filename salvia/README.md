@@ -65,8 +65,9 @@ style objects; generated CSS is reserved for selectors and rules that inline
 styles cannot express and use the `css`, `globalCss`, and `keyframes` APIs from
 [mintcss](https://github.com/nexryai/mintcss). The SPA has no CSS files or CSS
 framework dependency.
-Tabler Icons remains the icon set, and shared buttons use the pointer-position
-ripple interaction from the read-only `salvia-old` product reference.
+Tabler Icons remains the icon set. All buttons use a shared ripple interaction
+from the read-only `salvia-old` product reference, with pointer and keyboard
+feedback and support for reduced motion. Buttons do not scale on hover or press.
 
 The component-local styling rules, mintcss `css()` API, safety
 boundaries, tests, and migration order are documented in

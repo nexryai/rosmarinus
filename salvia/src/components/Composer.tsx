@@ -9,6 +9,7 @@ import { ImageFileInput } from "@/components/ImageFileInput";
 import { Mfm } from "@/components/Mfm";
 import { Button, ErrorBanner, Modal } from "@/components/ui";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { Switch } from "@/components/ui/Switch";
 import { api, type CreatePostInput } from "@/lib/api";
 import { type PreparedPostImage, preparePostImage } from "@/lib/postImage";
@@ -450,7 +451,7 @@ export function Composer({
                             {images.map((image) => (
                                 <figure key={image.id} style={styles.preview}>
                                     <img alt={image.file.name} src={image.thumbnailURL} style={styles.previewImage} />
-                                    <button
+                                    <RippleButton
                                         aria-label={`${image.file.name}を削除`}
                                         disabled={busy || processing}
                                         onClick={() => {
@@ -462,7 +463,7 @@ export function Composer({
                                         type="button"
                                     >
                                         <IconX />
-                                    </button>
+                                    </RippleButton>
                                     <figcaption style={styles.previewCaption}>
                                         {image.width} × {image.height}
                                     </figcaption>
@@ -485,17 +486,17 @@ export function Composer({
                                         value={choice.text}
                                     />
                                     {choices.length > 2 && (
-                                        <button aria-label={`選択肢 ${index + 1}を削除`} className={rules.choiceIcon} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} style={styles.choiceRemove} type="button">
+                                        <RippleButton aria-label={`選択肢 ${index + 1}を削除`} className={rules.choiceIcon} onClick={() => setChoices((current) => current.filter((value) => value.id !== choice.id))} style={styles.choiceRemove} type="button">
                                             <IconX />
-                                        </button>
+                                        </RippleButton>
                                     )}
                                 </div>
                             ))}
                             {choices.length < 10 && (
-                                <button className={rules.choiceIcon} onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} style={styles.addChoice} type="button">
+                                <RippleButton className={rules.choiceIcon} onClick={() => setChoices((current) => [...current, { id: crypto.randomUUID(), text: "" }])} style={styles.addChoice} type="button">
                                     <IconPlus />
                                     選択肢を追加
-                                </button>
+                                </RippleButton>
                             )}
                             <Switch checked={multiple} label="複数回答を許可" onChange={setMultiple} style={styles.pollToggle} />
                         </fieldset>
@@ -506,20 +507,20 @@ export function Composer({
                                 <span style={styles.optionLabel}>公開範囲</span>
                                 <Dropdown label="公開範囲" onChange={setVisibility} options={visibilityOptions} placement="top" style={styles.visibility} triggerStyle={styles.visibilityTrigger} value={visibility} />
                             </div>
-                            <button aria-label="CW" aria-pressed={useCW} className={rules.iconToggle} data-label="CW" onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
+                            <RippleButton aria-label="CW" aria-pressed={useCW} className={rules.iconToggle} data-label="CW" onClick={() => setUseCW((value) => !value)} style={{ ...styles.iconToggle, ...(useCW ? styles.iconToggleActive : {}) }} type="button">
                                 <IconAlertTriangle />
-                            </button>
-                            <button aria-label="投票" aria-pressed={usePoll} className={rules.iconToggle} data-label="投票" disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
+                            </RippleButton>
+                            <RippleButton aria-label="投票" aria-pressed={usePoll} className={rules.iconToggle} data-label="投票" disabled={intent.kind !== "post"} onClick={() => setUsePoll((value) => !value)} style={{ ...styles.iconToggle, ...(usePoll ? styles.iconToggleActive : {}) }} type="button">
                                 <IconChartBar />
-                            </button>
+                            </RippleButton>
                             <label className={`${rules.iconToggle} ${rules.upload}`} data-label="画像" style={{ ...styles.iconToggle, ...styles.upload }}>
                                 <IconPhoto />
                                 <span style={styles.srOnly}>画像</span>
                                 <ImageFileInput disabled={busy || processing || images.length >= 4} hidden maxFiles={4 - images.length} multiple onSelect={(files) => void selectImages(files)} />
                             </label>
-                            <button aria-label="絵文字" className={rules.iconToggle} data-label="絵文字" onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
+                            <RippleButton aria-label="絵文字" className={rules.iconToggle} data-label="絵文字" onClick={() => setEmojiPickerOpen(true)} style={styles.iconToggle} type="button">
                                 <IconMoodSmile />
-                            </button>
+                            </RippleButton>
                         </div>
                         {images.length > 0 && <Switch checked={sensitive} label="センシティブ" onChange={setSensitive} style={styles.sensitive} />}
                         <Button disabled={busy || processing || !canSubmit} size="medium" type="submit">

@@ -10,6 +10,7 @@ import { NoteList, NoteListItem } from "@/components/NoteList";
 import { Avatar, Button, Empty, ErrorBanner, Loading, Modal } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { api } from "@/lib/api";
 import type { Connection, Emoji, Note, Profile } from "@/lib/schema";
 
@@ -506,12 +507,12 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                         </div>
                     )}
                     <div style={styles.counts}>
-                        <button className={rules.countButton} disabled={busy} onClick={() => void showConnections("following")} style={styles.countButton} type="button">
+                        <RippleButton className={rules.countButton} disabled={busy} onClick={() => void showConnections("following")} style={styles.countButton} type="button">
                             <strong style={styles.count}>{profile.following_count}</strong>フォロー
-                        </button>
-                        <button className={rules.countButton} disabled={busy} onClick={() => void showConnections("followers")} style={styles.countButton} type="button">
+                        </RippleButton>
+                        <RippleButton className={rules.countButton} disabled={busy} onClick={() => void showConnections("followers")} style={styles.countButton} type="button">
                             <strong style={styles.count}>{profile.followers_count}</strong>フォロワー
-                        </button>
+                        </RippleButton>
                     </div>
                 </div>
             </header>
@@ -549,7 +550,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                             <Empty>まだ誰もいません。</Empty>
                         ) : (
                             connections.items.map((item) => (
-                                <button
+                                <RippleButton
                                     key={item.id}
                                     onClick={() => {
                                         setConnections(undefined);
@@ -566,7 +567,7 @@ export function ProfilePage({ actorID, csrf, emojis, onCompose, onOpenNote, onOp
                                         </strong>
                                         <small style={styles.connectionHandle}>@{item.actor.username}</small>
                                     </span>
-                                </button>
+                                </RippleButton>
                             ))
                         )}
                     </section>

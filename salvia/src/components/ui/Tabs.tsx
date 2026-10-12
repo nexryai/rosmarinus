@@ -2,6 +2,8 @@ import { type CSSProperties, type KeyboardEvent, type ReactElement, type ReactNo
 
 import { css } from "mintcss";
 
+import { RippleButton } from "@/components/ui/RippleButton";
+
 type TabOption<T extends string> = {
     value: T;
     label: ReactNode;
@@ -152,7 +154,7 @@ export function Tabs<T extends string>({ ariaLabel, className = "", items, onCha
             {items.map((item, index) => {
                 const selected = item.value === value;
                 return (
-                    <button
+                    <RippleButton
                         aria-selected={selected}
                         className={`${rules.tab} ${variant === "pill" ? rules.pillTab : rules.underlineTab} ${selected ? (variant === "pill" ? rules.pillSelected : rules.underlineSelected) : ""}`}
                         disabled={item.disabled}
@@ -171,7 +173,7 @@ export function Tabs<T extends string>({ ariaLabel, className = "", items, onCha
                             {"icon" in item && <span aria-hidden="true">{item.icon}</span>}
                             {item.label}
                         </span>
-                    </button>
+                    </RippleButton>
                 );
             })}
         </div>

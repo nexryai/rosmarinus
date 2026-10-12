@@ -6,6 +6,7 @@ import { css } from "mintcss";
 import { CustomEmoji, EmojiText } from "@/components/EmojiText";
 import { Mfm } from "@/components/Mfm";
 import { Avatar, Button, DividedList, Empty, ErrorBanner, Loading, PageHeader, Tabs } from "@/components/ui";
+import { RippleButton } from "@/components/ui/RippleButton";
 import { api } from "@/lib/api";
 import type { Notification } from "@/lib/schema";
 
@@ -288,14 +289,14 @@ export function NotificationsPage({
                                         </blockquote>
                                     )}
                                     {scope === "account" && item.actor_id !== actorID && (
-                                        <button onClick={() => onActorChange(item.actor_id)} style={styles.context} type="button">
+                                        <RippleButton onClick={() => onActorChange(item.actor_id)} style={styles.context} type="button">
                                             この通知のActorへ切り替え
-                                        </button>
+                                        </RippleButton>
                                     )}
                                     {item.note_id && (
-                                        <button onClick={() => onOpenNote(item.note_id || "")} style={styles.context} type="button">
+                                        <RippleButton onClick={() => onOpenNote(item.note_id || "")} style={styles.context} type="button">
                                             ノートを開く
-                                        </button>
+                                        </RippleButton>
                                     )}
                                 </div>
                                 {!item.is_read && (
