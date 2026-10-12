@@ -2,6 +2,8 @@ import { type ComponentPropsWithRef, type CSSProperties, useEffect, useRef, useS
 
 import { keyframes } from "mintcss";
 
+const rippleDuration = 700;
+
 const rippleAnimation = keyframes({
     to: {
         boxShadow: "0 0 0 var(--ripple-radius) transparent",
@@ -24,7 +26,7 @@ const styles = {
         borderRadius: "9999px",
         background: "transparent",
         boxShadow: "0 0 0 0 rgb(128 128 128 / 25%)",
-        animation: `${rippleAnimation} 500ms cubic-bezier(0,.5,0,1) forwards`,
+        animation: `${rippleAnimation} ${rippleDuration}ms cubic-bezier(0,.5,0,1) forwards`,
     },
 } satisfies Record<string, CSSProperties>;
 
@@ -54,7 +56,7 @@ export function RippleButton({ children, disabled, disableRipple = false, onKeyD
         const timer = window.setTimeout(() => {
             timers.current.delete(timer);
             setRipples((current) => current.filter((ripple) => ripple.id !== id));
-        }, 500);
+        }, rippleDuration);
         timers.current.add(timer);
     };
 

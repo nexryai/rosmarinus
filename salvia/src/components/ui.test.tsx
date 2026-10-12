@@ -41,6 +41,8 @@ describe("Button ripple", () => {
         expect(ripple).toHaveStyle({ left: "24px", top: "9px" });
         expect(ripple.style.getPropertyValue("--ripple-radius")).toBe(`${Math.hypot(75, 30)}px`);
         act(() => vi.advanceTimersByTime(500));
+        expect(screen.getByTestId("button-ripple")).toBeInTheDocument();
+        act(() => vi.advanceTimersByTime(200));
         expect(screen.queryByTestId("button-ripple")).not.toBeInTheDocument();
     });
 

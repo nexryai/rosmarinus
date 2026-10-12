@@ -106,7 +106,7 @@ describe("RippleButton", () => {
         fireEvent.mouseDown(screen.getByRole("button"));
         expect(vi.getTimerCount()).toBe(1);
         expect(screen.getByTestId("button-ripple").parentElement).toHaveStyle({ pointerEvents: "none", overflow: "hidden" });
-        act(() => vi.advanceTimersByTime(500));
+        act(() => vi.advanceTimersByTime(700));
         expect(screen.queryByTestId("button-ripple")).not.toBeInTheDocument();
         fireEvent.mouseDown(screen.getByRole("button"));
         unmount();
