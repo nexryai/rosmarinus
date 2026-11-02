@@ -13,7 +13,7 @@ require (
 	github.com/hibiken/asynq v0.26.0
 	github.com/redis/go-redis/v9 v9.23.0
 	go.mongodb.org/mongo-driver/v2 v2.9.2
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/text v0.43.0
 )
 
